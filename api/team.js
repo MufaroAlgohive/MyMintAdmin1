@@ -43,11 +43,15 @@ module.exports = async (req, res) => {
       const result = await requireAuth(req, res);
       if (!result) return;
       const { user, member } = result;
+      // Only allow active members to access the app (pending users must complete signup first)
+      if (member.status === 'pending') {
+        return sendJson(res, 403, { error: 'Your invite has not been accepted yet' });
+      }
       return sendJson(res, 200, {
         ok: true,
         email: user.email,
         full_name: member.full_name || null,
-        role: member.role,
+        role: member.role || 'staff',
         page_access: member.page_access || [],
         id: member.id
       });

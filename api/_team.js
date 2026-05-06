@@ -81,9 +81,7 @@ const requireAuth = async (req, res) => {
 
   if (!member) { sendJson(res, 403, { error: 'Not a team member' }); return null; }
 
-  // Check pending status only for admin_team members (admin_profiles don't have status field)
-  if (member.status === 'pending') { sendJson(res, 403, { error: 'Your invite has not been accepted yet' }); return null; }
-
+  // Return auth result; callers should check member.status if needed
   return { user, member };
 };
 
