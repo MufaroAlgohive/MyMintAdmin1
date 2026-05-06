@@ -723,6 +723,47 @@
       }
     }
 
+    const showToast = (message, type = 'success') => {
+      const toast = document.createElement('div');
+      toast.textContent = message;
+      Object.assign(toast.style, {
+        position: 'fixed',
+        bottom: '24px',
+        right: '24px',
+        backgroundColor: type === 'success' ? '#10b981' : '#ef4444',
+        color: '#ffffff',
+        padding: '16px 24px',
+        borderRadius: '8px',
+        fontSize: '14px',
+        fontWeight: '500',
+        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+        zIndex: '9999',
+        opacity: '0',
+        transform: 'translateY(20px)',
+        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px'
+      });
+      
+      const icon = document.createElement('span');
+      icon.innerHTML = type === 'success' ? '&#10004;' : '&#9888;';
+      toast.prepend(icon);
+      
+      document.body.appendChild(toast);
+      
+      requestAnimationFrame(() => {
+        toast.style.opacity = '1';
+        toast.style.transform = 'translateY(0)';
+      });
+      
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(20px)';
+        setTimeout(() => toast.remove(), 300);
+      }, 4000);
+    };
+
     window.sendWalletEmail = async (walletId, email, firstName, mintNumber, balance, currency, createdAt) => {
       if (!email) {
         alert('Client email not found');
@@ -856,10 +897,10 @@
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || 'Failed to send email');
         
-        alert('Email has been successfully sent');
+        showToast('Email has been successfully sent!');
         loadPaidEfts();
       } catch (err) {
-        alert('Error sending email: ' + err.message);
+        showToast('Error sending email: ' + err.message, 'error');
       }
     };
 
