@@ -83,6 +83,37 @@
       background: #fff; border-radius: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.18);
       width: 100%; max-width: 420px; padding: 24px;
     }
+
+    .card { background: #fff; border-radius: 24px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); border: 1px solid #f1f5f9; margin-bottom: 20px; }
+    .card-title { font-size: 14px; font-weight: 700; color: #1e293b; margin-bottom: 16px; }
+
+    .form-group { margin-bottom: 16px; }
+    .form-label { display: block; font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 6px; }
+    .form-input { width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 13px; outline: none; }
+    .form-input:focus { border-color: #7c3aed; background: #fafafa; }
+
+    .search-box-wrapper { position: relative; }
+    .search-suggestions { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #d1d5db; border-top: none; border-radius: 0 0 8px 8px; max-height: 200px; overflow-y: auto; display: none; z-index: 10; }
+    .search-suggestions.show { display: block; }
+    .search-suggestion-item { padding: 10px 12px; cursor: pointer; font-size: 12px; color: #374151; border-bottom: 1px solid #f1f5f9; }
+    .search-suggestion-item:hover { background: #f8fafc; }
+    .search-suggestion-item.selected { background: #ede9fe; color: #7c3aed; }
+
+    .btn { padding: 10px 16px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s ease; }
+    .btn-primary { background: #7c3aed; color: #fff; }
+    .btn-primary:hover { background: #6d28d9; }
+    .btn-primary:disabled { background: #cbd5e1; cursor: not-allowed; }
+
+    .alert { padding: 12px 16px; border-radius: 8px; font-size: 12px; margin-bottom: 12px; }
+    .alert-error { background: #fee2e2; color: #dc2626; border: 1px solid #fecaca; }
+    .alert-success { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+
+    table { width: 100%; border-collapse: collapse; }
+    th { background: #f8fafc; border-bottom: 1px solid #f1f5f9; padding: 12px 16px; text-align: left; font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.04em; }
+    td { padding: 12px 16px; border-bottom: 1px solid #f1f5f9; font-size: 12px; }
+    tr:hover { background: #f8fafc; }
+
+    .empty-state { padding: 48px 0; text-align: center; color: #94a3b8; }
   </style>
 </head>
 <body>
@@ -105,7 +136,7 @@
           </div>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
         </div>
-                <div onclick="mintAppLaunch()" style="display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;border-top:1px solid #f1f5f9;" onmouseover="this.style.background='#f5f3ff'" onmouseout="this.style.background=''">
+        <div onclick="mintAppLaunch()" style="display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;border-top:1px solid #f1f5f9;" onmouseover="this.style.background='#f5f3ff'" onmouseout="this.style.background=''">
           <div style="width:26px;height:26px;border-radius:7px;background:#f0fdf4;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
             <img src="/icon.png" style="width:18px;height:18px;border-radius:4px;" />
           </div>
@@ -152,54 +183,6 @@
       const fr = document.getElementById('mintAppFrame');
       if (ov) ov.style.display = 'none';
       if (fr) fr.src = '';
-    }
-    </script>
-
-    <!-- View Switcher -->
-    <style>
-      #viewSwitcherDropdown { display:grid; grid-template-rows:0fr; transition:grid-template-rows 0.2s ease; }
-      #viewSwitcherDropdown.vs-open { grid-template-rows:1fr; }
-      #viewSwitcherDropdown > div { overflow:hidden; }
-    </style>
-    <div style="padding:0 12px 2px;">
-      <button id="viewSwitcherBtn" onclick="viewSwitcherToggle(event)"
-        style="display:flex;align-items:center;gap:10px;width:100%;padding:9px 10px;border-radius:10px;background:#ede9fe;border:none;cursor:pointer;text-align:left;box-sizing:border-box;transition:background 0.15s;outline:none;" onmouseover="this.style.background='#ddd6fe'" onmouseout="this.style.background='#ede9fe'">
-        <svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:#7c3aed;flex-shrink:0;"><path d="M3 3h7v7H3zm0 11h7v7H3zm11-11h7v7h-7zm0 11h7v7h-7z"/></svg>
-        <span style="flex:1;font-size:13px;font-weight:600;color:#5b21b6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Investments</span>
-        <svg id="viewSwitcherChevron" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2.5" stroke-linecap="round" style="width:12px;height:12px;flex-shrink:0;transition:transform 0.2s;"><polyline points="6 9 12 15 18 9"/></svg>
-      </button>
-      <div id="viewSwitcherDropdown">
-        <div>
-          <div style="padding:3px 0 2px 10px;">
-            <div style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:8px;background:#f5f3ff;">
-              <svg viewBox="0 0 24 24" style="width:16px;height:16px;fill:#7c3aed;flex-shrink:0;"><path d="M3 3h7v7H3zm0 11h7v7H3zm11-11h7v7h-7zm0 11h7v7h-7z"/></svg>
-              <span style="flex:1;font-size:12px;font-weight:600;color:#5b21b6;">Investments</span>
-              <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><polyline points="2,6 5,9 10,3" stroke="#7c3aed" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-    <script>
-    function viewSwitcherToggle(e) {
-      e.stopPropagation();
-      const dd = document.getElementById('viewSwitcherDropdown');
-      const ch = document.getElementById('viewSwitcherChevron');
-      const open = !dd.classList.contains('vs-open');
-      dd.classList.toggle('vs-open', open);
-      if (ch) ch.style.transform = open ? 'rotate(180deg)' : '';
-      if (open) {
-        setTimeout(() => {
-          const close = (ev) => {
-            if (!ev.target.closest('#viewSwitcherBtn') && !ev.target.closest('#viewSwitcherDropdown')) {
-              dd.classList.remove('vs-open');
-              if (ch) ch.style.transform = '';
-              document.removeEventListener('click', close);
-            }
-          };
-          document.addEventListener('click', close);
-        }, 0);
-      }
     }
     </script>
 
@@ -281,109 +264,132 @@
 
     <div class="page-wrap">
       <!-- Stats Row -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4" style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-bottom:16px;">
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-bottom:20px;">
         <div style="background:#fff;border-radius:24px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,0.06);border:1px solid #f1f5f9;">
-          <p style="font-size:11px;color:#94a3b8;margin-bottom:4px;">Pending EFT Transactions</p>
-          <p style="font-size:24px;font-weight:700;color:#1e293b;" id="eftPendingCount">—</p>
+          <p style="font-size:11px;color:#94a3b8;margin-bottom:4px;">Total Client Wallets</p>
+          <p style="font-size:24px;font-weight:700;color:#1e293b;" id="totalWalletCount">—</p>
         </div>
         <div style="background:#fff;border-radius:24px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,0.06);border:1px solid #f1f5f9;">
-          <p style="font-size:11px;color:#94a3b8;margin-bottom:4px;">Total Amount Awaiting Release</p>
-          <p style="font-size:24px;font-weight:700;color:#1e293b;" id="eftPendingTotal">—</p>
+          <p style="font-size:11px;color:#94a3b8;margin-bottom:4px;">Total Wallet Amount</p>
+          <p style="font-size:24px;font-weight:700;color:#1e293b;" id="totalWalletAmount">—</p>
         </div>
       </div>
 
-      <!-- CSV Uploader -->
-      <div style="background:#fff;border-radius:24px;padding:24px;box-shadow:0 1px 3px rgba(0,0,0,0.06);border:1px solid #f1f5f9;margin-bottom:16px;">
+      <!-- Upload Offline Payments Section - COMMENTED OUT FOR LATER -->
+      <!--
+      <div class="card">
+        <div class="card-title">Upload Offline Payments</div>
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;">
           <div>
-            <h3 style="font-size:13px;font-weight:600;color:#374151;margin-bottom:4px;">Upload Bank Statement</h3>
-            <p style="font-size:12px;color:#94a3b8;">Auto-match deposits to users using their Mint number from the CSV reference.</p>
+            <p style="font-size:12px;color:#94a3b8;margin-bottom:8px;">Upload CSV with columns: email, amount, reference (optional)</p>
           </div>
           <div style="display:flex;align-items:center;gap:12px;">
-            <input type="file" id="eftCsvUpload" accept=".csv" style="display:none;" />
-            <label for="eftCsvUpload" style="cursor:pointer;padding:8px 16px;background:#f1f5f9;border-radius:12px;font-size:12px;font-weight:600;color:#374151;transition:background 0.15s;">Select CSV File</label>
+            <input type="file" id="walletCsvUpload" accept=".csv" style="display:none;" />
+            <label for="walletCsvUpload" style="cursor:pointer;padding:8px 16px;background:#f1f5f9;border-radius:12px;font-size:12px;font-weight:600;color:#374151;transition:background 0.15s;">Select CSV File</label>
           </div>
         </div>
-
-        <div id="eftCsvResults" style="display:none;margin-top:24px;border-top:1px solid #f1f5f9;padding-top:20px;">
+        <div id="walletCsvResults" style="display:none;margin-top:24px;border-top:1px solid #f1f5f9;padding-top:20px;">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-            <h4 style="font-size:12px;font-weight:600;color:#374151;">Matched Deposits</h4>
-            <button id="eftCsvCommitBtn" style="padding:6px 16px;background:#059669;color:#fff;font-size:12px;font-weight:700;border-radius:8px;border:none;cursor:pointer;">Create Pending EFTs</button>
+            <h4 style="font-size:12px;font-weight:600;color:#374151;">Parsed Payments</h4>
+            <button id="walletCsvCommitBtn" style="padding:6px 16px;background:#059669;color:#fff;font-size:12px;font-weight:700;border-radius:8px;border:none;cursor:pointer;">Upload Payments</button>
           </div>
           <div style="overflow-x:auto;border-radius:12px;border:1px solid #f1f5f9;">
             <table style="width:100%;border-collapse:collapse;">
               <thead style="background:#f8fafc;border-bottom:1px solid #f1f5f9;">
                 <tr>
-                  <th style="padding:8px 16px;text-align:left;font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;">Parsed Ref</th>
-                  <th style="padding:8px 16px;text-align:left;font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;">Matched User</th>
-                  <th style="padding:8px 16px;text-align:right;font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;">Amount</th>
+                  <th style="padding:8px 16px;text-align:left;font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;">Client</th>
+                  <th style="padding:8px 16px;text-align:left;font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;">Amount</th>
+                  <th style="padding:8px 16px;text-align:left;font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;">Reference</th>
                 </tr>
               </thead>
-              <tbody id="eftCsvResultsBody" style="background:#fff;"></tbody>
+              <tbody id="walletCsvResultsBody" style="background:#fff;"></tbody>
             </table>
           </div>
         </div>
       </div>
+      -->
 
-      <!-- Pending Payments Table -->
-      <div style="background:#fff;border-radius:24px;box-shadow:0 1px 3px rgba(0,0,0,0.06);border:1px solid #f1f5f9;overflow:hidden;">
-        <div style="padding:16px 24px;border-bottom:1px solid #f8fafc;display:flex;justify-content:space-between;align-items:center;background:#fafafa;">
-          <h3 style="font-size:13px;font-weight:600;color:#374151;">Awaiting Payment Confirmation</h3>
-          <button id="eftRefreshBtn" style="padding:8px;border-radius:50%;border:none;background:none;cursor:pointer;" title="Refresh list">
-            <svg style="width:16px;height:16px;color:#94a3b8;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-            </svg>
-          </button>
+      <!-- Add to Wallet Section -->
+      <div class="card">
+        <div class="card-title">Add to Client Wallet</div>
+        <div id="addWalletAlert" class="alert alert-error" style="display:none;"></div>
+        <div id="addWalletSuccess" class="alert alert-success" style="display:none;"></div>
+
+        <form id="addWalletForm" style="display:grid;grid-template-columns:1fr 150px 120px;gap:12px;align-items:flex-end;">
+          <div>
+            <div class="form-label">Search Client</div>
+            <div class="search-box-wrapper">
+              <input type="text" id="clientSearch" class="form-input" placeholder="Type client name or email..." autocomplete="off" />
+              <div id="searchSuggestions" class="search-suggestions"></div>
+            </div>
+            <input type="hidden" id="selectedClientId" />
+          </div>
+
+          <div>
+            <div class="form-label">Amount (ZAR)</div>
+            <input type="number" id="walletAmount" class="form-input" placeholder="0.00" step="0.01" min="0" />
+          </div>
+
+          <button type="submit" class="btn btn-primary">Add to Wallet</button>
+        </form>
+        <div id="selectedClientInfo" style="margin-top:12px;padding:12px;background:#f8fafc;border-radius:8px;display:none;">
+          <div style="font-size:12px;color:#94a3b8;margin-bottom:4px;">Selected Client:</div>
+          <div id="selectedClientName" style="font-size:13px;font-weight:600;color:#1e293b;"></div>
         </div>
-        <div style="overflow-x:auto;">
-          <table style="width:100%;border-collapse:collapse;text-align:left;">
-            <thead style="background:#f8fafc;border-bottom:1px solid #f1f5f9;">
+      </div>
+
+      <!-- Clients with Wallet Balance Section -->
+      <div class="card">
+        <div class="card-title">Clients with Wallet Balance</div>
+
+        <div style="overflow-x:auto;border-radius:12px;border:1px solid #f1f5f9;">
+          <table>
+            <thead>
               <tr>
-                <th style="padding:12px 24px;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.04em;">Date</th>
-                <th style="padding:12px 24px;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.04em;">User</th>
-                <th style="padding:12px 24px;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.04em;">Asset/Strategy</th>
-                <th style="padding:12px 24px;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.04em;">Amount</th>
-                <th style="padding:12px 24px;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.04em;">Reference</th>
-                <th style="padding:12px 24px;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.04em;">Status</th>
-                <th style="padding:12px 24px;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.04em;text-align:right;">Action</th>
+                <th>Date</th>
+                <th>User Name</th>
+                <th>Wallet Amount (ZAR)</th>
+                <th>Reference</th>
               </tr>
             </thead>
-            <tbody id="eftTableBody"></tbody>
+            <tbody id="paidEftTableBody">
+              <tr><td colspan="4" class="empty-state">Loading clients...</td></tr>
+            </tbody>
           </table>
-          <div id="eftEmptyState" style="display:none;padding:80px 0;text-align:center;">
-            <p style="font-size:13px;color:#94a3b8;">No pending EFT payments</p>
-          </div>
         </div>
       </div>
     </div>
   </main>
 
-  <!-- Password Confirm Modal -->
-  <div id="pwConfirmModal" class="modal-backdrop hidden">
-    <div class="modal-content">
-      <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:16px;">
-        <div id="pwConfirmIcon" style="width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:#fef3c7;">
-          <svg style="width:20px;height:20px;color:#d97706;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-            <line x1="12" y1="9" x2="12" y2="13"/>
-            <line x1="12" y1="17" x2="12.01" y2="17"/>
-          </svg>
+  <!-- Payment History Modal - COMMENTED OUT FOR LATER -->
+  <!--
+  <div id="paymentHistoryModal" class="modal-backdrop hidden">
+    <div class="modal-content" style="max-width: 600px; max-height: 80vh; overflow-y: auto;">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:20px;">
+        <div>
+          <p style="font-size:13px;font-weight:600;color:#0f172a;" id="paymentHistoryTitle">Payment History</p>
+          <p style="font-size:12px;color:#64748b;margin-top:4px;" id="paymentHistorySubtitle"></p>
         </div>
-        <div style="min-width:0;">
-          <p style="font-weight:600;color:#0f172a;" id="pwConfirmTitle">Confirm action</p>
-          <p style="font-size:13px;color:#64748b;margin-top:2px;" id="pwConfirmDescription"></p>
-        </div>
+        <button id="paymentHistoryClose" style="background:none;border:none;cursor:pointer;color:#94a3b8;font-size:20px;padding:0;">×</button>
       </div>
-      <label style="display:block;font-size:12px;font-weight:500;color:#374151;margin-bottom:4px;">Enter your password to confirm</label>
-      <input id="pwConfirmInput" type="password" placeholder="Your password" autocomplete="current-password"
-        style="width:100%;border:1px solid #d1d5db;border-radius:8px;padding:8px 12px;font-size:13px;outline:none;margin-bottom:4px;" />
-      <p id="pwConfirmError" style="font-size:12px;color:#dc2626;margin-bottom:12px;display:none;"></p>
-      <div style="display:flex;gap:8px;margin-top:16px;">
-        <button id="pwConfirmCancel" style="flex:1;padding:8px 16px;border-radius:8px;border:1px solid #e2e8f0;font-size:13px;color:#64748b;cursor:pointer;background:#fff;">Cancel</button>
-        <button id="pwConfirmSubmit" style="flex:1;padding:8px 16px;border-radius:8px;border:none;font-size:13px;font-weight:600;color:#fff;cursor:pointer;background:#d97706;">Confirm</button>
+      <div style="border-top:1px solid #e2e8f0;padding-top:16px;">
+        <div style="overflow-x:auto;">
+          <table style="width:100%;border-collapse:collapse;">
+            <thead style="background:#f8fafc;">
+              <tr>
+                <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:#94a3b8;text-transform:uppercase;">Date</th>
+                <th style="padding:8px 12px;text-align:right;font-size:11px;font-weight:600;color:#94a3b8;text-transform:uppercase;">Amount</th>
+                <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:#94a3b8;text-transform:uppercase;">Type</th>
+                <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:#94a3b8;text-transform:uppercase;">Reference</th>
+              </tr>
+            </thead>
+            <tbody id="paymentHistoryBody"></tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>
+  -->
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
@@ -414,354 +420,347 @@
       if (avatarEl && email) avatarEl.textContent = email.charAt(0).toUpperCase();
     })();
 
-    const formatCurrencyDetailed = (value, currency = 'ZAR') => {
-      if (value === null || value === undefined) return null;
+    const formatCurrency = (value) => {
+      if (value === null || value === undefined) return 'R 0.00';
       const numeric = Number(value);
-      if (Number.isNaN(numeric)) return null;
-      try {
-        return new Intl.NumberFormat('en-ZA', { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(numeric);
-      } catch { return `R ${numeric.toFixed(2)}`; }
+      if (Number.isNaN(numeric)) return 'R 0.00';
+      return new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(numeric);
     };
 
-    /* ── Password confirm modal ── */
-    const _pwModal = document.getElementById('pwConfirmModal');
-    const _pwInput = document.getElementById('pwConfirmInput');
-    const _pwError = document.getElementById('pwConfirmError');
-    const _pwTitle = document.getElementById('pwConfirmTitle');
-    const _pwDesc = document.getElementById('pwConfirmDescription');
-    const _pwSubmit = document.getElementById('pwConfirmSubmit');
-    const _pwCancel = document.getElementById('pwConfirmCancel');
-    const _pwIcon = document.getElementById('pwConfirmIcon');
+    /* ── Client Search ── */
+    let allProfiles = [];
+    const clientSearch = document.getElementById('clientSearch');
+    const searchSuggestions = document.getElementById('searchSuggestions');
+    const selectedClientId = document.getElementById('selectedClientId');
+    const selectedClientInfo = document.getElementById('selectedClientInfo');
+    const selectedClientName = document.getElementById('selectedClientName');
 
-    const confirmWithPassword = (title, description, { danger = false } = {}) =>
-      new Promise((resolve) => {
-        _pwTitle.textContent = title;
-        _pwDesc.textContent = description;
-        _pwInput.value = '';
-        _pwError.textContent = '';
-        _pwError.style.display = 'none';
-        _pwSubmit.textContent = 'Confirm';
-        _pwSubmit.disabled = false;
-        if (danger) {
-          _pwSubmit.style.background = '#dc2626';
-          _pwIcon.style.background = '#fee2e2';
-        } else {
-          _pwSubmit.style.background = '#d97706';
-          _pwIcon.style.background = '#fef3c7';
-        }
-        _pwModal.classList.remove('hidden');
-        _pwInput.focus();
+    clientSearch.addEventListener('input', async (e) => {
+      const query = e.target.value.toLowerCase().trim();
+      if (query.length === 0) {
+        searchSuggestions.classList.remove('show');
+        selectedClientId.value = '';
+        selectedClientInfo.style.display = 'none';
+        return;
+      }
 
-        const cleanup = () => {
-          _pwModal.classList.add('hidden');
-          _pwSubmit.removeEventListener('click', onSubmit);
-          _pwCancel.removeEventListener('click', onCancel);
-        };
-        const onCancel = () => { cleanup(); resolve(false); };
-        const onSubmit = async () => {
-          const password = _pwInput.value.trim();
-          if (!password) {
-            _pwError.textContent = 'Please enter your password.';
-            _pwError.style.display = 'block';
-            return;
-          }
-          _pwSubmit.textContent = 'Verifying…';
-          _pwSubmit.disabled = true;
-          _pwError.style.display = 'none';
-          const { data: { user } } = await supabaseClient.auth.getUser();
-          if (!user) {
-            _pwError.textContent = 'Session expired. Please sign in again.';
-            _pwError.style.display = 'block';
-            _pwSubmit.textContent = 'Confirm';
-            _pwSubmit.disabled = false;
-            return;
-          }
-          const { error } = await supabaseClient.auth.signInWithPassword({ email: user.email, password });
-          if (error) {
-            _pwError.textContent = 'Incorrect password. Please try again.';
-            _pwError.style.display = 'block';
-            _pwSubmit.textContent = 'Confirm';
-            _pwSubmit.disabled = false;
-            _pwInput.value = '';
-            _pwInput.focus();
-            return;
-          }
-          cleanup();
-          resolve(true);
-        };
-        _pwSubmit.addEventListener('click', onSubmit);
-        _pwCancel.addEventListener('click', onCancel);
-        _pwInput.addEventListener('keydown', function onKey(e) {
-          if (e.key === 'Enter') onSubmit();
-          if (e.key === 'Escape') onCancel();
-          if (!_pwModal.classList.contains('hidden')) return;
-          _pwInput.removeEventListener('keydown', onKey);
+      if (allProfiles.length === 0) {
+        const { data } = await supabaseClient.from('profiles').select('id, first_name, last_name, email, mint_number');
+        allProfiles = data || [];
+      }
+
+      const filtered = allProfiles.filter(p => {
+        const fullName = `${p.first_name || ''} ${p.last_name || ''}`.toLowerCase();
+        const email = (p.email || '').toLowerCase();
+        return fullName.includes(query) || email.includes(query) || (p.mint_number && p.mint_number.toLowerCase().includes(query));
+      }).slice(0, 8);
+
+      searchSuggestions.innerHTML = filtered.map(p => `
+        <div class="search-suggestion-item" data-id="${p.id}" data-name="${p.first_name} ${p.last_name}">
+          <div style="font-weight:600;color:#1e293b;">${p.first_name} ${p.last_name}</div>
+          <div style="font-size:11px;color:#94a3b8;">${p.email || ''}</div>
+        </div>
+      `).join('');
+
+      searchSuggestions.classList.add('show');
+      document.querySelectorAll('.search-suggestion-item').forEach(item => {
+        item.addEventListener('click', () => {
+          const id = item.dataset.id;
+          const name = item.dataset.name;
+          selectedClientId.value = id;
+          clientSearch.value = name;
+          searchSuggestions.classList.remove('show');
+          selectedClientName.textContent = name;
+          selectedClientInfo.style.display = 'block';
         });
-        _pwModal.addEventListener('click', (e) => { if (e.target === _pwModal) onCancel(); });
       });
+    });
 
-    /* ── EFT DOM refs ── */
-    const eftTableBody = document.getElementById('eftTableBody');
-    const eftEmptyState = document.getElementById('eftEmptyState');
-    const eftPendingCount = document.getElementById('eftPendingCount');
-    const eftPendingTotal = document.getElementById('eftPendingTotal');
-    const eftRefreshBtn = document.getElementById('eftRefreshBtn');
-    const eftCsvUpload = document.getElementById('eftCsvUpload');
-    const eftCsvResults = document.getElementById('eftCsvResults');
-    const eftCsvResultsBody = document.getElementById('eftCsvResultsBody');
-    const eftCsvCommitBtn = document.getElementById('eftCsvCommitBtn');
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.search-box-wrapper')) {
+        searchSuggestions.classList.remove('show');
+      }
+    });
 
-    let parsedCsvDeposits = [];
+    /* ── Add to Wallet Form ── */
+    const addWalletForm = document.getElementById('addWalletForm');
+    const walletAmount = document.getElementById('walletAmount');
+    const addWalletAlert = document.getElementById('addWalletAlert');
+    const addWalletSuccess = document.getElementById('addWalletSuccess');
 
-    async function loadPendingEft() {
-      if (!eftTableBody) return;
-      eftTableBody.innerHTML = `<tr><td colspan="7" style="padding:48px;text-align:center;font-size:13px;color:#94a3b8;">Loading pending payments...</td></tr>`;
-      eftEmptyState.style.display = 'none';
+    addWalletForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
 
-      const { data: txs, error } = await supabaseClient
-        .from('transactions')
-        .select('*')
-        .eq('status', 'pending')
-        .ilike('store_reference', 'EFT-%')
-        .order('created_at', { ascending: false });
+      const clientId = selectedClientId.value.trim();
+      const amount = Number(walletAmount.value || 0);
 
-      if (error) {
-        eftTableBody.innerHTML = `<tr><td colspan="7" style="padding:48px;text-align:center;font-size:13px;color:#dc2626;">Failed to load: ${error.message}</td></tr>`;
+      addWalletAlert.style.display = 'none';
+      addWalletSuccess.style.display = 'none';
+
+      if (!clientId) {
+        addWalletAlert.textContent = 'Please select a client';
+        addWalletAlert.style.display = 'block';
         return;
       }
 
-      if (!txs || txs.length === 0) {
-        eftTableBody.innerHTML = '';
-        eftEmptyState.style.display = 'block';
-        eftPendingCount.textContent = '0';
-        eftPendingTotal.textContent = 'R 0.00';
+      if (amount <= 0) {
+        addWalletAlert.textContent = 'Please enter a valid amount';
+        addWalletAlert.style.display = 'block';
         return;
-      }
-
-      const userIds = [...new Set(txs.map(t => t.user_id).filter(Boolean))];
-      let profilesMap = {};
-      if (userIds.length > 0) {
-        const { data: profilesData, error: profileErr } = await supabaseClient
-          .from('profiles')
-          .select('id, first_name, last_name, email, mint_number')
-          .in('id', userIds);
-        if (profilesData && !profileErr) {
-          profilesData.forEach(p => { profilesMap[p.id] = p; });
-        }
-      }
-
-      let totalRand = 0;
-      eftTableBody.innerHTML = '';
-      txs.forEach((tx) => {
-        tx.profiles = profilesMap[tx.user_id] || null;
-        const amtInRand = Number(tx.amount || 0) / 100;
-        totalRand += amtInRand;
-
-        const row = document.createElement('tr');
-        row.style.cssText = 'transition:background 0.15s;';
-        row.onmouseenter = () => { row.style.background = '#f8fafc'; };
-        row.onmouseleave = () => { row.style.background = ''; };
-        row.dataset.ref = tx.store_reference;
-
-        const date = new Date(tx.created_at).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' });
-        const amountStr = formatCurrencyDetailed(amtInRand);
-        const userName = [tx.profiles?.first_name, tx.profiles?.last_name].filter(Boolean).join(' ') || 'Unknown User';
-        const assetName = tx.description || tx.metadata?.asset_name || 'Investment';
-        const ref = tx.store_reference || '—';
-
-        row.innerHTML = `
-          <td style="padding:16px 24px;font-size:12px;color:#94a3b8;">${date}</td>
-          <td style="padding:16px 24px;">
-            <div style="display:flex;flex-direction:column;">
-              <span style="font-size:12px;font-weight:600;color:#1e293b;">${userName}</span>
-              <span style="font-size:10px;color:#94a3b8;">${tx.profiles?.email || ''}</span>
-            </div>
-          </td>
-          <td style="padding:16px 24px;font-size:12px;color:#475569;">${assetName}</td>
-          <td style="padding:16px 24px;font-size:12px;font-weight:700;color:#1e293b;">${amountStr}</td>
-          <td style="padding:16px 24px;">
-            <div style="display:flex;flex-direction:column;gap:4px;">
-              <span style="padding:4px 8px;background:#f1f5f9;border-radius:6px;font-size:10px;font-family:monospace;color:#64748b;">${ref}</span>
-              ${tx.profiles?.mint_number ? `<span style="padding:4px 8px;background:#ede9fe;border-radius:6px;font-size:10px;font-family:monospace;font-weight:700;color:#7c3aed;">${tx.profiles.mint_number}</span>` : ''}
-            </div>
-          </td>
-          <td style="padding:16px 24px;">
-            <span style="padding:4px 10px;border-radius:999px;font-size:10px;font-weight:700;background:#fef3c7;color:#d97706;">Awaiting confirmation</span>
-          </td>
-          <td style="padding:16px 24px;text-align:right;">
-            <button class="confirm-eft-btn" style="opacity:0;padding:6px 16px;background:#059669;color:#fff;font-size:11px;font-weight:700;border-radius:8px;border:none;cursor:pointer;transition:opacity 0.15s;">
-              Confirm
-            </button>
-          </td>
-        `;
-
-        row.onmouseenter = () => { row.style.background = '#f8fafc'; row.querySelector('.confirm-eft-btn').style.opacity = '1'; };
-        row.onmouseleave = () => { row.style.background = ''; row.querySelector('.confirm-eft-btn').style.opacity = '0'; };
-
-        const confirmBtn = row.querySelector('.confirm-eft-btn');
-        confirmBtn.addEventListener('click', () => handleEftConfirmRequest(tx));
-        eftTableBody.appendChild(row);
-      });
-
-      eftPendingCount.textContent = txs.length.toString();
-      eftPendingTotal.textContent = totalRand.toLocaleString('en-ZA', { style: 'currency', currency: 'ZAR' });
-    }
-
-    const handleEftConfirmRequest = async (tx) => {
-      const amountStr = formatCurrencyDetailed(tx.amount);
-      const ref = tx.store_reference;
-
-      const confirmed = await confirmWithPassword(
-        'Confirm release',
-        `Confirm payment of ${amountStr} for reference ${ref}? This will release the investment and notify the user by email. This cannot be undone.`
-      );
-      if (!confirmed) return;
-
-      const row = document.querySelector(`tr[data-ref="${ref}"]`);
-      const btn = row?.querySelector('.confirm-eft-btn');
-      if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = `<span style="display:flex;align-items:center;gap:6px;"><span style="width:12px;height:12px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin 0.6s linear infinite;display:inline-block;"></span> Releasing...</span>`;
       }
 
       try {
         const { data: { session } } = await supabaseClient.auth.getSession();
-        const response = await fetch('/api/confirm-eft-deposit', {
+        const response = await fetch('/api/add-wallet', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
-          body: JSON.stringify({ reference: ref }),
+          body: JSON.stringify({ user_id: clientId, amount }),
         });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error || result.message || 'Failed to confirm payment');
-        alert('Payment confirmed — user notified by email');
-        if (row) {
-          row.style.transition = 'all 0.4s ease';
-          row.style.opacity = '0';
-          row.style.transform = 'translateX(20px)';
-          setTimeout(() => loadPendingEft(), 400);
-        } else {
-          loadPendingEft();
-        }
-      } catch (err) {
-        alert(`Error: ${err.message}`);
-        if (btn) { btn.disabled = false; btn.textContent = 'Confirm'; }
-      }
-    };
 
-    /* ── CSV Uploader ── */
-    if (eftCsvUpload) {
-      eftCsvUpload.addEventListener('change', async (e) => {
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Failed to add to wallet');
+
+        addWalletSuccess.textContent = `Successfully added ${formatCurrency(amount)} to wallet`;
+        addWalletSuccess.style.display = 'block';
+
+        walletAmount.value = '';
+        selectedClientId.value = '';
+        clientSearch.value = '';
+        selectedClientInfo.style.display = 'none';
+
+        loadPaidEfts();
+      } catch (err) {
+        addWalletAlert.textContent = err.message;
+        addWalletAlert.style.display = 'block';
+      }
+    });
+
+    /* ── Load Users with Wallets ── */
+    async function loadPaidEfts() {
+      const tableBody = document.getElementById('paidEftTableBody');
+      const totalWalletCount = document.getElementById('totalWalletCount');
+      const totalWalletAmount = document.getElementById('totalWalletAmount');
+
+      try {
+        const { data: wallets, error } = await supabaseClient
+          .from('wallets')
+          .select('user_id, balance, updated_at')
+          .gt('balance', 0)
+          .order('updated_at', { ascending: false });
+
+        if (error) throw error;
+
+        if (!wallets || wallets.length === 0) {
+          tableBody.innerHTML = '<tr><td colspan="4" class="empty-state">No users with wallet balance</td></tr>';
+          totalWalletCount.textContent = '0';
+          totalWalletAmount.textContent = formatCurrency(0);
+          return;
+        }
+
+        const totalAmount = wallets.reduce((sum, w) => sum + (Number(w.balance) || 0), 0);
+        totalWalletCount.textContent = wallets.length.toString();
+        totalWalletAmount.textContent = formatCurrency(totalAmount);
+
+        const userIds = wallets.map(w => w.user_id).filter(Boolean);
+        let profilesMap = {};
+
+        if (userIds.length > 0) {
+          const { data: profiles } = await supabaseClient
+            .from('profiles')
+            .select('id, first_name, last_name, mint_number')
+            .in('id', userIds);
+          if (profiles) {
+            profiles.forEach(p => { profilesMap[p.id] = p; });
+          }
+        }
+
+        const generateReference = (userId, firstName) => {
+          if (!userId || !firstName) return '—';
+          const first4Letters = firstName.substring(0, 4).toUpperCase();
+          const last4Digits = userId.slice(-4).toLowerCase();
+          return `${first4Letters}-${last4Digits}`;
+        };
+
+        tableBody.innerHTML = wallets
+          .map(wallet => {
+            const p = profilesMap[wallet.user_id] || {};
+            const lastUpdate = new Date(wallet.updated_at).toLocaleDateString('en-ZA');
+            const reference = p.mint_number || generateReference(wallet.user_id, p.first_name);
+
+            return `
+              <tr>
+                <td style="color:#94a3b8;">${lastUpdate}</td>
+                <td style="font-weight:600;color:#1e293b;" data-client-id="${wallet.user_id}" data-client-name="${p.first_name || ''} ${p.last_name || ''}">${p.first_name || ''} ${p.last_name || ''}</td>
+                <td style="font-weight:700;color:#059669;">${formatCurrency(wallet.balance)}</td>
+                <td style="font-family:monospace;color:#7c3aed;font-weight:600;">${reference}</td>
+              </tr>
+            `;
+          })
+          .join('');
+      } catch (err) {
+        tableBody.innerHTML = `<tr><td colspan="4" class="empty-state">Error: ${err.message}</td></tr>`;
+      }
+    }
+
+    /* ── CSV Upload for Offline Payments - COMMENTED OUT FOR LATER ── */
+    /*
+    const walletCsvUpload = document.getElementById('walletCsvUpload');
+    const walletCsvResults = document.getElementById('walletCsvResults');
+    const walletCsvResultsBody = document.getElementById('walletCsvResultsBody');
+    const walletCsvCommitBtn = document.getElementById('walletCsvCommitBtn');
+    let parsedCsvPayments = [];
+
+    if (walletCsvUpload) {
+      walletCsvUpload.addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (!file) return;
 
-        const { data: profiles } = await supabaseClient.from('profiles').select('id, first_name, last_name, mint_number');
+        const { data: profiles } = await supabaseClient.from('profiles').select('id, email, first_name, last_name');
+        const profilesByEmail = {};
+        (profiles || []).forEach(p => { profilesByEmail[p.email?.toLowerCase()] = p; });
+
         const reader = new FileReader();
         reader.onload = (event) => {
           const text = event.target.result;
           const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0);
-          parsedCsvDeposits = [];
+          parsedCsvPayments = [];
 
-          lines.forEach((line) => {
-            const lowerLine = line.toLowerCase();
-            let matchedProfile = null;
-            let matchedMintNumber = null;
+          lines.forEach((line, idx) => {
+            if (idx === 0) return; // Skip header
+            const parts = line.split(',').map(p => p.trim());
+            const email = parts[0]?.toLowerCase();
+            const amount = Number(parts[1]);
+            const reference = parts[2] || '';
 
-            for (const p of (profiles || [])) {
-              const exactMint = (p.mint_number || '').toLowerCase().trim();
-              const numericMintMatch = exactMint.match(/\d{3,}/);
-              const numericMint = numericMintMatch ? numericMintMatch[0] : null;
-              const fName = (p.first_name || '').toLowerCase().trim();
-              const lName = (p.last_name || '').toLowerCase().trim();
-
-              if (exactMint && lowerLine.includes(exactMint)) { matchedProfile = p; matchedMintNumber = p.mint_number.toUpperCase(); break; }
-              if (numericMint && lowerLine.includes(numericMint)) { matchedProfile = p; matchedMintNumber = p.mint_number.toUpperCase(); break; }
-              if (fName.length > 2 && lowerLine.includes(fName)) { matchedProfile = p; matchedMintNumber = p.mint_number ? p.mint_number.toUpperCase() : 'NAME-MATCH'; break; }
-              if (lName.length > 2 && lowerLine.includes(lName)) { matchedProfile = p; matchedMintNumber = p.mint_number ? p.mint_number.toUpperCase() : 'NAME-MATCH'; break; }
-            }
-
-            if (matchedProfile) {
-              const parts = line.split(',');
-              let maxAmount = 0;
-              parts.forEach(part => {
-                const numMatch = part.replace(/["\s]/g, '').match(/^\d+(\.\d{1,2})?$/);
-                if (numMatch) {
-                  const num = Number(numMatch[0]);
-                  if (num > maxAmount && num !== matchedMintNumber) maxAmount = num;
-                }
+            const profile = profilesByEmail[email];
+            if (profile && amount > 0) {
+              parsedCsvPayments.push({
+                email,
+                amount,
+                reference,
+                userId: profile.id,
+                userName: `${profile.first_name} ${profile.last_name}`
               });
-              if (maxAmount > 0) {
-                parsedCsvDeposits.push({
-                  date: new Date().toISOString(),
-                  amount: maxAmount,
-                  userId: matchedProfile.id,
-                  mintNumber: matchedMintNumber,
-                  userName: `${matchedProfile.first_name} ${matchedProfile.last_name}`
-                });
-              }
             }
           });
 
-          eftCsvResultsBody.innerHTML = '';
-          if (parsedCsvDeposits.length > 0) {
-            parsedCsvDeposits.forEach((dep) => {
+          walletCsvResultsBody.innerHTML = '';
+          if (parsedCsvPayments.length > 0) {
+            parsedCsvPayments.forEach((dep) => {
               const tr = document.createElement('tr');
               tr.innerHTML = `
-                <td style="padding:12px 16px;font-size:12px;font-family:monospace;font-weight:700;color:#7c3aed;">${dep.mintNumber}</td>
                 <td style="padding:12px 16px;font-size:12px;font-weight:600;color:#374151;">${dep.userName}</td>
-                <td style="padding:12px 16px;font-size:12px;font-weight:700;color:#059669;text-align:right;">${formatCurrencyDetailed(dep.amount)}</td>
+                <td style="padding:12px 16px;font-size:12px;font-weight:700;color:#059669;text-align:right;">${formatCurrency(dep.amount)}</td>
+                <td style="padding:12px 16px;font-size:12px;color:#94a3b8;">${dep.reference || '—'}</td>
               `;
-              eftCsvResultsBody.appendChild(tr);
+              walletCsvResultsBody.appendChild(tr);
             });
           } else {
-            eftCsvResultsBody.innerHTML = `<tr><td colspan="3" style="padding:24px;text-align:center;font-size:12px;color:#94a3b8;">No matching mint numbers found in this CSV.</td></tr>`;
+            walletCsvResultsBody.innerHTML = `<tr><td colspan="3" style="padding:24px;text-align:center;font-size:12px;color:#94a3b8;">No matching emails found.</td></tr>`;
           }
-          eftCsvResults.style.display = 'block';
+          walletCsvResults.style.display = 'block';
         };
         reader.readAsText(file);
         e.target.value = '';
       });
     }
 
-    if (eftCsvCommitBtn) {
-      eftCsvCommitBtn.addEventListener('click', async () => {
-        if (parsedCsvDeposits.length === 0) return;
-        const confirmed = await confirmWithPassword('Confirm Upload', `Create ${parsedCsvDeposits.length} pending transaction(s)?`);
-        if (!confirmed) return;
+    if (walletCsvCommitBtn) {
+      walletCsvCommitBtn.addEventListener('click', async () => {
+        if (parsedCsvPayments.length === 0) return;
         try {
-          const inserts = parsedCsvDeposits.map(dep => ({
-            user_id: dep.userId,
-            amount: Math.round(dep.amount * 100),
-            description: `Bank Deposit - ${dep.mintNumber}`,
-            store_reference: `EFT-${Date.now()}-${Math.floor(Math.random()*1000)}`,
-            status: 'pending',
-            created_at: dep.date,
-            updated_at: dep.date
-          }));
-          const { error } = await supabaseClient.from('transactions').insert(inserts);
-          if (error) throw error;
-          alert('Successfully uploaded pending transactions!');
-          eftCsvResults.style.display = 'none';
-          parsedCsvDeposits = [];
-          loadPendingEft();
+          const { data: { session } } = await supabaseClient.auth.getSession();
+          const response = await fetch('/api/upload-wallet-payments', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+            body: JSON.stringify({ payments: parsedCsvPayments }),
+          });
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.error || 'Failed to upload payments');
+          alert('Payments uploaded successfully!');
+          walletCsvResults.style.display = 'none';
+          parsedCsvPayments = [];
+          loadPaidEfts();
         } catch (err) {
-          alert(`Error inserting transactions: ${err.message}`);
+          alert(`Error: ${err.message}`);
         }
       });
     }
+    */
 
-    if (eftRefreshBtn) {
-      eftRefreshBtn.addEventListener('click', loadPendingEft);
-    }
+    /* ── Payment History Modal - COMMENTED OUT FOR LATER ── */
+    /*
+    const paymentHistoryModal = document.getElementById('paymentHistoryModal');
+    const paymentHistoryClose = document.getElementById('paymentHistoryClose');
+
+    const showPaymentHistory = async (userId, clientName) => {
+      const { data: transactions, error } = await supabaseClient
+        .from('wallet_transactions')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        alert('Error loading payment history');
+        return;
+      }
+
+      document.getElementById('paymentHistoryTitle').textContent = `Payment History - ${clientName}`;
+      document.getElementById('paymentHistorySubtitle').textContent = `Total transactions: ${transactions?.length || 0}`;
+
+      const historyBody = document.getElementById('paymentHistoryBody');
+      if (!transactions || transactions.length === 0) {
+        historyBody.innerHTML = '<tr><td colspan="4" style="padding:24px;text-align:center;font-size:12px;color:#94a3b8;">No payment history</td></tr>';
+      } else {
+        historyBody.innerHTML = transactions.map(tx => {
+          const date = new Date(tx.created_at).toLocaleDateString('en-ZA');
+          const time = new Date(tx.created_at).toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' });
+          return `
+            <tr style="border-bottom:1px solid #f1f5f9;">
+              <td style="padding:12px;font-size:12px;color:#94a3b8;">${date} ${time}</td>
+              <td style="padding:12px;font-size:12px;font-weight:700;color:#059669;text-align:right;">${formatCurrency(tx.amount)}</td>
+              <td style="padding:12px;font-size:12px;color:#64748b;text-transform:capitalize;">${tx.transaction_type}</td>
+              <td style="padding:12px;font-size:12px;color:#94a3b8;font-family:monospace;">${tx.reference || '—'}</td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      paymentHistoryModal.classList.remove('hidden');
+    };
+
+    paymentHistoryClose.addEventListener('click', () => {
+      paymentHistoryModal.classList.add('hidden');
+    });
+
+    paymentHistoryModal.addEventListener('click', (e) => {
+      if (e.target === paymentHistoryModal) {
+        paymentHistoryModal.classList.add('hidden');
+      }
+    });
+
+    // Update Table to Show Clickable Client Names
+    const originalLoadPaidEfts = loadPaidEfts;
+    loadPaidEfts = async function() {
+      await originalLoadPaidEfts.call(this);
+      // Add click handlers to client names
+      document.querySelectorAll('[data-client-id]').forEach(el => {
+        el.style.cursor = 'pointer';
+        el.style.textDecoration = 'underline';
+        el.addEventListener('click', () => {
+          const clientId = el.dataset.clientId;
+          const clientName = el.dataset.clientName;
+          showPaymentHistory(clientId, clientName);
+        });
+      });
+    };
+    */
 
     requireSession().then(ok => {
       if (!ok) return;
-      loadPendingEft();
+      loadPaidEfts();
     });
   </script>
-
-  <style>
-    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-  </style>
 
   <script>
     (function() {

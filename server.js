@@ -1023,6 +1023,204 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (req.url.startsWith('/api/add-wallet') && req.method === 'POST') {
+    const token = parseBearerToken(req.headers.authorization);
+    if (!token) {
+      sendJson(res, 401, { error: 'Missing Authorization bearer token' });
+      return;
+    }
+
+    (async () => {
+      try {
+        await fetchSupabaseJson('/auth/v1/user', token, false);
+        const body = await readJsonBody(req);
+        const { user_id, amount } = body;
+
+        if (!user_id || typeof amount !== 'number' || amount <= 0) {
+          sendJson(res, 400, { error: 'Invalid user_id or amount' });
+          return;
+        }
+
+        if (!supabaseUrl || !supabaseServiceRoleKey) {
+          sendJson(res, 500, { error: 'Supabase not configured' });
+          return;
+        }
+
+        const sbHeaders = {
+          apikey: supabaseServiceRoleKey,
+          Authorization: `Bearer ${supabaseServiceRoleKey}`,
+          'Content-Type': 'application/json'
+        };
+
+        const getWalletUrl = `${supabaseUrl}/rest/v1/wallets?user_id=eq.${user_id}&select=*`;
+        const getResponse = await fetch(getWalletUrl, { headers: sbHeaders });
+        const getResult = await getResponse.json();
+
+        if (!getResponse.ok) {
+          throw new Error(`Failed to fetch wallet: ${getResult.message || JSON.stringify(getResult)}`);
+        }
+
+        if (Array.isArray(getResult) && getResult.length > 0) {
+          const wallet = getResult[0];
+          const newBalance = Number(wallet.balance) + amount;
+          const updateUrl = `${supabaseUrl}/rest/v1/wallets?id=eq.${wallet.id}`;
+          const updateResponse = await fetch(updateUrl, {
+            method: 'PATCH',
+            headers: sbHeaders,
+            body: JSON.stringify({ balance: newBalance, updated_at: new Date().toISOString() })
+          });
+          if (!updateResponse.ok && updateResponse.status !== 204) {
+            const updateResult = await updateResponse.json();
+            throw new Error(`Failed to update wallet: ${updateResult.message || JSON.stringify(updateResult)}`);
+          }
+
+          // Record transaction
+          const txUrl = `${supabaseUrl}/rest/v1/wallet_transactions`;
+          await fetch(txUrl, {
+            method: 'POST',
+            headers: sbHeaders,
+            body: JSON.stringify({
+              wallet_id: wallet.id,
+              user_id,
+              amount,
+              transaction_type: 'manual',
+              reference: null,
+              created_at: new Date().toISOString()
+            })
+          });
+        } else {
+          const insertUrl = `${supabaseUrl}/rest/v1/wallets`;
+          const insertResponse = await fetch(insertUrl, {
+            method: 'POST',
+            headers: sbHeaders,
+            body: JSON.stringify({
+              user_id,
+              balance: amount,
+              currency: 'ZAR',
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            })
+          });
+          if (!insertResponse.ok) {
+            const insertResult = await insertResponse.json();
+            throw new Error(`Failed to create wallet: ${insertResult.message || JSON.stringify(insertResult)}`);
+          }
+
+          // Get the newly created wallet and record transaction
+          const newWalletRes = await fetch(`${supabaseUrl}/rest/v1/wallets?user_id=eq.${user_id}&select=id`, { headers: sbHeaders });
+          const newWallets = await newWalletRes.json();
+          if (Array.isArray(newWallets) && newWallets.length > 0) {
+            const txUrl = `${supabaseUrl}/rest/v1/wallet_transactions`;
+            await fetch(txUrl, {
+              method: 'POST',
+              headers: sbHeaders,
+              body: JSON.stringify({
+                wallet_id: newWallets[0].id,
+                user_id,
+                amount,
+                transaction_type: 'manual',
+                reference: null,
+                created_at: new Date().toISOString()
+              })
+            });
+          }
+        }
+
+        sendJson(res, 200, { ok: true, message: 'Wallet updated successfully' });
+      } catch (error) {
+        sendJson(res, 500, {
+          error: 'Could not add to wallet',
+          details: error?.message || 'Unknown error'
+        });
+      }
+    })();
+
+    return;
+  }
+
+  if (req.url.startsWith('/api/upload-wallet-payments') && req.method === 'POST') {
+    const token = parseBearerToken(req.headers.authorization);
+    if (!token) {
+      sendJson(res, 401, { error: 'Missing Authorization bearer token' });
+      return;
+    }
+
+    (async () => {
+      try {
+        await fetchSupabaseJson('/auth/v1/user', token, false);
+        const body = await readJsonBody(req);
+        const { payments } = body;
+
+        if (!Array.isArray(payments) || payments.length === 0) {
+          sendJson(res, 400, { error: 'No payments provided' });
+          return;
+        }
+
+        if (!supabaseUrl || !supabaseServiceRoleKey) {
+          sendJson(res, 500, { error: 'Supabase not configured' });
+          return;
+        }
+
+        const sbHeaders = {
+          apikey: supabaseServiceRoleKey,
+          Authorization: `Bearer ${supabaseServiceRoleKey}`,
+          'Content-Type': 'application/json'
+        };
+
+        let successCount = 0;
+        for (const payment of payments) {
+          const { userId, amount, reference } = payment;
+
+          // Get wallet
+          const getWalletUrl = `${supabaseUrl}/rest/v1/wallets?user_id=eq.${userId}&select=id,balance`;
+          const getResponse = await fetch(getWalletUrl, { headers: sbHeaders });
+          const wallets = await getResponse.json();
+
+          if (!getResponse.ok || !Array.isArray(wallets) || wallets.length === 0) {
+            continue;
+          }
+
+          const wallet = wallets[0];
+          const newBalance = Number(wallet.balance) + amount;
+
+          // Update wallet
+          const updateUrl = `${supabaseUrl}/rest/v1/wallets?id=eq.${wallet.id}`;
+          await fetch(updateUrl, {
+            method: 'PATCH',
+            headers: sbHeaders,
+            body: JSON.stringify({ balance: newBalance, updated_at: new Date().toISOString() })
+          });
+
+          // Record transaction
+          const txUrl = `${supabaseUrl}/rest/v1/wallet_transactions`;
+          await fetch(txUrl, {
+            method: 'POST',
+            headers: sbHeaders,
+            body: JSON.stringify({
+              wallet_id: wallet.id,
+              user_id: userId,
+              amount,
+              transaction_type: 'csv_upload',
+              reference: reference || null,
+              created_at: new Date().toISOString()
+            })
+          });
+
+          successCount++;
+        }
+
+        sendJson(res, 200, { ok: true, message: `Successfully uploaded ${successCount} payments` });
+      } catch (error) {
+        sendJson(res, 500, {
+          error: 'Could not upload payments',
+          details: error?.message || 'Unknown error'
+        });
+      }
+    })();
+
+    return;
+  }
+
   // Investor data endpoint — uses service role key to bypass RLS
   if (req.url === '/api/investors/data' && req.method === 'GET') {
     (async () => {
