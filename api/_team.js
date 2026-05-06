@@ -142,6 +142,7 @@ const listAuthUsers = async () => {
 const inviteUserViaSupabase = async (email, redirectTo, full_name) => {
   const { supabaseUrl, serviceRoleKey } = getSupabaseCreds();
   const url = `${supabaseUrl}/auth/v1/invite${redirectTo ? `?redirect_to=${encodeURIComponent(redirectTo)}` : ''}`;
+  console.log('[Supabase Invite] Calling:', url.replace(/\?.*/, '?...'));
   const res = await fetch(url, {
     method: 'POST',
     headers: {
@@ -154,8 +155,10 @@ const inviteUserViaSupabase = async (email, redirectTo, full_name) => {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const msg = data.msg || data.message || data.error_description || data.error || `Supabase invite failed (${res.status})`;
+    console.error('[Supabase Invite] Failed:', msg);
     return { ok: false, error: msg, status: res.status };
   }
+  console.log('[Supabase Invite] Success for:', email);
   return { ok: true, user: data };
 };
 
@@ -200,6 +203,7 @@ const updateAuthUserEmail = async (userId, newEmail) => {
 // Generate a recovery / signup link via the admin endpoint (no email sent).
 const generateAuthLink = async (type, email, redirectTo) => {
   const { supabaseUrl, serviceRoleKey } = getSupabaseCreds();
+  console.log(`[Generate Link] Creating ${type} link for ${email}`);
   const res = await fetch(`${supabaseUrl}/auth/v1/admin/generate_link`, {
     method: 'POST',
     headers: {
@@ -210,8 +214,18 @@ const generateAuthLink = async (type, email, redirectTo) => {
     body: JSON.stringify({ type, email, ...(redirectTo ? { redirect_to: redirectTo } : {}) })
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.msg || data.message || data.error || `Failed to generate link (${res.status})`);
-  return data?.action_link || data?.properties?.action_link || null;
+  if (!res.ok) {
+    const err = data.msg || data.message || data.error || `Failed to generate link (${res.status})`;
+    console.error(`[Generate Link] Error for ${email}:`, err);
+    throw new Error(err);
+  }
+  const link = data?.action_link || data?.properties?.action_link || null;
+  if (link) {
+    console.log(`[Generate Link] Success, link has ${link.includes('#') ? 'hash params' : 'no hash'}`);
+  } else {
+    console.warn(`[Generate Link] No link returned for ${email}`);
+  }
+  return link;
 };
 
 const newInviteToken = () => crypto.randomBytes(24).toString('base64url');
@@ -228,7 +242,8 @@ const baseUrlFromReq = (req) => {
 const sendResendEmail = async ({ to, subject, html, text }) => {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
-    console.warn('[Email] RESEND_API_KEY not set — skipping send to', to);
+    console.warn('[Email] RESEND_API_KEY not configured. Add it to .env to enable email sending.');
+    console.warn('[Email] Skipping Resend email to', to);
     return { skipped: true, reason: 'RESEND_API_KEY missing' };
   }
   const fromEmail = process.env.ORDERBOOK_EMAIL_FROM || 'admin@mintinvestments.co.za';

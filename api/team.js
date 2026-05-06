@@ -127,33 +127,36 @@ module.exports = async (req, res) => {
         member = created;
       }
 
-      // Try to generate an invite link and send via Resend (preferred).
-      // Fall back to Supabase's built-in invite email if Resend isn't configured.
+      // Generate a proper signup link with access_token (works with both Resend and as fallback).
       let emailSent = false;
       let emailReason = null;
       let signupLink = null;
       let via = 'supabase';
 
-      if (process.env.RESEND_API_KEY) {
+      try {
+        signupLink = await generateAuthLink('invite', email, redirectTo);
+      } catch (err) {
+        console.error('[Invite] generateAuthLink failed:', err.message);
+      }
+
+      // Try to send via Resend if configured and link was generated
+      if (process.env.RESEND_API_KEY && signupLink) {
         try {
-          signupLink = await generateAuthLink('invite', email, redirectTo);
-          if (signupLink) {
-            const sendRes = await sendInviteEmail({
-              toEmail: email,
-              toName: full_name,
-              inviterEmail: result.user.email,
-              signupLink
-            });
-            emailSent = !sendRes.skipped;
-            emailReason = sendRes.skipped ? sendRes.reason : null;
-            via = 'resend';
-          }
+          const sendRes = await sendInviteEmail({
+            toEmail: email,
+            toName: full_name,
+            inviterEmail: result.user.email,
+            signupLink
+          });
+          emailSent = !sendRes.skipped;
+          emailReason = sendRes.skipped ? sendRes.reason : null;
+          if (emailSent) via = 'resend';
         } catch (err) {
           emailReason = err.message;
         }
       }
 
-      // Fall back to Supabase invite email if Resend didn't send
+      // Fall back to Supabase invite email if Resend didn't send or API key not configured
       if (!emailSent) {
         const supabaseRes = await inviteUserViaSupabase(email, redirectTo, full_name);
         emailSent = supabaseRes.ok;
@@ -174,18 +177,24 @@ module.exports = async (req, res) => {
           reissue: existing && existing.length > 0,
           email_sent: emailSent,
           email_reason: emailReason || null,
-          via
+          via,
+          signup_link_generated: !!signupLink
         }
       });
 
       if (!emailSent) {
+        const warning = emailReason
+          ? `Member added but email could not be sent: ${emailReason}.`
+          : 'Member added but email could not be sent.';
         return sendJson(res, 200, {
           ok: true,
           member,
           emailSent: false,
           emailReason,
           signupLink: signupLink || null,
-          warning: `Member added but email could not be sent: ${emailReason}. Share the link above manually.`
+          warning: signupLink
+            ? `${warning} Share this link manually: ${signupLink}`
+            : warning
         });
       }
 
