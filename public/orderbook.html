@@ -5333,6 +5333,7 @@
     const getPriceModalEls = () => ({
       priceModal: document.getElementById('orderbookPriceModal'),
       priceInput: document.getElementById('priceInput'),
+      pricePasswordInput: document.getElementById('pricePasswordInput'),
       priceModalInstrument: document.getElementById('priceModalInstrument'),
       priceModalConfirm: document.getElementById('priceModalConfirm'),
       priceModalCancel: document.getElementById('priceModalCancel'),
@@ -5373,11 +5374,12 @@
       const {
         priceModal,
         priceInput,
+        pricePasswordInput,
         priceModalInstrument,
         batchToggle,
         batchToggleWrap
       } = getPriceModalEls();
-      if (!priceModal || !priceInput || !priceModalInstrument || !batchToggle || !batchToggleWrap) return;
+      if (!priceModal || !priceInput || !pricePasswordInput || !priceModalInstrument || !batchToggle || !batchToggleWrap) return;
 
       currentEditRow = row;
       const side = String(row.tradeSide || row.side || '').toUpperCase();
@@ -5400,6 +5402,7 @@
 
       const avgFillValue = Number(row.avgFillNumber);
       priceInput.value = Number.isFinite(avgFillValue) ? avgFillValue.toFixed(2) : '';
+      pricePasswordInput.value = '';
       
       // Only show batch toggle if we have a rebalance batch ID
       if (row.rebalanceBatchId) {
@@ -5412,6 +5415,28 @@
       
       priceModal.classList.add('is-active');
       setTimeout(() => priceInput.focus(), 50);
+    };
+
+    const verifyModalPassword = async (password) => {
+      const trimmed = String(password || '').trim();
+      if (!trimmed) {
+        throw new Error('Please enter your password to authorize this change.');
+      }
+
+      const { data: sessionData } = await supabaseClient.auth.getSession();
+      const email = sessionData?.session?.user?.email;
+      if (!email) {
+        throw new Error('Your session has expired. Please sign in again.');
+      }
+
+      const { error } = await supabaseClient.auth.signInWithPassword({
+        email,
+        password: trimmed
+      });
+
+      if (error) {
+        throw new Error('Password verification failed.');
+      }
     };
 
     const closePriceModal = () => {
@@ -5468,6 +5493,7 @@
       const {
         priceModal,
         priceInput,
+        pricePasswordInput,
         priceModalConfirm,
         priceModalCancel,
         priceModalClose,
@@ -5483,7 +5509,7 @@
 
       const confirmBtn = event.target.closest('#priceModalConfirm');
       if (!confirmBtn) return;
-      if (!priceModal || !priceInput || !priceModalConfirm || !batchToggle) return;
+      if (!priceModal || !priceInput || !pricePasswordInput || !priceModalConfirm || !batchToggle) return;
 
         if (!currentEditRow) return;
         const newPriceRand = parseFloat(priceInput.value);
@@ -5491,9 +5517,12 @@
         
         const newPriceCents = Math.round(newPriceRand * 100);
         priceModalConfirm.disabled = true;
-        priceModalConfirm.textContent = 'Updating...';
+        priceModalConfirm.textContent = 'Verifying...';
         
         try {
+          await verifyModalPassword(pricePasswordInput.value);
+          priceModalConfirm.textContent = 'Updating...';
+
           // Identify IDs to update
           let idsToUpdate = [];
           if (batchToggle.checked && currentEditRow.rebalanceBatchId) {
@@ -5641,6 +5670,10 @@
       <div class="price-input-group">
         <label id="priceInputLabel" class="price-input-label" for="priceInput">Broker Fill Price (R)</label>
         <input type="number" id="priceInput" class="price-input" placeholder="0.00" step="0.01">
+      </div>
+      <div class="price-input-group">
+        <label class="price-input-label" for="pricePasswordInput">Confirm Password</label>
+        <input type="password" id="pricePasswordInput" class="price-input" placeholder="Enter your password" autocomplete="current-password">
       </div>
       <label id="batchToggleWrap" class="batch-toggle-wrap">
         <input type="checkbox" id="batchToggle" class="batch-toggle-input">
