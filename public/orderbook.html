@@ -5327,15 +5327,18 @@
 
 
     /* ── Price Update Logic ── */
-    const priceModal = document.getElementById('orderbookPriceModal');
-    const priceInput = document.getElementById('priceInput');
-    const priceModalInstrument = document.getElementById('priceModalInstrument');
-    const priceModalConfirm = document.getElementById('priceModalConfirm');
-    const priceModalCancel = document.getElementById('priceModalCancel');
-    const priceModalClose = document.getElementById('priceModalClose');
-    const batchToggle = document.getElementById('batchToggle');
-    const batchToggleWrap = document.getElementById('batchToggleWrap');
     let currentEditRow = null;
+
+    const getPriceModalEls = () => ({
+      priceModal: document.getElementById('orderbookPriceModal'),
+      priceInput: document.getElementById('priceInput'),
+      priceModalInstrument: document.getElementById('priceModalInstrument'),
+      priceModalConfirm: document.getElementById('priceModalConfirm'),
+      priceModalCancel: document.getElementById('priceModalCancel'),
+      priceModalClose: document.getElementById('priceModalClose'),
+      batchToggle: document.getElementById('batchToggle'),
+      batchToggleWrap: document.getElementById('batchToggleWrap')
+    });
 
     const decodeEditSourceIds = (value) => {
       try {
@@ -5366,6 +5369,15 @@
     };
 
     const openPriceModal = (row) => {
+      const {
+        priceModal,
+        priceInput,
+        priceModalInstrument,
+        batchToggle,
+        batchToggleWrap
+      } = getPriceModalEls();
+      if (!priceModal || !priceInput || !priceModalInstrument || !batchToggle || !batchToggleWrap) return;
+
       currentEditRow = row;
       const side = String(row.tradeSide || row.side || '').toUpperCase();
       const isBuy = side === 'BUY';
@@ -5402,6 +5414,8 @@
     };
 
     const closePriceModal = () => {
+      const { priceModal } = getPriceModalEls();
+      if (!priceModal) return;
       priceModal.classList.remove('is-active');
       currentEditRow = null;
     };
@@ -5434,11 +5448,27 @@
       });
     }
 
-    if (priceModalClose) priceModalClose.addEventListener('click', closePriceModal);
-    if (priceModalCancel) priceModalCancel.addEventListener('click', closePriceModal);
-    
-    if (priceModalConfirm) {
-      priceModalConfirm.addEventListener('click', async () => {
+    document.addEventListener('click', async (event) => {
+      const {
+        priceModal,
+        priceInput,
+        priceModalConfirm,
+        priceModalCancel,
+        priceModalClose,
+        batchToggle
+      } = getPriceModalEls();
+
+      const closeBtn = event.target.closest('#priceModalClose');
+      const cancelBtn = event.target.closest('#priceModalCancel');
+      if (closeBtn || cancelBtn) {
+        closePriceModal();
+        return;
+      }
+
+      const confirmBtn = event.target.closest('#priceModalConfirm');
+      if (!confirmBtn) return;
+      if (!priceModal || !priceInput || !priceModalConfirm || !batchToggle) return;
+
         if (!currentEditRow) return;
         const newPriceRand = parseFloat(priceInput.value);
         if (isNaN(newPriceRand)) return;
@@ -5494,8 +5524,7 @@
           priceModalConfirm.disabled = false;
           priceModalConfirm.textContent = 'Update Price';
         }
-      });
-    }
+    });
 
     filledOrderbooksArchive = readFilledArchive();
     setActiveTab('active');
