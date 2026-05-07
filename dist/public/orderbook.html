@@ -1650,10 +1650,16 @@
 
         return {
           line: index + 1,
+          sourceId: row.sourceId || '',
+          sourceIds: row.sourceId ? [String(row.sourceId)] : [],
+          instrumentName: row.instrumentName || targetRow.instrumentName || '',
+          ticker: row.ticker || targetRow.ticker || '',
+          side: row.side || targetRow.side || '',
           clientAccountId: accountId,
           bndReference,
           clientName: shortClientName(row.clientName),
           idRegNoFull: String(row.clientIdRegNo || '-'),
+          avgFillNumber: row.avgFillNumber,
           quantity: row.totalQuantity || '-',
           marketValue: asRandValue(row.marketValue || '-'),
           orderTimestamp: formatTimeOnly(row.timestamp),
@@ -1662,6 +1668,46 @@
         };
       });
     };
+
+    const editPriceIcon = '<svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>';
+
+    const getEditableSourceIds = (row) => {
+      const ids = [];
+      if (Array.isArray(row?.sourceIds)) {
+        row.sourceIds.forEach((id) => {
+          if (id) ids.push(String(id));
+        });
+      }
+      if (row?.sourceId) ids.push(String(row.sourceId));
+      if (row?.id) ids.push(String(row.id));
+      return [...new Set(ids)];
+    };
+
+    const encodeEditSourceIds = (ids) => encodeURIComponent(JSON.stringify(ids || []));
+
+    const renderEditPriceButton = (row, label = 'Edit avg fill') => {
+      const sourceIds = getEditableSourceIds(row);
+      if (!sourceIds.length) return '';
+
+      return `
+        <button class="edit-price-btn" title="${escapeHtml(label)}" data-edit-price
+          data-source-ids="${escapeHtml(encodeEditSourceIds(sourceIds))}"
+          data-instrument="${escapeHtml(row?.instrumentName || '')}"
+          data-ticker="${escapeHtml(row?.ticker || '')}"
+          data-side="${escapeHtml(row?.side || row?.tradeSide || '')}"
+          data-avg-fill="${escapeHtml(String(row?.avgFillNumber ?? ''))}"
+          data-line="${escapeHtml(String(row?.line ?? ''))}">
+          ${editPriceIcon}
+        </button>
+      `;
+    };
+
+    const renderEditableTotalFill = (row) => `
+      <span class="orderbook-editable-price">
+        <span>${escapeHtml(asRandValue(row?.marketValue || '-'))}</span>
+        ${renderEditPriceButton(row, 'Edit avg fill for this record')}
+      </span>
+    `;
 
     const renderBndDetailsTable = (row) => {
       const bndRows = buildBndRowsForOrder(row);
@@ -1677,7 +1723,7 @@
           <td>${escapeHtml(detailRow.clientName)}</td>
           <td>${escapeHtml(maskIdentifier(detailRow.idRegNoFull || detailRow.idRegNo || '-'))}</td>
           <td>${escapeHtml(String(detailRow.quantity))}</td>
-          <td>${escapeHtml(asRandValue(detailRow.marketValue || '-'))}</td>
+          <td>${renderEditableTotalFill(detailRow)}</td>
           <td>${escapeHtml(detailRow.orderTimestamp)}</td>
           <td>${escapeHtml(detailRow.instructionType)}</td>
           <td>${escapeHtml(detailRow.settlementRef || '')}</td>
@@ -3772,7 +3818,7 @@
               <td>${escapeHtml(r.clientName)}</td>
               <td>${escapeHtml(r.closedReason)}</td>
             </tr>`).join('')
-          : '<tr><td class="orderbook-empty-row" colspan="8">No events.</td></tr>';
+          : '<tr><td class="orderbook-empty-row" colspan="8">No events found.</td></tr>';
 
         return `
           <details class="filled-orderbook-item">
@@ -5185,6 +5231,34 @@
     const batchToggle = document.getElementById('batchToggle');
     const batchToggleWrap = document.getElementById('batchToggleWrap');
     let currentEditRow = null;
+
+    const decodeEditSourceIds = (value) => {
+      try {
+        const parsed = JSON.parse(decodeURIComponent(String(value || '[]')));
+        return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
+      } catch {
+        return [];
+      }
+    };
+
+    const buildEditableRowFromButton = (button) => {
+      const sourceIds = decodeEditSourceIds(button.dataset.sourceIds);
+      const lineKey = button.dataset.line;
+      const avgFillRaw = button.dataset.avgFill;
+      const matchingRow = (allOrderbookRows || []).find(r => String(r.line) === String(lineKey));
+
+      return {
+        ...(matchingRow || {}),
+        sourceIds: sourceIds.length ? sourceIds : getEditableSourceIds(matchingRow),
+        sourceId: sourceIds[0] || matchingRow?.sourceId || '',
+        line: lineKey || matchingRow?.line || '',
+        instrumentName: button.dataset.instrument || matchingRow?.instrumentName || '',
+        ticker: button.dataset.ticker || matchingRow?.ticker || '',
+        side: button.dataset.side || matchingRow?.side || matchingRow?.tradeSide || '',
+        avgFillNumber: avgFillRaw != null && avgFillRaw !== '' ? Number(avgFillRaw) : matchingRow?.avgFillNumber,
+        rebalanceBatchId: matchingRow?.rebalanceBatchId || null
+      };
+    };
 
     const openPriceModal = (row) => {
       currentEditRow = row;
