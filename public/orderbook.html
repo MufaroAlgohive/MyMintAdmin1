@@ -5663,22 +5663,23 @@
     requireSession().then(async (ok) => {
       if (!ok) return;
 
-      const archivePromise = loadFilledArchiveFromDb()
-        .then((dbArchive) => {
-          if (Array.isArray(dbArchive)) {
-            filledOrderbooksArchive = dbArchive;
-            persistFilledArchive();
-            updateOrderbookHeaderSequence();
-            renderFilledOrderbooks();
-          }
-        })
-        .catch((error) => {
-          console.error('Could not load DB archive:', error?.message || error);
-        });
+      // ── Load DB archive FIRST, then load the live orderbook ──────────────
+      // Running these in parallel caused a race condition: the live rows
+      // rendered before the archive was known, briefly showing archived rows
+      // as "live", then removing them once the archive resolved — causing a flash.
+      try {
+        const dbArchive = await loadFilledArchiveFromDb();
+        if (Array.isArray(dbArchive)) {
+          filledOrderbooksArchive = dbArchive;
+          persistFilledArchive();
+          updateOrderbookHeaderSequence();
+          renderFilledOrderbooks();
+        }
+      } catch (error) {
+        console.error('Could not load DB archive:', error?.message || error);
+      }
 
-      const orderbookPromise = loadOrderbook();
-
-      await Promise.all([archivePromise, orderbookPromise]);
+      await loadOrderbook();
     });
 
     startOrderbookTimer();
