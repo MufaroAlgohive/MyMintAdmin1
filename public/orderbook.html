@@ -4516,25 +4516,26 @@
       }
 
       const holdingIds = holdings.map(r => r.id).filter(Boolean);
+      // Fetch confirmation statuses via API (uses service-role key to bypass RLS)
       if (holdingIds.length) {
-        // Chunk holdingIds to avoid 414 URI Too Long error with Supabase GET requests
-        const chunkSize = 150;
-        for (let i = 0; i < holdingIds.length; i += chunkSize) {
-          const chunk = holdingIds.slice(i, i + chunkSize);
+        const { data: sessionData } = await supabaseClient.auth.getSession();
+        const apiToken = sessionData?.session?.access_token;
+        if (apiToken) {
           parallelQueries.push(
-            supabaseClient
-              .from('investor_trade_confirmations')
-              .select('holding_id, status, sent_at')
-              .in('holding_id', chunk)
-              .then(({ data, error }) => {
-                if (error) { console.error('investor_trade_confirmations load error:', error); return; }
-                (data || []).forEach(e => {
-                  // A holding is considered 'sent' if any confirmation record has status=sent
-                  if (!orderEmailsMap[e.holding_id] || e.status === 'sent') {
-                    orderEmailsMap[e.holding_id] = e.status;
-                  }
+            fetch('/api/orderbook/send-csv?action=get-confirmation-statuses', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiToken}` },
+              body: JSON.stringify({ holdingIds })
+            })
+            .then(r => r.ok ? r.json() : {})
+            .then(({ statuses }) => {
+              if (statuses) {
+                Object.entries(statuses).forEach(([holdingId, status]) => {
+                  orderEmailsMap[holdingId] = status;
                 });
-              })
+              }
+            })
+            .catch(err => console.error('get-confirmation-statuses error:', err))
           );
         }
       }
