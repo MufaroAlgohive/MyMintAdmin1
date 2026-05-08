@@ -81,8 +81,8 @@ module.exports = async (req, res) => {
   try {
     await fetchSupabaseJson('/auth/v1/user', token, false);
 
-    const reqUrl = req.url || '';
-    if (reqUrl.includes('action=add-wallet')) {
+    const action = (req.query && req.query.action) || (req.url || '').includes('action=add-wallet') && 'add-wallet';
+    if (action === 'add-wallet') {
       return handleAddWallet(req, res, token);
     }
 

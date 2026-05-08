@@ -1301,7 +1301,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (req.url.startsWith('/api/add-wallet') && req.method === 'POST') {
+  if ((req.url.startsWith('/api/add-wallet') || req.url.startsWith('/api/send-eft-email?action=add-wallet')) && req.method === 'POST') {
     const token = parseBearerToken(req.headers.authorization);
     if (!token) {
       sendJson(res, 401, { error: 'Missing Authorization bearer token' });
