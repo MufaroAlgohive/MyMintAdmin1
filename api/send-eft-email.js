@@ -72,17 +72,6 @@ const handleAddWallet = async (req, res, token) => {
     return sendJson(res, 500, { error: 'wallet-upsert: ' + e.message });
   }
 
-  if (walletId) {
-    try {
-      await requestSupabaseJson('/rest/v1/wallet_transactions', {
-        method: 'POST',
-        useServiceRoleAuth: true,
-        body: { wallet_id: walletId, user_id, amount: numericAmount, transaction_type: 'manual' },
-      });
-    } catch (e) {
-      return sendJson(res, 500, { error: 'tx-insert: ' + e.message });
-    }
-  }
 
   return sendJson(res, 200, { success: true });
 };
