@@ -4149,13 +4149,13 @@
       setInterval(renderOrderbookTimer, 1000);
     };
 
-    window.sendTradeConfirmation = async (holdingId, bndReference) => {
+    window.sendTradeConfirmation = async (evt, holdingId, bndReference) => {
       try {
         const { data } = await supabaseClient.auth.getSession();
         const token = data?.session?.access_token;
         if (!token) return alert('No session token');
 
-        const btn = event.currentTarget;
+        const btn = evt.currentTarget;
         const originalText = btn.textContent;
         btn.textContent = 'Sending...';
         btn.disabled = true;
@@ -4176,7 +4176,8 @@
 
         const result = await res.json().catch(()=>({}));
         if (res.ok) {
-          loadOrderbookClientSideFallback();
+          allOrderbookRows = await loadOrderbookClientSideFallback();
+          applySearchFilter();
         } else {
           alert(`Error: ${result.error || result.details || 'Unknown error'}`);
         }
@@ -4269,7 +4270,7 @@
                 <span class="${pillClass}"${emailStatus === 'failed' ? ' style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;"' : ''}>${pillLabel}</span>
                 <button class="orderbook-export-btn"
                   style="padding:4px 10px;height:28px;font-size:11px;"
-                  onclick="sendTradeConfirmation('${escapeHtml(row.sourceId)}', '${escapeHtml(row.bndReference || '')}')">
+                  onclick="sendTradeConfirmation(event, '${escapeHtml(row.sourceId)}', '${escapeHtml(row.bndReference || '')}')">
                   ${emailStatus === 'sent' ? 'Resend' : 'Send Confirm'}
                 </button>
               </div>`;
