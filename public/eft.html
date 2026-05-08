@@ -555,7 +555,7 @@
 
       try {
         const { data: { session } } = await supabaseClient.auth.getSession();
-        const response = await fetch('/api/add-wallet', {
+        const response = await fetch('/api/send-eft-email?action=add-wallet', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
           body: JSON.stringify({ user_id: clientId, amount, account_type: accountType }),
