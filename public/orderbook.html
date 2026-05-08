@@ -3794,7 +3794,7 @@
                     <span class="${pillClass}"${emailStatus === 'failed' ? ' style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;"' : ''}>${pillLabel}</span>
                     <button class="orderbook-export-btn"
                       style="padding:4px 10px;height:28px;font-size:11px;"
-                      onclick="sendTradeConfirmation(event, '${escapeHtml(row.sourceId)}', '${escapeHtml(row.bndReference || '')}')">
+                      onclick="sendTradeConfirmation(event, '${escapeHtml(row.sourceId)}', '${escapeHtml(row.bndReference || '')}', '${emailStatus}')">
                       ${emailStatus === 'sent' ? 'Resend' : 'Send Confirm'}
                     </button>
                   </div>`;
@@ -4000,7 +4000,7 @@
                 <span class="${pillClass}"${emailStatus === 'failed' ? ' style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;"' : ''}>${pillLabel}</span>
                 <button class="orderbook-export-btn"
                   style="padding:4px 10px;height:28px;font-size:11px;"
-                  onclick="sendTradeConfirmation(event, '${escapeHtml(row.sourceId)}', '${escapeHtml(row.bndReference || '')}')">
+                  onclick="sendTradeConfirmation(event, '${escapeHtml(row.sourceId)}', '${escapeHtml(row.bndReference || '')}', '${emailStatus}')">
                   ${emailStatus === 'sent' ? 'Resend' : 'Send Confirm'}
                 </button>
               </div>`;
@@ -4211,7 +4211,7 @@
       setInterval(renderOrderbookTimer, 1000);
     };
 
-    window.sendTradeConfirmation = async (evt, holdingId, bndReference) => {
+    window.sendTradeConfirmation = async (evt, holdingId, bndReference, emailStatus) => {
       // Grab button reference and update UI BEFORE any await — prevents evt.currentTarget becoming null
       const btn = evt.currentTarget || evt.target.closest('button');
       const originalText = btn.textContent;
@@ -4229,7 +4229,8 @@
           return alert('No session token');
         }
 
-        const isResend = originalText.trim().toLowerCase() === 'resend';
+        // Use the emailStatus passed from the rendered row — more reliable than button text
+        const isResend = emailStatus === 'sent';
 
         const res = await fetch('/api/orderbook/send-csv?action=trade-confirmation', {
           method: 'POST',
@@ -4357,7 +4358,7 @@
                 <span class="${pillClass}"${emailStatus === 'failed' ? ' style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;"' : ''}>${pillLabel}</span>
                 <button class="orderbook-export-btn"
                   style="padding:4px 10px;height:28px;font-size:11px;"
-                  onclick="sendTradeConfirmation(event, '${escapeHtml(row.sourceId)}', '${escapeHtml(row.bndReference || '')}')">
+                  onclick="sendTradeConfirmation(event, '${escapeHtml(row.sourceId)}', '${escapeHtml(row.bndReference || '')}', '${emailStatus}')">
                   ${emailStatus === 'sent' ? 'Resend' : 'Send Confirm'}
                 </button>
               </div>`;

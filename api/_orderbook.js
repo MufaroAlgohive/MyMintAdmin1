@@ -242,34 +242,36 @@ const handleSendTradeConfirmation = async (req, res, token) => {
 
     const buildTradeRow = ({ side, assetName, quantityDisplay, totalAmountStr, ref }) => {
       const orderType = side === 'SELL' ? 'Stock Sale' : 'Stock Purchase';
+      const sideAccent = side === 'SELL' ? '#dc2626' : '#059669';
+      const sideBg = side === 'SELL' ? '#fff5f5' : '#f0fdf4';
       return `
-        <tr>
-          <td style="padding:12px 8px;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:#94a3b8;border-bottom:1px solid #f1f5f9;">Order Type</td>
-          <td style="padding:12px 8px;font-size:14px;color:#1e293b;font-weight:600;text-align:right;border-bottom:1px solid #f1f5f9;">${orderType}</td>
+        <tr style="background:#f8fafc;">
+          <td style="padding:12px 16px;font-size:11px;text-transform:uppercase;letter-spacing:0.07em;color:#64748b;border-bottom:1px solid #e2e8f0;font-weight:700;">Order Type</td>
+          <td style="padding:12px 16px;font-size:13px;color:${sideAccent};font-weight:700;text-align:right;border-bottom:1px solid #e2e8f0;background:${sideBg};">${orderType}</td>
         </tr>
         <tr>
-          <td style="padding:12px 8px;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:#94a3b8;border-bottom:1px solid #f1f5f9;">Funding Source</td>
-          <td style="padding:12px 8px;font-size:14px;color:#1e293b;font-weight:600;text-align:right;border-bottom:1px solid #f1f5f9;">Wallet</td>
+          <td style="padding:12px 16px;font-size:11px;text-transform:uppercase;letter-spacing:0.07em;color:#64748b;border-bottom:1px solid #e2e8f0;font-weight:700;">Funding Source</td>
+          <td style="padding:12px 16px;font-size:13px;color:#1e293b;font-weight:600;text-align:right;border-bottom:1px solid #e2e8f0;">Wallet</td>
+        </tr>
+        <tr style="background:#f8fafc;">
+          <td style="padding:12px 16px;font-size:11px;text-transform:uppercase;letter-spacing:0.07em;color:#64748b;border-bottom:1px solid #e2e8f0;font-weight:700;">Portfolio Asset</td>
+          <td style="padding:12px 16px;font-size:13px;color:#1e293b;font-weight:600;text-align:right;border-bottom:1px solid #e2e8f0;">${assetName}</td>
         </tr>
         <tr>
-          <td style="padding:12px 8px;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:#94a3b8;border-bottom:1px solid #f1f5f9;">Portfolio Asset</td>
-          <td style="padding:12px 8px;font-size:14px;color:#1e293b;font-weight:600;text-align:right;border-bottom:1px solid #f1f5f9;">${assetName}</td>
+          <td style="padding:12px 16px;font-size:11px;text-transform:uppercase;letter-spacing:0.07em;color:#64748b;border-bottom:1px solid #e2e8f0;font-weight:700;">Total Amount</td>
+          <td style="padding:12px 16px;font-size:14px;color:#0f172a;font-weight:800;text-align:right;border-bottom:1px solid #e2e8f0;">${totalAmountStr}</td>
+        </tr>
+        <tr style="background:#f8fafc;">
+          <td style="padding:12px 16px;font-size:11px;text-transform:uppercase;letter-spacing:0.07em;color:#64748b;border-bottom:1px solid #e2e8f0;font-weight:700;">Quantity</td>
+          <td style="padding:12px 16px;font-size:13px;color:#1e293b;font-weight:600;text-align:right;border-bottom:1px solid #e2e8f0;">${quantityDisplay} shares</td>
         </tr>
         <tr>
-          <td style="padding:12px 8px;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:#94a3b8;border-bottom:1px solid #f1f5f9;">Total Amount</td>
-          <td style="padding:12px 8px;font-size:14px;color:#1e293b;font-weight:600;text-align:right;border-bottom:1px solid #f1f5f9;">${totalAmountStr}</td>
+          <td style="padding:12px 16px;font-size:11px;text-transform:uppercase;letter-spacing:0.07em;color:#64748b;border-bottom:1px solid #e2e8f0;font-weight:700;">Reference</td>
+          <td style="padding:12px 16px;font-size:13px;color:#7c3aed;font-weight:700;text-align:right;border-bottom:1px solid #e2e8f0;font-family:monospace;">${ref}</td>
         </tr>
-        <tr>
-          <td style="padding:12px 8px;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:#94a3b8;border-bottom:1px solid #f1f5f9;">Quantity</td>
-          <td style="padding:12px 8px;font-size:14px;color:#1e293b;font-weight:600;text-align:right;border-bottom:1px solid #f1f5f9;">${quantityDisplay} shares</td>
-        </tr>
-        <tr>
-          <td style="padding:12px 8px;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:#94a3b8;border-bottom:1px solid #f1f5f9;">Reference</td>
-          <td style="padding:12px 8px;font-size:14px;color:#1e293b;font-weight:600;text-align:right;border-bottom:1px solid #f1f5f9;">${ref}</td>
-        </tr>
-        <tr>
-          <td style="padding:12px 8px;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:#94a3b8;border-bottom:1px solid #f1f5f9;">Status</td>
-          <td style="padding:12px 8px;font-size:14px;color:#1e293b;font-weight:600;text-align:right;border-bottom:1px solid #f1f5f9;">Pending Settlement</td>
+        <tr style="background:#fffbeb;">
+          <td style="padding:12px 16px;font-size:11px;text-transform:uppercase;letter-spacing:0.07em;color:#64748b;border-bottom:1px solid #e2e8f0;font-weight:700;">Status</td>
+          <td style="padding:12px 16px;font-size:13px;color:#d97706;font-weight:700;text-align:right;border-bottom:1px solid #e2e8f0;">Pending Settlement</td>
         </tr>
       `;
     };
