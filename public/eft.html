@@ -345,7 +345,7 @@
 
       <!-- Clients with Wallet Balance Section -->
       <div class="card">
-        <div class="card-title">Clients with Wallet Balance</div>
+        <div class="card-title">Client's with Wallet Balance</div>
 
         <div style="overflow-x:auto;border-radius:12px;border:1px solid #f1f5f9;">
           <table>
@@ -523,6 +523,8 @@
       }
     });
 
+    let childrenByParent = {};
+
     /* ── Add to Wallet Form ── */
     const addWalletForm = document.getElementById('addWalletForm');
     const walletAmount = document.getElementById('walletAmount');
@@ -553,7 +555,7 @@
 
       try {
         const { data: { session } } = await supabaseClient.auth.getSession();
-        const response = await fetch('/api/add-wallet', {
+        const response = await fetch('/api/send-eft-email?action=add-wallet', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
           body: JSON.stringify({ user_id: clientId, amount, account_type: accountType }),
@@ -620,7 +622,7 @@
           .select('id, first_name, last_name, available_balance, parent_id')
           .eq('relationship', 'child');
 
-        const childrenByParent = {};
+        childrenByParent = {};
         if (children) {
           children.forEach(child => {
             if (!childrenByParent[child.parent_id]) {

@@ -21,6 +21,73 @@ const readJsonBody = (req) => {
   });
 };
 
+const handleAddWallet = async (req, res, token) => {
+  let body;
+  try {
+    body = (req.body && typeof req.body === 'object') ? req.body : await readJsonBody(req);
+  } catch (e) {
+    return sendJson(res, 400, { error: 'body-parse: ' + e.message });
+  }
+
+  const { user_id, amount } = body || {};
+
+  if (!user_id) return sendJson(res, 400, { error: 'Missing user_id' });
+  if (!amount || Number(amount) <= 0) return sendJson(res, 400, { error: 'Invalid amount' });
+
+  const numericAmount = Number(amount);
+  let existing;
+  try {
+    existing = await fetchSupabaseJson(
+      `/rest/v1/wallets?user_id=eq.${encodeURIComponent(user_id)}&limit=1`
+    );
+  } catch (e) {
+    return sendJson(res, 500, { error: 'wallet-fetch: ' + e.message });
+  }
+
+  let walletId;
+  try {
+    if (existing && existing.length > 0) {
+      const wallet = existing[0];
+      const newBalance = Number(wallet.balance || 0) + numericAmount;
+      await requestSupabaseJson(`/rest/v1/wallets?id=eq.${encodeURIComponent(wallet.id)}`, {
+        method: 'PATCH',
+        useServiceRoleAuth: true,
+        body: { balance: newBalance, updated_at: new Date().toISOString() },
+      });
+      walletId = wallet.id;
+    } else {
+      const created = await requestSupabaseJson('/rest/v1/wallets', {
+        method: 'POST',
+        useServiceRoleAuth: true,
+        body: { user_id, balance: numericAmount, currency: 'ZAR' },
+        extraHeaders: { Prefer: 'return=representation' },
+      });
+      if (Array.isArray(created) && created[0]) {
+        walletId = created[0].id;
+      } else if (created) {
+        walletId = created.id;
+      }
+    }
+  } catch (e) {
+    return sendJson(res, 500, { error: 'wallet-upsert: ' + e.message });
+  }
+
+
+  if (walletId) {
+    try {
+      await requestSupabaseJson('/rest/v1/wallet_transactions', {
+        method: 'POST',
+        useServiceRoleAuth: true,
+        body: { wallet_id: walletId, user_id, amount: numericAmount, transaction_type: 'manual' },
+      });
+    } catch (e) {
+      console.error('wallet_transactions insert failed:', e.message);
+    }
+  }
+
+  return sendJson(res, 200, { success: true });
+};
+
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
     return sendJson(res, 405, { error: 'Method not allowed' });
@@ -32,8 +99,12 @@ module.exports = async (req, res) => {
   }
 
   try {
-    // Validate the user's token with Supabase
     await fetchSupabaseJson('/auth/v1/user', token, false);
+
+    const action = (req.query && req.query.action) || (req.url || '').includes('action=add-wallet') && 'add-wallet';
+    if (action === 'add-wallet') {
+      return handleAddWallet(req, res, token);
+    }
 
     const body = typeof req.body === 'object' ? req.body : await readJsonBody(req);
     const { to, subject, html, walletId } = body;
