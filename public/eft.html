@@ -523,6 +523,8 @@
       }
     });
 
+    let childrenByParent = {};
+
     /* ── Add to Wallet Form ── */
     const addWalletForm = document.getElementById('addWalletForm');
     const walletAmount = document.getElementById('walletAmount');
@@ -620,7 +622,7 @@
           .select('id, first_name, last_name, available_balance, parent_id')
           .eq('relationship', 'child');
 
-        const childrenByParent = {};
+        childrenByParent = {};
         if (children) {
           children.forEach(child => {
             if (!childrenByParent[child.parent_id]) {
