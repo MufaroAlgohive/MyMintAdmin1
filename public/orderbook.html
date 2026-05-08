@@ -3461,6 +3461,8 @@
       let avgWeight = 0;
       let latestTimestamp = null;
       let latestFillDate = null;
+      let hasSent = false;
+      let hasFailed = false;
 
       liveRows.forEach((live) => {
         const q = Number(live.quantityValue || 0);
@@ -3476,6 +3478,9 @@
           avgWeighted += (avg * w);
           avgWeight += w;
         }
+
+        if (live.notificationStatus === 'sent') hasSent = true;
+        if (live.notificationStatus === 'failed') hasFailed = true;
 
         if (live.timestamp) {
           const t = new Date(live.timestamp).getTime();
@@ -3506,7 +3511,8 @@
           : (row.unrealizedPnl ?? '-'),
         side: Number.isFinite(qtyTotal) ? (qtyTotal < 0 ? 'SELL' : 'BUY') : (row.side || '-'),
         timestamp: latestTimestamp || row.timestamp || null,
-        fillDate: latestFillDate || row.fillDate || null
+        fillDate: latestFillDate || row.fillDate || null,
+        notificationStatus: hasSent ? 'sent' : (hasFailed ? 'failed' : (row.notificationStatus || 'pending'))
       };
 
       if (avgWeight > 0) {
@@ -3566,6 +3572,8 @@
       let avgWeight = 0;
       let latestTimestamp = null;
       let latestFillDate = null;
+      let hasSent = false;
+      let hasFailed = false;
       const sourceIds = new Set();
 
       nextHoldings.forEach((holding) => {
@@ -3606,6 +3614,9 @@
         if (holding.sourceId) {
           sourceIds.add(String(holding.sourceId));
         }
+
+        if (holding.notificationStatus === 'sent') hasSent = true;
+        if (holding.notificationStatus === 'failed') hasFailed = true;
       });
 
       const next = {
@@ -3623,7 +3634,8 @@
           : (row.unrealizedPnl ?? '-'),
         side: Number.isFinite(qtyTotal) ? (qtyTotal < 0 ? 'SELL' : 'BUY') : (row.side || '-'),
         timestamp: latestTimestamp || row.timestamp || null,
-        fillDate: latestFillDate || row.fillDate || null
+        fillDate: latestFillDate || row.fillDate || null,
+        notificationStatus: hasSent ? 'sent' : (hasFailed ? 'failed' : (row.notificationStatus || 'pending'))
       };
 
       if (avgWeight > 0) {
@@ -4246,7 +4258,7 @@
 
         const result = await res.json().catch(()=>({}));
         if (res.ok) {
-          // Optimistically update the UI to bypass long-URL load delays
+          // Optimistically update the clicked button/pill immediately
           btn.textContent = 'Resend';
           btn.disabled = false;
           const statusContainer = btn.closest('div');
@@ -4260,10 +4272,8 @@
               pill.style.borderColor = '';
             }
           }
-          // Optionally reload the data in the background
-          loadOrderbookClientSideFallback().then(rows => {
-            allOrderbookRows = rows;
-          }).catch(console.error);
+          // Full reload so Active/Closed Books snapshots also update
+          await loadOrderbook();
         } else {
           alert(`Error: ${result.error || result.details || 'Unknown error'}`);
         }
@@ -4516,8 +4526,9 @@
       }
 
       const holdingIds = holdings.map(r => r.id).filter(Boolean);
+      const batchIds = [...new Set(holdings.map(r => r.rebalance_batch_id).filter(Boolean))];
       // Fetch confirmation statuses via API (uses service-role key to bypass RLS)
-      if (holdingIds.length) {
+      if (holdingIds.length || batchIds.length) {
         const { data: sessionData } = await supabaseClient.auth.getSession();
         const apiToken = sessionData?.session?.access_token;
         if (apiToken) {
@@ -4525,14 +4536,12 @@
             fetch('/api/orderbook/send-csv?action=get-confirmation-statuses', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiToken}` },
-              body: JSON.stringify({ holdingIds })
+              body: JSON.stringify({ holdingIds, batchIds })
             })
             .then(r => r.ok ? r.json() : {})
             .then(({ statuses }) => {
               if (statuses) {
-                Object.entries(statuses).forEach(([holdingId, status]) => {
-                  orderEmailsMap[holdingId] = status;
-                });
+                Object.assign(orderEmailsMap, statuses);
               }
             })
             .catch(err => console.error('get-confirmation-statuses error:', err))
@@ -4668,7 +4677,7 @@
           rebalanceBatchId: row.rebalance_batch_id || null,
           isPendingRebalance: false,
           rebalanceBatchStatus: null,
-          notificationStatus: orderEmailsMap[row.id] || 'pending'
+          notificationStatus: orderEmailsMap[row.rebalance_batch_id] || orderEmailsMap[row.id] || 'pending'
         };
       });
 
