@@ -367,7 +367,7 @@ const sendInviteEmail = async ({ toEmail, toName, inviterEmail, signupLink }) =>
     to: toEmail,
     subject: 'You have been invited to Mint Admin',
     text:
-`${greet}
+      `${greet}
 
 ${inviterEmail} has invited you to join the Mint Admin Portal.
 

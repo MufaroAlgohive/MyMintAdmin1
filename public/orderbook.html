@@ -1266,7 +1266,7 @@
             <table class="orderbook-table">
               <thead>
                 <tr>
-                  <th style="width:190px;">Notification Status</th>
+                  <th style="width:190px;">Client Email</th>
                   <th>Line</th>
                   <th>Instrument Name</th>
                   <th>Ticker</th>
@@ -4407,12 +4407,17 @@
       if (holdingIds.length) {
         parallelQueries.push(
           supabaseClient
-            .from('order_emails')
-            .select('holding_id, status')
+            .from('investor_trade_confirmations')
+            .select('holding_id, status, sent_at')
             .in('holding_id', holdingIds)
             .then(({ data, error }) => {
-              if (error) { console.error('order_emails load error:', error); return; }
-              (data || []).forEach(e => orderEmailsMap[e.holding_id] = e.status);
+              if (error) { console.error('investor_trade_confirmations load error:', error); return; }
+              (data || []).forEach(e => {
+                // A holding is considered 'sent' if any confirmation record has status=sent
+                if (!orderEmailsMap[e.holding_id] || e.status === 'sent') {
+                  orderEmailsMap[e.holding_id] = e.status;
+                }
+              });
             })
         );
       }

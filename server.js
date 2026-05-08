@@ -620,8 +620,13 @@ const server = http.createServer((req, res) => {
           return;
         }
 
-        const emailsData = await fetchSupabaseJson(`/rest/v1/order_emails?holding_id=eq.${encodeURIComponent(holdingId)}&select=fill_sent_at`, token);
-        if (emailsData && emailsData.length > 0 && emailsData[0].fill_sent_at && !forceResend) {
+        // ── Duplicate guard: check investor_trade_confirmations ──────────────
+        const existingConfirms = await fetchSupabaseJson(
+          `/rest/v1/investor_trade_confirmations?holding_id=eq.${encodeURIComponent(holdingId)}&select=id,sent_at,status`,
+          token
+        );
+        const alreadySent = existingConfirms && existingConfirms.some((r) => r.sent_at && r.status === 'sent');
+        if (alreadySent && !forceResend) {
           sendJson(res, 400, { error: 'Email already sent for this holding.' });
           return;
         }
@@ -634,23 +639,103 @@ const server = http.createServer((req, res) => {
         }
 
         const isBatch = !!holding.rebalance_batch_id;
-        
+
         let profile = {};
         if (holding.user_id) {
           const profileData = await fetchSupabaseJson(`/rest/v1/profiles?id=eq.${encodeURIComponent(holding.user_id)}`, token);
           if (profileData && profileData.length) profile = profileData[0];
         }
-        
+
         let clientEmail = profile.email;
         if (!clientEmail) {
           sendJson(res, 400, { error: 'Client email not found' });
           return;
         }
 
-        let subject = 'Trade Confirmation';
+        // ── Shared template builder ────────────────────────────────────────────
+        const HEADER_IMAGE_URL = 'https://my-mint-admin.vercel.app/images/OrderBookMail.avif';
+        const DASHBOARD_URL = 'https://www.mymint.co.za/dashboard';
+        const currentDateStr = new Date().toLocaleDateString('en-ZA', { year: 'numeric', month: 'long', day: 'numeric' });
+
+        const buildTradeRow = (side, code, nominal) => {
+          const sideColor = side === 'SELL' ? '#dc2626' : '#059669';
+          return `<tr>
+            <td style="padding:12px 8px;font-size:14px;border-bottom:1px solid #f1f5f9;color:${sideColor};font-weight:700;">${side}</td>
+            <td style="padding:12px 8px;font-size:14px;border-bottom:1px solid #f1f5f9;color:#1e293b;font-weight:600;">${code}</td>
+            <td style="padding:12px 8px;font-size:14px;border-bottom:1px solid #f1f5f9;color:#1e293b;font-weight:600;">${nominal}</td>
+          </tr>`;
+        };
+
+        const buildEmailHtml = ({ firstName, mintRef, orderDate, tableRowsHtml, subjectHeading, subjectIntro }) => `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;line-height:1.6;color:#1e293b;margin:0;padding:0;">
+  <div style="background-color:#f8fafc;padding:20px;">
+    <div style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 6px rgba(0,0,0,0.05);">
+
+      <!-- Header Image (force-loaded via absolute CDN URL) -->
+      <img src="${HEADER_IMAGE_URL}" width="600" alt="Mint Order Executed" style="display:block;width:100%;height:auto;border:0;">
+
+      <!-- Body Content -->
+      <div style="padding:40px;">
+        <h1 style="font-size:28px;font-weight:800;color:#1e293b;margin-top:0;margin-bottom:16px;letter-spacing:-0.02em;">${subjectHeading}</h1>
+        <p style="font-size:16px;color:#475569;margin-bottom:24px;">Hi <strong>${firstName}</strong>, ${subjectIntro}</p>
+
+        <!-- Client Meta Bar -->
+        <div style="border-top:1px solid #f1f5f9;border-bottom:1px solid #f1f5f9;padding:20px 0;margin-bottom:30px;display:flex;">
+          <div style="text-align:center;flex:1;">
+            <span style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#94a3b8;font-weight:700;display:block;margin-bottom:4px;">Reference</span>
+            <span style="font-size:14px;font-weight:700;color:#1e293b;">${mintRef}</span>
+          </div>
+          <div style="text-align:center;flex:1;">
+            <span style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#94a3b8;font-weight:700;display:block;margin-bottom:4px;">Order Date</span>
+            <span style="font-size:14px;font-weight:700;color:#1e293b;">${orderDate}</span>
+          </div>
+        </div>
+
+        <!-- Trade Table -->
+        <table style="width:100%;border-collapse:collapse;margin-bottom:30px;">
+          <thead>
+            <tr>
+              <th style="text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:#94a3b8;padding:12px 8px;border-bottom:2px solid #f1f5f9;">Buy / Sell</th>
+              <th style="text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:#94a3b8;padding:12px 8px;border-bottom:2px solid #f1f5f9;">Equity Code</th>
+              <th style="text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:#94a3b8;padding:12px 8px;border-bottom:2px solid #f1f5f9;">Nominal</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tableRowsHtml}
+          </tbody>
+        </table>
+
+        <!-- CTA Button -->
+        <div style="text-align:center;margin:30px 0;">
+          <a href="${DASHBOARD_URL}" style="background-color:#7c3aed;color:#ffffff;padding:14px 32px;border-radius:999px;text-decoration:none;font-weight:700;font-size:15px;display:inline-block;">View Portfolio</a>
+        </div>
+      </div>
+
+      <!-- Regulatory Footer -->
+      <div style="padding:40px;background-color:#f8fafc;font-size:11px;color:#94a3b8;line-height:1.5;">
+        <p style="font-size:11px;margin-bottom:12px;">MINT (Pty) Ltd is an authorised Financial Services Provider (FSP 55118) regulated by the Financial Sector Conduct Authority and a registered Credit Provider (NCRCP22892) under the National Credit Act.</p>
+        <p style="font-size:11px;margin-bottom:12px;">All investment activity carries risk, including the possible loss of capital and liquidity constraints. Any information provided is educational in nature and does not constitute personalised financial advice.</p>
+        <p style="font-size:11px;margin-bottom:0;">&copy; 2026 MINT. All rights reserved.<br>
+        Date: ${currentDateStr}<br>
+        <a href="https://www.mymint.co.za" style="color:#7c3aed;text-decoration:none;">www.mymint.co.za</a></p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
+        // ──────────────────────────────────────────────────────────────────────
+
+        const firstName = profile.first_name || 'Investor';
+        let subject = 'Trade Confirmation — MINT';
         let htmlContent = '';
 
         if (!isBatch) {
+          // ── Single trade confirmation ──────────────────────────────────────
           let security = {};
           if (holding.security_id) {
             const secData = await fetchSupabaseJson(`/rest/v1/securities_c?id=eq.${encodeURIComponent(holding.security_id)}`, token);
@@ -665,120 +750,63 @@ const server = http.createServer((req, res) => {
             strategyName = holding.strategy_name_snapshot;
           }
 
-          const instrumentName = security.name || security.symbol || 'Instrument';
           const ticker = security.symbol || '-';
           const side = holding.trade_side || (holding.quantity < 0 ? 'SELL' : 'BUY');
           const quantity = Math.abs(holding.quantity);
-          const avgFill = (holding.avg_fill / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-          const marketValue = holding.market_value ? holding.market_value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : (quantity * holding.avg_fill / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-          const ref = bndReference || `BND-${holding.id.substring(0,8).toUpperCase()}`;
-          const execDate = holding.fill_date ? new Date(holding.fill_date).toLocaleDateString() : new Date().toLocaleDateString();
+          const avgFill = (holding.avg_fill / 100).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          const ref = bndReference || `BND-${holding.id.substring(0, 8).toUpperCase()}`;
+          const execDate = holding.fill_date
+            ? new Date(holding.fill_date).toLocaleDateString('en-ZA', { year: 'numeric', month: 'long', day: 'numeric' })
+            : currentDateStr;
 
-          htmlContent = `<!DOCTYPE html>
-<html>
-<head>
-    <style>
-        body { font-family: -apple-system, sans-serif; color: #1e293b; line-height: 1.6; }
-        .container { max-width: 600px; margin: 20px auto; padding: 40px; border: 1px solid #e2e8f0; border-radius: 16px; }
-        .header-img { width: 100%; border-radius: 12px; margin-bottom: 30px; }
-        .status-badge { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; background: #ecfdf3; color: #166534; margin-bottom: 20px; text-transform: uppercase; }
-        .trade-card { background: #f8fafc; border: 1px solid #f1f5f9; border-radius: 12px; padding: 24px; }
-        .trade-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #edf2f7; }
-        .label { font-size: 13px; color: #94a3b8; font-weight: 600; text-transform: uppercase; }
-        .value { font-size: 14px; color: #0f172a; font-weight: 600; }
-        .footer { font-size: 11px; color: #94a3b8; text-align: center; margin-top: 40px; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <img src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=600&auto=format&fit=crop" class="header-img" alt="Mint Banner">
-        <div class="status-badge">Executed</div>
-        <h1 style="font-size: 24px; color: #0f172a;">Trade Confirmation</h1>
-        <p>Your trade for <strong>${instrumentName}</strong> has been filled and allocated to your <strong>${strategyName}</strong> portfolio.</p>
-        <div class="trade-card">
-            <div class="trade-row"><span class="label">Reference</span><span class="value">${ref}</span></div>
-            <div class="trade-row"><span class="label">Instrument Ticker</span><span class="value">${ticker}</span></div>
-            <div class="trade-row"><span class="label">Side</span><span class="value">${side}</span></div>
-            <div class="trade-row"><span class="label">Quantity</span><span class="value">${quantity}</span></div>
-            <div class="trade-row"><span class="label">Execution Price (Avg Fill)</span><span class="value">R ${avgFill}</span></div>
-            <div class="trade-row"><span class="label">Execution Date</span><span class="value">${execDate}</span></div>
-            <div class="trade-row" style="border:none; margin-top:8px; padding-top:12px; border-top:2px solid #e2e8f0;">
-                <span class="label" style="color:#0f172a;">Total Market Value</span>
-                <span class="value" style="color:#7c3aed; font-size:16px;">R ${marketValue}</span>
-            </div>
-        </div>
-        <div class="footer">
-            Mint Financial Services is an authorized FSP.<br>&copy; 2026 Mint.
-        </div>
-    </div>
-</body>
-</html>`;
+          const nominalDisplay = `${quantity.toLocaleString()} @ R ${avgFill}`;
+
+          htmlContent = buildEmailHtml({
+            firstName,
+            mintRef: ref,
+            orderDate: execDate,
+            tableRowsHtml: buildTradeRow(side, ticker, nominalDisplay),
+            subjectHeading: 'Order Executed.',
+            subjectIntro: `your trade for <strong>${security.name || ticker}</strong> has been successfully filled and allocated to your <strong>${strategyName}</strong> portfolio.`
+          });
+
         } else {
-          subject = 'Portfolio Realignment Summary';
-          const batchHoldings = await fetchSupabaseJson(`/rest/v1/stock_holdings_c?rebalance_batch_id=eq.${encodeURIComponent(holding.rebalance_batch_id)}&user_id=eq.${encodeURIComponent(holding.user_id)}`, token);
-          
-          let strategyName = holding.strategy_name_snapshot || 'your portfolio';
-          
-          let tradesHtml = '';
-          for (let bHolding of batchHoldings) {
-             let security = {};
-             if (bHolding.security_id) {
-               const secData = await fetchSupabaseJson(`/rest/v1/securities_c?id=eq.${encodeURIComponent(bHolding.security_id)}`, token);
-               if (secData && secData.length) security = secData[0];
-             }
-             const instrumentName = security.name || security.symbol || 'Instrument';
-             const ticker = security.symbol || '-';
-             const side = bHolding.trade_side || (bHolding.quantity < 0 ? 'SELL' : 'BUY');
-             const quantity = Math.abs(bHolding.quantity);
-             const avgFill = (bHolding.avg_fill / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-             const marketValue = bHolding.market_value ? bHolding.market_value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : (quantity * bHolding.avg_fill / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-             const execDate = bHolding.fill_date ? new Date(bHolding.fill_date).toLocaleDateString() : new Date().toLocaleDateString();
-             const ref = `BND-${bHolding.id.substring(0,8).toUpperCase()}`;
+          // ── Portfolio realignment (batch) ──────────────────────────────────
+          subject = 'Portfolio Realignment — MINT';
+          const batchHoldings = await fetchSupabaseJson(
+            `/rest/v1/stock_holdings_c?rebalance_batch_id=eq.${encodeURIComponent(holding.rebalance_batch_id)}&user_id=eq.${encodeURIComponent(holding.user_id)}`,
+            token
+          );
 
-             tradesHtml += `
-             <div class="trade-card" style="margin-bottom: 16px;">
-                <div style="font-weight: 700; margin-bottom: 12px; font-size: 16px; color: #0f172a;">${instrumentName}</div>
-                <div class="trade-row"><span class="label">Reference</span><span class="value">${ref}</span></div>
-                <div class="trade-row"><span class="label">Instrument Ticker</span><span class="value">${ticker}</span></div>
-                <div class="trade-row"><span class="label">Side</span><span class="value">${side}</span></div>
-                <div class="trade-row"><span class="label">Quantity</span><span class="value">${quantity}</span></div>
-                <div class="trade-row"><span class="label">Execution Price (Avg Fill)</span><span class="value">R ${avgFill}</span></div>
-                <div class="trade-row"><span class="label">Execution Date</span><span class="value">${execDate}</span></div>
-                <div class="trade-row" style="border:none; margin-top:8px; padding-top:12px; border-top:2px solid #e2e8f0;">
-                    <span class="label" style="color:#0f172a;">Total Market Value</span>
-                    <span class="value" style="color:#7c3aed; font-size:16px;">R ${marketValue}</span>
-                </div>
-             </div>`;
+          const strategyName = holding.strategy_name_snapshot || 'your portfolio';
+          const batchRef = `BND-${holding.rebalance_batch_id.substring(0, 8).toUpperCase()}`;
+          const batchDate = holding.fill_date
+            ? new Date(holding.fill_date).toLocaleDateString('en-ZA', { year: 'numeric', month: 'long', day: 'numeric' })
+            : currentDateStr;
+
+          let tableRowsHtml = '';
+          for (const bHolding of batchHoldings) {
+            let security = {};
+            if (bHolding.security_id) {
+              const secData = await fetchSupabaseJson(`/rest/v1/securities_c?id=eq.${encodeURIComponent(bHolding.security_id)}`, token);
+              if (secData && secData.length) security = secData[0];
+            }
+            const ticker = security.symbol || '-';
+            const side = bHolding.trade_side || (bHolding.quantity < 0 ? 'SELL' : 'BUY');
+            const quantity = Math.abs(bHolding.quantity);
+            const avgFill = (bHolding.avg_fill / 100).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            const nominalDisplay = `${quantity.toLocaleString()} @ R ${avgFill}`;
+            tableRowsHtml += buildTradeRow(side, ticker, nominalDisplay);
           }
 
-          htmlContent = `<!DOCTYPE html>
-<html>
-<head>
-    <style>
-        body { font-family: -apple-system, sans-serif; color: #1e293b; line-height: 1.6; }
-        .container { max-width: 600px; margin: 20px auto; padding: 40px; border: 1px solid #e2e8f0; border-radius: 16px; }
-        .header-img { width: 100%; border-radius: 12px; margin-bottom: 30px; }
-        .status-badge { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; background: #ecfdf3; color: #166534; margin-bottom: 20px; text-transform: uppercase; }
-        .trade-card { background: #f8fafc; border: 1px solid #f1f5f9; border-radius: 12px; padding: 24px; }
-        .trade-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #edf2f7; }
-        .label { font-size: 13px; color: #94a3b8; font-weight: 600; text-transform: uppercase; }
-        .value { font-size: 14px; color: #0f172a; font-weight: 600; }
-        .footer { font-size: 11px; color: #94a3b8; text-align: center; margin-top: 40px; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <img src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=600&auto=format&fit=crop" class="header-img" alt="Mint Banner">
-        <div class="status-badge">Executed</div>
-        <h1 style="font-size: 24px; color: #0f172a;">Portfolio Realignment</h1>
-        <p>The realignment of your <strong>${strategyName}</strong> portfolio has been completed. The following trades were executed:</p>
-        ${tradesHtml}
-        <div class="footer">
-            Mint Financial Services is an authorized FSP.<br>&copy; 2026 Mint.
-        </div>
-    </div>
-</body>
-</html>`;
+          htmlContent = buildEmailHtml({
+            firstName,
+            mintRef: batchRef,
+            orderDate: batchDate,
+            tableRowsHtml,
+            subjectHeading: 'Orders Executed.',
+            subjectIntro: `the realignment of your <strong>${strategyName}</strong> portfolio has been completed. The following trades were executed:`
+          });
         }
 
         const response = await fetch('https://api.resend.com/emails', {
@@ -795,27 +823,50 @@ const server = http.createServer((req, res) => {
           })
         });
 
+        // Parse Resend response once — used for error check and resendId capture
+        const resendPayload = await response.json().catch(() => ({}));
         if (!response.ok) {
-          const payload = await response.json().catch(() => ({}));
-          throw new Error(payload.message || `Resend error: ${response.status}`);
+          throw new Error(resendPayload.message || resendPayload.error || `Resend error: ${response.status}`);
         }
 
+        // ── Record send in investor_trade_confirmations ───────────────────────
+        const resendId = resendPayload?.id || null;
+        const nowIso = new Date().toISOString();
+        const ref = isBatch
+          ? `BND-${holding.rebalance_batch_id.substring(0, 8).toUpperCase()}`
+          : (body.bndReference || `BND-${holding.id.substring(0, 8).toUpperCase()}`);
+
+        const confirmRecord = {
+          user_id: holding.user_id,
+          holding_id: isBatch ? null : holdingId,
+          rebalance_batch_id: isBatch ? holding.rebalance_batch_id : null,
+          reference_number: ref,
+          recipient_email: clientEmail,
+          status: 'sent',
+          resend_id: resendId,
+          executed_price_cents: holding.avg_fill || null,
+          quantity_filled: holding.quantity ? Math.abs(holding.quantity) : null,
+          strategy_name_at_execution: holding.strategy_name_snapshot || null,
+          sent_payload: isBatch ? { batch_id: holding.rebalance_batch_id } : { holding_id: holdingId },
+          sent_at: nowIso
+        };
+
+        // Try INSERT first; if reference_number conflicts (duplicate click), PATCH instead
         await mutateSupabaseJson(
-          '/rest/v1/order_emails',
-          {
-             holding_id: holdingId,
-             fill_sent_at: new Date().toISOString(),
-             status: 'sent'
-          },
+          '/rest/v1/investor_trade_confirmations',
+          confirmRecord,
           token,
           'POST'
-        ).catch(async (e) => {
-          await mutateSupabaseJson(
-            `/rest/v1/order_emails?holding_id=eq.${encodeURIComponent(holdingId)}`,
-            { fill_sent_at: new Date().toISOString(), status: 'sent' },
-            token,
-            'PATCH'
-          );
+        ).catch(async () => {
+          const existingId = existingConfirms && existingConfirms[0]?.id;
+          if (existingId) {
+            await mutateSupabaseJson(
+              `/rest/v1/investor_trade_confirmations?id=eq.${encodeURIComponent(existingId)}`,
+              { status: 'sent', sent_at: nowIso, resend_id: resendId },
+              token,
+              'PATCH'
+            );
+          }
         });
 
         sendJson(res, 200, { ok: true });
@@ -1037,7 +1088,7 @@ const server = http.createServer((req, res) => {
         // 1. Verify Admin User and Get ID for Audit Logging
         const adminUser = await fetchSupabaseJson('/auth/v1/user', token, false);
         const adminId = adminUser?.id;
-        
+
         const body = await readJsonBody(req);
         const { loanId, bank_acc, amount, idempotency_key } = body;
 
@@ -1055,7 +1106,7 @@ const server = http.createServer((req, res) => {
 
         const symbols = [...new Set(pledges.map(p => p.symbol))];
         const pricesData = await fetchSupabaseJson(`/rest/v1/security_prices_c?symbol=in.(${symbols.map(s => `%22${s}%22`).join(',')})`, token);
-        
+
         const priceMap = {};
         (pricesData || []).forEach(p => { priceMap[p.symbol] = p.last_price; });
 
@@ -1068,9 +1119,9 @@ const server = http.createServer((req, res) => {
         const currentLTV = (parseFloat(amount) / currentCollateralValue) * 100;
 
         if (currentLTV >= 100) {
-          sendJson(res, 400, { 
-            error: 'LTV Threshold Exceeded', 
-            details: `Current LTV is ${currentLTV.toFixed(2)}% due to market fluctuations. Payout blocked for safety.` 
+          sendJson(res, 400, {
+            error: 'LTV Threshold Exceeded',
+            details: `Current LTV is ${currentLTV.toFixed(2)}% due to market fluctuations. Payout blocked for safety.`
           });
           return;
         }
@@ -1081,10 +1132,10 @@ const server = http.createServer((req, res) => {
 
         if (gatewayResponse.success) {
           // 4. Finalize Database State with Audit Logging
-          const updatePayload = { 
-            status: 'disbursed', 
+          const updatePayload = {
+            status: 'disbursed',
             disbursed_at: new Date().toISOString(),
-            disbursed_by_admin_id: adminId 
+            disbursed_by_admin_id: adminId
           };
 
           const result = await mutateSupabaseJson(
@@ -1094,12 +1145,12 @@ const server = http.createServer((req, res) => {
             'PATCH'
           );
 
-          sendJson(res, 200, { 
-            ok: true, 
+          sendJson(res, 200, {
+            ok: true,
             message: "Funds Released via EFT",
             gateway_ref: gatewayResponse.reference,
             current_ltv: currentLTV,
-            data: result 
+            data: result
           });
         } else {
           sendJson(res, 500, { error: 'Payment gateway rejected the EFT request' });
@@ -1220,7 +1271,7 @@ const server = http.createServer((req, res) => {
         await fetchSupabaseJson('/auth/v1/user', token, false);
         const body = await readJsonBody(req);
         const ref = body?.reference;
-        
+
         if (!ref) {
           sendJson(res, 400, { error: 'Missing reference' });
           return;
@@ -1582,13 +1633,13 @@ const server = http.createServer((req, res) => {
           sbGet('strategies_c?select=id,name,short_name,description,risk_level,sector'),
         ]);
 
-        const userIds    = [...new Set((holdings || []).map(r => r.user_id).filter(Boolean))];
-        const secIds     = [...new Set((holdings || []).map(r => r.security_id).filter(Boolean))];
+        const userIds = [...new Set((holdings || []).map(r => r.user_id).filter(Boolean))];
+        const secIds = [...new Set((holdings || []).map(r => r.security_id).filter(Boolean))];
         /* Fetch per-investor NAV history from client_strategy_returns_c — keyed by user_id */
         const stratHistArrays = userIds.length
           ? await Promise.all(userIds.map(uid =>
-              sbGet(`client_strategy_returns_c?select=user_id,strategy_id,as_of_date,basket_value,1d_pct,5d_pct,1m_pct,6m_pct,ytd_pct,1y_pct,5y_pct,inception_pct,inception_pnl&user_id=eq.${uid}&order=as_of_date.asc`)
-            ))
+            sbGet(`client_strategy_returns_c?select=user_id,strategy_id,as_of_date,basket_value,1d_pct,5d_pct,1m_pct,6m_pct,ytd_pct,1y_pct,5y_pct,inception_pct,inception_pnl&user_id=eq.${uid}&order=as_of_date.asc`)
+          ))
           : [];
         const stratHist = stratHistArrays.flat();
 
@@ -1613,8 +1664,8 @@ const server = http.createServer((req, res) => {
 
         const [profiles, secMeta, secLive, txns] = await Promise.all([
           userIds.length ? sbGet(`profiles?select=id,first_name,last_name,email,mint_number&id=in.(${userIds.join(',')})`) : Promise.resolve([]),
-          secIds.length  ? sbGet(`securities_c?select=id,symbol,name,sector,logo_url&id=in.(${secIds.join(',')})`) : Promise.resolve([]),
-          secIds.length  ? sbGet(`stock_returns_c?select=security_id,symbol,current_price,1d_pct,ytd_pct,1y_pct,as_of_date&security_id=in.(${secIds.join(',')})&order=as_of_date.desc`) : Promise.resolve([]),
+          secIds.length ? sbGet(`securities_c?select=id,symbol,name,sector,logo_url&id=in.(${secIds.join(',')})`) : Promise.resolve([]),
+          secIds.length ? sbGet(`stock_returns_c?select=security_id,symbol,current_price,1d_pct,ytd_pct,1y_pct,as_of_date&security_id=in.(${secIds.join(',')})&order=as_of_date.desc`) : Promise.resolve([]),
           userIds.length ? sbGet(`transactions?select=user_id,amount,direction,name,description,status,transaction_date&user_id=in.(${userIds.join(',')})&order=transaction_date.desc`) : Promise.resolve([]),
         ]);
 
