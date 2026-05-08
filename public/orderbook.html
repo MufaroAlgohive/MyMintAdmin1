@@ -4231,7 +4231,7 @@
 
         const isResend = originalText.trim().toLowerCase() === 'resend';
 
-        const res = await fetch('/api/orderbook/send-trade-confirmation', {
+        const res = await fetch('/system/orderbook/send-trade-confirmation', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

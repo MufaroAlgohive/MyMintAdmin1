@@ -603,7 +603,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (req.url.startsWith('/api/orderbook/send-trade-confirmation') && req.method === 'POST') {
+  if (req.url.startsWith('/system/orderbook/send-trade-confirmation') && req.method === 'POST') {
     const token = parseBearerToken(req.headers.authorization);
     if (!token) {
       sendJson(res, 401, { error: 'Missing Authorization bearer token' });
