@@ -654,7 +654,7 @@ const server = http.createServer((req, res) => {
 
         // ── Shared template builder ────────────────────────────────────────────
         const HEADER_IMAGE_URL = 'https://my-mint-admin.vercel.app/images/OrderBookMail.avif';
-        const DASHBOARD_URL = 'https://www.mymint.co.za/dashboard';
+        const DASHBOARD_URL = 'https://app.mymint.co.za';
         const currentDateStr = new Date().toLocaleDateString('en-ZA', { year: 'numeric', month: 'long', day: 'numeric' });
 
         const buildTradeRow = (side, code, nominal) => {
