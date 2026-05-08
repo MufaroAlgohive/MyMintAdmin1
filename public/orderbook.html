@@ -4241,19 +4241,42 @@
                 style="background:#dc2626;color:white;border-radius:8px;padding:5px 14px;font-size:11px;font-weight:700;border:none;cursor:pointer;white-space:nowrap;letter-spacing:.02em;box-shadow:0 1px 3px rgba(220,38,38,.25);transition:background .15s;"
                 onmouseover="this.style.background='#b91c1c'" onmouseout="this.style.background='#dc2626'">Reverse</button>
             </div>`;
+        // ── Client Email column ────────────────────────────────────────────────
+        // investor_trade_confirmations is the sole source of truth.
+        // Show pill + button for any row that has a fill price set.
+        // No dependency on fillDate — that was causing 8/9 rows to show AWAITING FILL.
         } else {
-          const isFilled = row.avgFillNumber > 0 && row.fillDate; 
+          const hasFillPrice = row.avgFillNumber != null && row.avgFillNumber > 0;
+          // notificationStatus is populated from investor_trade_confirmations via orderEmailsMap
           const emailStatus = row.notificationStatus || 'pending';
-          const statusClass = emailStatus === 'sent' ? 'filled-status-pill is-filled' : 'filled-status-pill is-open';
 
-          actionsHtml = isFilled 
-            ? `<div style="display:flex; align-items:center; gap:8px;">
-                  <span class="${statusClass}">${emailStatus.toUpperCase()}</span>
-                  <button class="orderbook-export-btn" style="padding: 4px 10px; height: 28px; font-size: 11px;" onclick="sendTradeConfirmation('${row.sourceId}', '${row.bndReference}')">
-                    ${emailStatus === 'sent' ? 'Resend' : 'Send Confirm'}
-                  </button>
-               </div>`
-            : `<span class="filled-status-pill is-open" style="background:#f3f4f6; color:#4b5563; border-color:#d1d5db;">AWAITING FILL</span>`;
+          let pillClass, pillLabel;
+          if (emailStatus === 'sent') {
+            pillClass = 'filled-status-pill is-filled';
+            pillLabel = 'SENT';
+          } else if (emailStatus === 'failed') {
+            pillClass = 'filled-status-pill';
+            pillLabel = 'FAILED';
+            // inline style for red — reuses existing side-badge-sell colors
+          } else {
+            pillClass = 'filled-status-pill is-open';
+            pillLabel = 'PENDING';
+          }
+
+          if (hasFillPrice) {
+            actionsHtml = `
+              <div style="display:flex;align-items:center;gap:8px;white-space:nowrap;">
+                <span class="${pillClass}"${emailStatus === 'failed' ? ' style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;"' : ''}>${pillLabel}</span>
+                <button class="orderbook-export-btn"
+                  style="padding:4px 10px;height:28px;font-size:11px;"
+                  onclick="sendTradeConfirmation('${escapeHtml(row.sourceId)}', '${escapeHtml(row.bndReference || '')}')">
+                  ${emailStatus === 'sent' ? 'Resend' : 'Send Confirm'}
+                </button>
+              </div>`;
+          } else {
+            // No fill price set yet — can't send a confirmation
+            actionsHtml = `<span class="filled-status-pill is-open" style="background:#f3f4f6;color:#6b7280;border-color:#d1d5db;font-size:0.7rem;">No price set</span>`;
+          }
         }
 
         return `
