@@ -29,12 +29,36 @@ const handleAddWallet = async (req, res, token) => {
     return sendJson(res, 400, { error: 'body-parse: ' + e.message });
   }
 
-  const { user_id, amount } = body || {};
+  const { user_id, amount, account_type } = body || {};
 
   if (!user_id) return sendJson(res, 400, { error: 'Missing user_id' });
   if (!amount || Number(amount) <= 0) return sendJson(res, 400, { error: 'Invalid amount' });
 
   const numericAmount = Number(amount);
+
+  // Child accounts live in family_members, not wallets — inserting into wallets
+  // would violate fk_user since family member IDs aren't in auth.users/profiles.
+  if (account_type === 'child') {
+    try {
+      const members = await fetchSupabaseJson(
+        `/rest/v1/family_members?id=eq.${encodeURIComponent(user_id)}&select=id,available_balance&limit=1`
+      );
+      if (!Array.isArray(members) || members.length === 0) {
+        return sendJson(res, 404, { error: 'Child account not found' });
+      }
+      const member = members[0];
+      const newBalance = Number(member.available_balance || 0) + numericAmount;
+      await requestSupabaseJson(`/rest/v1/family_members?id=eq.${encodeURIComponent(user_id)}`, {
+        method: 'PATCH',
+        useServiceRoleAuth: true,
+        body: { available_balance: newBalance, updated_at: new Date().toISOString() },
+      });
+    } catch (e) {
+      return sendJson(res, 500, { error: 'child-wallet-upsert: ' + e.message });
+    }
+    return sendJson(res, 200, { success: true });
+  }
+
   let existing;
   try {
     existing = await fetchSupabaseJson(
