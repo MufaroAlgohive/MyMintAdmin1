@@ -7503,11 +7503,16 @@
     // Update certificate_verification_status without mutating KYC review status
     const updateChildCertificateStatus = async (childId, nextStatus = 'verified') => {
       const normalizedStatus = normalizeChildCertificateStatus(nextStatus);
+      const updatePayload = {
+        certificate_verification_status: normalizedStatus
+      };
+      if (normalizedStatus === 'verified') {
+        updatePayload.kyc_pending = true;
+      }
+
       const { error } = await supabaseClient
         .from('family_members')
-        .update({
-          certificate_verification_status: normalizedStatus
-        })
+        .update(updatePayload)
         .eq('id', childId);
 
       if (error) throw error;
@@ -7516,6 +7521,7 @@
       const member = allFamilyMembers.find(m => String(m.id) === String(childId));
       if (member) {
         member.certificate_verification_status = normalizedStatus;
+        if (normalizedStatus === 'verified') member.kyc_pending = true;
       }
     };
 
