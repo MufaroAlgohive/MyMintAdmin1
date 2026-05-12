@@ -133,12 +133,12 @@
 
     .orderbook-cleanup-btn {
       flex-shrink: 0;
-      margin-left: 4px;
-      width: 32px;
-      height: 32px;
-      border-radius: 10px;
-      border: 1px solid #ddd6fe;
-      background: #ffffff;
+      margin-left: auto;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: none;
+      background: transparent;
       color: #7c3aed;
       cursor: pointer;
       display: inline-flex;
@@ -146,33 +146,42 @@
       justify-content: center;
       position: relative;
       transition: all 0.2s ease;
-      box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.55);
-      animation: cleanupPulse 1.8s infinite;
+      padding: 0;
     }
-    .orderbook-cleanup-btn:hover {
-      background: #f5f3ff;
-      border-color: #c4b5fd;
+    .orderbook-cleanup-btn::before {
+      content: '';
+      position: absolute;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #7c3aed;
+      box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.2);
+      animation: livePulse 1.8s infinite;
+    }
+    .orderbook-cleanup-btn:hover::before {
+      box-shadow: 0 0 0 5px rgba(124, 58, 237, 0.3);
+    }
+    .orderbook-cleanup-btn.is-active::before {
+      animation: none;
+      background: #7c3aed;
+      box-shadow: 0 0 0 6px rgba(124, 58, 237, 0.25);
     }
     .orderbook-cleanup-btn svg {
-      width: 16px;
-      height: 16px;
+      width: 14px;
+      height: 14px;
       stroke: currentColor;
       fill: none;
       stroke-width: 2;
       stroke-linecap: round;
       stroke-linejoin: round;
+      opacity: 0;
+      position: relative;
+      z-index: -1;
     }
-    .orderbook-cleanup-btn.is-active {
-      background: #7c3aed;
-      color: #ffffff;
-      border-color: #6d28d9;
-      animation: none;
-      box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.18);
-    }
-    @keyframes cleanupPulse {
-      0%   { box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.55); }
-      70%  { box-shadow: 0 0 0 10px rgba(124, 58, 237, 0); }
-      100% { box-shadow: 0 0 0 0 rgba(124, 58, 237, 0); }
+    @keyframes livePulse {
+      0%   { box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.2); }
+      50%  { box-shadow: 0 0 0 8px rgba(124, 58, 237, 0.05); }
+      100% { box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.2); }
     }
 
     .cleanup-delete-btn {
@@ -1321,9 +1330,7 @@
           <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M13 11a5 5 0 10-1.41 1.41l3.54 3.55 1.41-1.42L13 11zm-5 1a4 4 0 110-8 4 4 0 010 8z"/></svg>
           <input id="orderbookSearch" type="search" placeholder="Search instrument, ticker, side…" aria-label="Search orderbook">
         </div>
-        <button id="cleanupModeBtn" class="orderbook-cleanup-btn" type="button" title="Cleanup mode — remove investors from snapshot JSON" aria-pressed="false">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14z"/><path d="M10 11v6M14 11v6"/></svg>
-        </button>
+        <button id="cleanupModeBtn" class="orderbook-cleanup-btn" type="button" title="Cleanup mode — remove investors from snapshot JSON" aria-pressed="false" aria-label="Cleanup mode toggle"></button>
       </div>
 
       <div class="orderbook-tab-panel active" id="activeBooksPanel" role="tabpanel" aria-labelledby="activeBooksTab">
