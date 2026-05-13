@@ -59,12 +59,26 @@ module.exports = async (req, res) => {
 
     // 4. Delete the holdings (service-role bypasses RLS).
     let deletedCount = 0;
+    let leftoverIds = [];
     if (holdingIds.length) {
       const deleted = await requestSupabaseJson(
         `/rest/v1/stock_holdings_c?id=in.(${buildInFilter(holdingIds)})&select=id`,
         { method: 'DELETE', useServiceRoleAuth: true, extraHeaders: { Prefer: 'return=representation' } }
       );
       deletedCount = Array.isArray(deleted) ? deleted.length : 0;
+      // Verify — re-query the same ids; anything still present means the delete didn't take.
+      const stillThere = await fetchSupabaseJson(
+        `/rest/v1/stock_holdings_c?id=in.(${buildInFilter(holdingIds)})&select=id`
+      );
+      leftoverIds = Array.isArray(stillThere) ? stillThere.map((r) => r.id) : [];
+      if (leftoverIds.length) {
+        return sendJson(res, 500, {
+          error: 'Holdings delete did not remove all rows',
+          details: `${leftoverIds.length} of ${holdingIds.length} stock_holdings_c row(s) still present after DELETE. Check FK constraints or triggers on stock_holdings_c.`,
+          requestedHoldingIds: holdingIds,
+          leftoverIds,
+        });
+      }
     }
 
     // 5. Apply refund: update existing wallet or create one.

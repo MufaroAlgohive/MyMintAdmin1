@@ -5661,10 +5661,6 @@
           _reverseState.walletId = walletRow?.id || null;
           _reverseState.walletBefore = Number(walletRow?.balance || 0);
 
-          const dates = holdings.map((h) => new Date(h.created_at || 0).getTime()).filter((n) => Number.isFinite(n) && n > 0);
-          const minDate = dates.length ? Math.min(...dates) : 0;
-          const maxDate = dates.length ? Math.max(...dates) : 0;
-
           const targetName = payload.context === 'strategy'
             ? payload.strategyName
             : (payload.instrument || payload.ticker);
@@ -5684,7 +5680,22 @@
           });
           const txnRespJson = await txnResp.json().catch(() => ({}));
           if (!txnResp.ok) throw new Error(txnRespJson?.error || 'Failed to load transactions');
-          const matchedTxns = Array.isArray(txnRespJson.transactions) ? txnRespJson.transactions : [];
+          const allTxns = Array.isArray(txnRespJson.transactions) ? txnRespJson.transactions : [];
+
+          // Filter to txns referencing THIS strategy/security only — match by
+          // name substring (e.g. "Strategy Investment: Yield Basket" matches "Yield Basket")
+          // OR by the id appearing in the description JSON.
+          const lowerTarget = String(targetName || '').toLowerCase().trim();
+          const matchId = payload.context === 'strategy'
+            ? String(payload.strategyId || '')
+            : String(payload.securityId || '');
+          const matchedTxns = allTxns.filter((t) => {
+            const tn = String(t.name || '').toLowerCase();
+            const desc = String(t.description || '');
+            if (lowerTarget && tn.includes(lowerTarget)) return true;
+            if (matchId && desc.includes(matchId)) return true;
+            return false;
+          });
           _reverseState.txns = matchedTxns;
           _reverseState.selectedTxnId = null;
           _reverseState.refund = 0;
@@ -5729,7 +5740,7 @@
 
           if (!matchedTxns.length) {
             els.warning.style.display = 'block';
-            els.warning.textContent = `No transactions found for this investor in the ±10 day window. Holdings can still be deleted but no refund will be issued.`;
+            els.warning.textContent = `No transactions found for this investor that reference "${targetName}". Holdings can still be deleted but no refund will be issued.`;
             // Allow execute (no refund, just delete) when there's nothing to choose.
             els.confirmBtn.disabled = false;
           } else if (!_reverseState.walletId) {
