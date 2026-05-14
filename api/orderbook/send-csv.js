@@ -27,7 +27,8 @@ module.exports = async (req, res) => {
       const userId = String(body.userId || '').trim();
       if (!userId) return sendJson(res, 400, { error: 'userId required' });
 
-      let qs = `user_id=eq.${encodeURIComponent(userId)}&select=id,amount,name,description,direction,status,transaction_date,created_at&order=transaction_date.desc`;
+      // Only "Strategy Investment ..." txns that haven't been reversed yet.
+      let qs = `user_id=eq.${encodeURIComponent(userId)}&name=ilike.${encodeURIComponent('%Strategy Investment%')}&reversed=eq.false&select=id,amount,name,description,direction,status,transaction_date,created_at&order=transaction_date.desc&limit=200`;
       if (body.dateFrom) qs += `&transaction_date=gte.${encodeURIComponent(body.dateFrom)}`;
       if (body.dateTo)   qs += `&transaction_date=lte.${encodeURIComponent(body.dateTo)}`;
 

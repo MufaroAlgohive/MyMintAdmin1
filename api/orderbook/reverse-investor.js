@@ -142,6 +142,21 @@ module.exports = async (req, res) => {
       auditTxnId = Array.isArray(created) && created[0] ? created[0].id : null;
     }
 
+    // 7. Mark the source txn as reversed so it disappears from future pickers.
+    let sourceTxnReversed = false;
+    if (selectedTxn?.id) {
+      const updated = await requestSupabaseJson(
+        `/rest/v1/transactions?id=eq.${encodeURIComponent(selectedTxn.id)}&select=id`,
+        {
+          method: 'PATCH',
+          useServiceRoleAuth: true,
+          body: { reversed: true, updated_at: nowIso },
+          extraHeaders: { Prefer: 'return=representation' }
+        }
+      );
+      sourceTxnReversed = Array.isArray(updated) && updated.length > 0;
+    }
+
     return sendJson(res, 200, {
       ok: true,
       deletedCount,
@@ -153,6 +168,7 @@ module.exports = async (req, res) => {
       balanceAfter: refundRand > 0 ? balanceAfter : balanceBefore,
       auditTxnId,
       selectedTxnId: selectedTxn?.id || null,
+      sourceTxnReversed,
     });
   } catch (error) {
     return sendJson(res, 500, {

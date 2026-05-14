@@ -615,11 +615,12 @@ const server = http.createServer((req, res) => {
         const body = await readJsonBody(req);
         const action = new URL(req.url, `http://${req.headers.host}`).searchParams.get('action');
 
-        // Action: fetch a user's transactions using service-role key (bypasses RLS).
+        // Action: fetch a user's strategy-investment transactions (service-role bypasses RLS).
+        // Only "Strategy Investment ..." rows that haven't already been reversed.
         if (action === 'get-user-transactions') {
           const userId = String(body?.userId || '').trim();
           if (!userId) { sendJson(res, 400, { error: 'userId required' }); return; }
-          let qs = `user_id=eq.${encodeURIComponent(userId)}&select=id,amount,name,description,direction,status,transaction_date,created_at&order=transaction_date.desc&limit=200`;
+          let qs = `user_id=eq.${encodeURIComponent(userId)}&name=ilike.${encodeURIComponent('%Strategy Investment%')}&reversed=eq.false&select=id,amount,name,description,direction,status,transaction_date,created_at&order=transaction_date.desc&limit=200`;
           if (body?.dateFrom) qs += `&transaction_date=gte.${encodeURIComponent(body.dateFrom)}`;
           if (body?.dateTo)   qs += `&transaction_date=lte.${encodeURIComponent(body.dateTo)}`;
           const rows = await fetchSupabaseJson(`/rest/v1/transactions?${qs}`);
@@ -781,6 +782,21 @@ const server = http.createServer((req, res) => {
           auditTxnId = Array.isArray(created) && created[0] ? created[0].id : null;
         }
 
+        // 7. Mark the source txn as reversed so it disappears from future pickers.
+        let sourceTxnReversed = false;
+        if (selectedTxn?.id) {
+          const updated = await requestSupabaseJson(
+            `/rest/v1/transactions?id=eq.${encodeURIComponent(selectedTxn.id)}&select=id`,
+            {
+              method: 'PATCH',
+              useServiceRoleAuth: true,
+              body: { reversed: true, updated_at: nowIso },
+              extraHeaders: { Prefer: 'return=representation' }
+            }
+          );
+          sourceTxnReversed = Array.isArray(updated) && updated.length > 0;
+        }
+
         sendJson(res, 200, {
           ok: true,
           deletedCount,
@@ -792,6 +808,7 @@ const server = http.createServer((req, res) => {
           balanceAfter: refundRand > 0 ? balanceAfter : balanceBefore,
           auditTxnId,
           selectedTxnId: selectedTxn?.id || null,
+          sourceTxnReversed,
         });
       } catch (error) {
         sendJson(res, 500, {
