@@ -697,12 +697,9 @@ const server = http.createServer((req, res) => {
         if (context === 'strategy' && !strategyId) { sendJson(res, 400, { error: 'strategyId required' }); return; }
         if (context === 'security' && !sourceId) { sendJson(res, 400, { error: 'sourceId required' }); return; }
 
-        // 1. Holdings to delete — scoped to parent's own or a specific family member.
-        const familyFilter = familyMemberId
-          ? `&family_member_id=eq.${encodeURIComponent(familyMemberId)}`
-          : `&family_member_id=is.null`;
+        // 1. Holdings to delete — all holdings for this user under the strategy.
         const holdingsPath = context === 'strategy'
-          ? `/rest/v1/stock_holdings_c?user_id=eq.${encodeURIComponent(userId)}&strategy_id=eq.${encodeURIComponent(strategyId)}${familyFilter}&select=id`
+          ? `/rest/v1/stock_holdings_c?user_id=eq.${encodeURIComponent(userId)}&strategy_id=eq.${encodeURIComponent(strategyId)}&select=id`
           : `/rest/v1/stock_holdings_c?id=eq.${encodeURIComponent(sourceId)}&select=id`;
         const holdingsRows = await fetchSupabaseJson(holdingsPath);
         const holdingIds = Array.isArray(holdingsRows) ? holdingsRows.map((r) => r.id).filter(Boolean) : [];

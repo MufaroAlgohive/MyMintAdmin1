@@ -5682,13 +5682,6 @@
             .from('stock_holdings_c')
             .select('id, user_id, family_member_id, security_id, quantity, avg_fill, market_value, strategy_id, strategy_name_snapshot, created_at, updated_at, status:"Status", fill_date:"Fill_date", trade_side')
             .eq('user_id', payload.userId);
-          // Scope to the right account: parent's own (family_member_id IS NULL)
-          // vs holdings the parent bought for a specific family member.
-          if (payload.familyMemberId) {
-            holdingsQuery = holdingsQuery.eq('family_member_id', payload.familyMemberId);
-          } else {
-            holdingsQuery = holdingsQuery.is('family_member_id', null);
-          }
           if (payload.context === 'strategy') {
             holdingsQuery = holdingsQuery.eq('strategy_id', payload.strategyId);
           } else {
