@@ -25,17 +25,19 @@ module.exports = async (req, res) => {
     if (action === 'get-user-transactions') {
       const body = req.body && typeof req.body === 'object' ? req.body : {};
       const userId = String(body.userId || '').trim();
+      const familyMemberId = String(body.familyMemberId || '').trim();
       if (!userId) return sendJson(res, 400, { error: 'userId required' });
 
       const baseQs = () => {
-        let qs = `user_id=eq.${encodeURIComponent(userId)}&name=ilike.${encodeURIComponent('%Strategy Investment%')}&select=id,amount,name,description,direction,status,transaction_date,created_at&order=transaction_date.desc&limit=200`;
+        let qs = `user_id=eq.${encodeURIComponent(userId)}&name=ilike.${encodeURIComponent('%Strategy Investment%')}&select=id,amount,name,description,direction,status,transaction_date,created_at,family_member_id&order=transaction_date.desc&limit=200`;
+        // Scope to the right account: family member's txns vs parent's own.
+        if (familyMemberId) qs += `&family_member_id=eq.${encodeURIComponent(familyMemberId)}`;
+        else qs += `&family_member_id=is.null`;
         if (body.dateFrom) qs += `&transaction_date=gte.${encodeURIComponent(body.dateFrom)}`;
         if (body.dateTo)   qs += `&transaction_date=lte.${encodeURIComponent(body.dateTo)}`;
         return qs;
       };
 
-      // Try with reversed=eq.false filter first; fall back without it if the
-      // column doesn't exist yet (ALTER TABLE not yet run on this database).
       let rows;
       try {
         rows = await fetchSupabaseJson(`/rest/v1/transactions?${baseQs()}&reversed=eq.false`);
@@ -50,6 +52,7 @@ module.exports = async (req, res) => {
     if (action === 'reverse-investor') {
       const body = req.body && typeof req.body === 'object' ? req.body : {};
       const userId = String(body.userId || '').trim();
+      const familyMemberId = String(body.familyMemberId || '').trim();
       const context = body.context === 'security' ? 'security' : 'strategy';
       const strategyId = String(body.strategyId || '').trim();
       const sourceId = String(body.sourceId || '').trim();
@@ -60,9 +63,12 @@ module.exports = async (req, res) => {
       if (context === 'strategy' && !strategyId) return sendJson(res, 400, { error: 'strategyId required for strategy context' });
       if (context === 'security' && !sourceId) return sendJson(res, 400, { error: 'sourceId required for security context' });
 
-      // 1. Holdings to delete.
+      // 1. Holdings to delete — scoped to parent's own or a specific family member.
+      const familyFilter = familyMemberId
+        ? `&family_member_id=eq.${encodeURIComponent(familyMemberId)}`
+        : `&family_member_id=is.null`;
       const holdingsPath = context === 'strategy'
-        ? `/rest/v1/stock_holdings_c?user_id=eq.${encodeURIComponent(userId)}&strategy_id=eq.${encodeURIComponent(strategyId)}&select=id`
+        ? `/rest/v1/stock_holdings_c?user_id=eq.${encodeURIComponent(userId)}&strategy_id=eq.${encodeURIComponent(strategyId)}${familyFilter}&select=id`
         : `/rest/v1/stock_holdings_c?id=eq.${encodeURIComponent(sourceId)}&select=id`;
       const holdingsRows = await fetchSupabaseJson(holdingsPath);
       const holdingIds = Array.isArray(holdingsRows) ? holdingsRows.map((r) => r.id).filter(Boolean) : [];
@@ -80,12 +86,25 @@ module.exports = async (req, res) => {
       }
       const refundRand = refundCents / 100;
 
-      // 3. Current wallet (if any).
-      const walletRows = await fetchSupabaseJson(
-        `/rest/v1/wallets?user_id=eq.${encodeURIComponent(userId)}&select=id,balance`
-      );
-      const wallet = Array.isArray(walletRows) && walletRows[0] ? walletRows[0] : null;
-      const balanceBefore = Number(wallet?.balance || 0);
+      // 3. Read the right balance source: family_members.available_balance for
+      //    a family-member account, wallets.balance for the parent themselves.
+      let wallet = null;
+      let familyMember = null;
+      let balanceBefore = 0;
+      if (familyMemberId) {
+        const fmRows = await fetchSupabaseJson(
+          `/rest/v1/family_members?id=eq.${encodeURIComponent(familyMemberId)}&select=id,available_balance`
+        );
+        familyMember = Array.isArray(fmRows) && fmRows[0] ? fmRows[0] : null;
+        if (!familyMember) return sendJson(res, 400, { error: 'Family member not found' });
+        balanceBefore = Number(familyMember.available_balance || 0);
+      } else {
+        const walletRows = await fetchSupabaseJson(
+          `/rest/v1/wallets?user_id=eq.${encodeURIComponent(userId)}&select=id,balance`
+        );
+        wallet = Array.isArray(walletRows) && walletRows[0] ? walletRows[0] : null;
+        balanceBefore = Number(wallet?.balance || 0);
+      }
       const balanceAfter = balanceBefore + refundRand;
       const nowIso = new Date().toISOString();
 
@@ -113,10 +132,16 @@ module.exports = async (req, res) => {
         }
       }
 
-      // 5. Apply refund.
+      // 5. Apply refund to the right account.
       let walletUpdated = false;
       if (refundRand > 0) {
-        if (wallet) {
+        if (familyMember) {
+          const updated = await requestSupabaseJson(
+            `/rest/v1/family_members?id=eq.${encodeURIComponent(familyMember.id)}&select=id,available_balance`,
+            { method: 'PATCH', useServiceRoleAuth: true, body: { available_balance: balanceAfter, updated_at: nowIso }, extraHeaders: { Prefer: 'return=representation' } }
+          );
+          walletUpdated = Array.isArray(updated) && updated.length > 0;
+        } else if (wallet) {
           const updated = await requestSupabaseJson(
             `/rest/v1/wallets?id=eq.${encodeURIComponent(wallet.id)}&select=id,balance`,
             { method: 'PATCH', useServiceRoleAuth: true, body: { balance: balanceAfter, updated_at: nowIso }, extraHeaders: { Prefer: 'return=representation' } }
@@ -150,6 +175,7 @@ module.exports = async (req, res) => {
             useServiceRoleAuth: true,
             body: {
               user_id: userId,
+              family_member_id: familyMemberId || null,
               amount: refundCents,
               direction: 'credit',
               status: 'posted',

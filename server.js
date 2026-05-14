@@ -624,9 +624,12 @@ const server = http.createServer((req, res) => {
         // Action: fetch a user's strategy-investment transactions (service-role bypasses RLS).
         if (action === 'get-user-transactions') {
           const userId = String(body?.userId || '').trim();
+          const familyMemberId = String(body?.familyMemberId || '').trim();
           if (!userId) { sendJson(res, 400, { error: 'userId required' }); return; }
           const buildTxnQs = () => {
-            let qs = `user_id=eq.${encodeURIComponent(userId)}&name=ilike.${encodeURIComponent('%Strategy Investment%')}&select=id,amount,name,description,direction,status,transaction_date,created_at&order=transaction_date.desc&limit=200`;
+            let qs = `user_id=eq.${encodeURIComponent(userId)}&name=ilike.${encodeURIComponent('%Strategy Investment%')}&select=id,amount,name,description,direction,status,transaction_date,created_at,family_member_id&order=transaction_date.desc&limit=200`;
+            if (familyMemberId) qs += `&family_member_id=eq.${encodeURIComponent(familyMemberId)}`;
+            else qs += `&family_member_id=is.null`;
             if (body?.dateFrom) qs += `&transaction_date=gte.${encodeURIComponent(body.dateFrom)}`;
             if (body?.dateTo)   qs += `&transaction_date=lte.${encodeURIComponent(body.dateTo)}`;
             return qs;
@@ -683,6 +686,7 @@ const server = http.createServer((req, res) => {
   // Helper used by both /api/orderbook/reverse-investor and /api/orderbook/send-csv?action=reverse-investor.
   async function runReverseInvestor(res, body) {
         const userId = String(body?.userId || '').trim();
+        const familyMemberId = String(body?.familyMemberId || '').trim();
         const context = body?.context === 'security' ? 'security' : 'strategy';
         const strategyId = String(body?.strategyId || '').trim();
         const sourceId = String(body?.sourceId || '').trim();
@@ -693,9 +697,12 @@ const server = http.createServer((req, res) => {
         if (context === 'strategy' && !strategyId) { sendJson(res, 400, { error: 'strategyId required' }); return; }
         if (context === 'security' && !sourceId) { sendJson(res, 400, { error: 'sourceId required' }); return; }
 
-        // 1. Holdings to delete.
+        // 1. Holdings to delete — scoped to parent's own or a specific family member.
+        const familyFilter = familyMemberId
+          ? `&family_member_id=eq.${encodeURIComponent(familyMemberId)}`
+          : `&family_member_id=is.null`;
         const holdingsPath = context === 'strategy'
-          ? `/rest/v1/stock_holdings_c?user_id=eq.${encodeURIComponent(userId)}&strategy_id=eq.${encodeURIComponent(strategyId)}&select=id`
+          ? `/rest/v1/stock_holdings_c?user_id=eq.${encodeURIComponent(userId)}&strategy_id=eq.${encodeURIComponent(strategyId)}${familyFilter}&select=id`
           : `/rest/v1/stock_holdings_c?id=eq.${encodeURIComponent(sourceId)}&select=id`;
         const holdingsRows = await fetchSupabaseJson(holdingsPath);
         const holdingIds = Array.isArray(holdingsRows) ? holdingsRows.map((r) => r.id).filter(Boolean) : [];
@@ -713,12 +720,25 @@ const server = http.createServer((req, res) => {
         }
         const refundRand = refundCents / 100;
 
-        // 3. Current wallet (if any).
-        const walletRows = await fetchSupabaseJson(
-          `/rest/v1/wallets?user_id=eq.${encodeURIComponent(userId)}&select=id,balance`
-        );
-        const wallet = Array.isArray(walletRows) && walletRows[0] ? walletRows[0] : null;
-        const balanceBefore = Number(wallet?.balance || 0);
+        // 3. Right balance source: family_members.available_balance for a
+        //    family-member account, wallets.balance for the parent themselves.
+        let wallet = null;
+        let familyMember = null;
+        let balanceBefore = 0;
+        if (familyMemberId) {
+          const fmRows = await fetchSupabaseJson(
+            `/rest/v1/family_members?id=eq.${encodeURIComponent(familyMemberId)}&select=id,available_balance`
+          );
+          familyMember = Array.isArray(fmRows) && fmRows[0] ? fmRows[0] : null;
+          if (!familyMember) { sendJson(res, 400, { error: 'Family member not found' }); return; }
+          balanceBefore = Number(familyMember.available_balance || 0);
+        } else {
+          const walletRows = await fetchSupabaseJson(
+            `/rest/v1/wallets?user_id=eq.${encodeURIComponent(userId)}&select=id,balance`
+          );
+          wallet = Array.isArray(walletRows) && walletRows[0] ? walletRows[0] : null;
+          balanceBefore = Number(wallet?.balance || 0);
+        }
         const balanceAfter = balanceBefore + refundRand;
         const nowIso = new Date().toISOString();
 
@@ -746,10 +766,21 @@ const server = http.createServer((req, res) => {
           }
         }
 
-        // 5. Apply refund.
+        // 5. Apply refund to the right account.
         let walletUpdated = false;
         if (refundRand > 0) {
-          if (wallet) {
+          if (familyMember) {
+            const updated = await requestSupabaseJson(
+              `/rest/v1/family_members?id=eq.${encodeURIComponent(familyMember.id)}&select=id,available_balance`,
+              {
+                method: 'PATCH',
+                useServiceRoleAuth: true,
+                body: { available_balance: balanceAfter, updated_at: nowIso },
+                extraHeaders: { Prefer: 'return=representation' }
+              }
+            );
+            walletUpdated = Array.isArray(updated) && updated.length > 0;
+          } else if (wallet) {
             const updated = await requestSupabaseJson(
               `/rest/v1/wallets?id=eq.${encodeURIComponent(wallet.id)}&select=id,balance`,
               {
@@ -793,6 +824,7 @@ const server = http.createServer((req, res) => {
               useServiceRoleAuth: true,
               body: {
                 user_id: userId,
+                family_member_id: familyMemberId || null,
                 amount: refundCents,
                 direction: 'credit',
                 status: 'posted',

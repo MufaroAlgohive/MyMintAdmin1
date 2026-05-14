@@ -1847,6 +1847,7 @@
           sourceId: row.sourceId || '',
           sourceIds: row.sourceId ? [String(row.sourceId)] : [],
           userId: row.userId || '',
+          familyMemberId: row.familyMemberId || null,
           securityId: row.securityId || targetRow.securityId || '',
           strategyId: row.strategyId || null,
           strategyName: row.strategyName || null,
@@ -1931,6 +1932,7 @@
                 data-context="security"
                 data-user-id="${escapeHtml(String(detailRow.userId || ''))}"
                 data-user-name="${escapeHtml(detailRow.clientNameFull || detailRow.clientName || '')}"
+                data-family-member-id="${escapeHtml(String(detailRow.familyMemberId || ''))}"
                 data-source-id="${escapeHtml(String(detailRow.sourceId || ''))}"
                 data-security-id="${escapeHtml(String(detailRow.securityId || ''))}"
                 data-instrument="${escapeHtml(detailRow.instrumentName || '')}"
@@ -2157,18 +2159,24 @@
           return t > l ? t : l;
         }, 0);
 
+        // Key by (user_id|family_member_id) so a parent's own holdings and the
+        // holdings they bought for each child appear as separate investor rows.
         const userMap = new Map();
         (rawRows || []).filter((r) => r.strategyId === strategyId).forEach((r) => {
           if (!r.userId) return;
-          if (!userMap.has(r.userId)) {
-            userMap.set(r.userId, {
-              userId: r.userId, clientName: r.clientName,
+          const key = `${r.userId}|${r.familyMemberId || ''}`;
+          if (!userMap.has(key)) {
+            userMap.set(key, {
+              userId: r.userId,
+              familyMemberId: r.familyMemberId || null,
+              familyMemberRelationship: r.familyMemberRelationship || null,
+              clientName: r.clientName,
               clientAccountId: r.clientAccountId, clientIdRegNo: r.clientIdRegNo,
               totalMarketValue: 0, holdingsCount: 0,
               sourceIds: [], securityIds: []
             });
           }
-          const u = userMap.get(r.userId);
+          const u = userMap.get(key);
           u.totalMarketValue += r.marketValueNumber || 0;
           u.holdingsCount += 1;
           if (r.sourceId) u.sourceIds.push(String(r.sourceId));
@@ -2284,6 +2292,7 @@
                   data-context="strategy"
                   data-user-id="${escapeHtml(String(u.userId || ''))}"
                   data-user-name="${escapeHtml(u.clientName || '')}"
+                  data-family-member-id="${escapeHtml(String(u.familyMemberId || ''))}"
                   data-strategy-id="${escapeHtml(String(row.strategyId || ''))}"
                   data-strategy-name="${escapeHtml(row.strategyName || '')}"
                   title="Reverse this investor's order and refund their wallet">
@@ -2401,6 +2410,7 @@
             sourceId: item.sourceId || '',
             sourceIds: item.sourceId ? [String(item.sourceId)] : [],
             userId: item.userId || '',
+            familyMemberId: item.familyMemberId || null,
             securityId: item.securityId || group.securityId || '',
             strategyId: item.strategyId || group.strategyId || null,
             strategyName: item.strategyName || group.strategyName || null,
@@ -4703,7 +4713,7 @@
       const [holdingsResult, rebEventsResult, rebBatchesResult] = await Promise.all([
         supabaseClient
           .from('stock_holdings_c')
-          .select('id, user_id, security_id, quantity, avg_fill, market_value, unrealized_pnl, as_of_date, created_at, updated_at, status:"Status", fill_date:"Fill_date", exit_date:"Exit_date", avg_exit, strategy_id, trade_side, is_active, closed_reason, closed_at, rebalance_batch_id, strategy_name_snapshot')
+          .select('id, user_id, family_member_id, security_id, quantity, avg_fill, market_value, unrealized_pnl, as_of_date, created_at, updated_at, status:"Status", fill_date:"Fill_date", exit_date:"Exit_date", avg_exit, strategy_id, trade_side, is_active, closed_reason, closed_at, rebalance_batch_id, strategy_name_snapshot')
           .order('updated_at', { ascending: false }),
         supabaseClient
           .from('rebalance_event')
@@ -4743,6 +4753,8 @@
       const onboardingPackDetailsMap = {};
       const strategiesMap = {};
       const orderEmailsMap = {};
+      const familyMembersMap = {};
+      const familyMemberIds = [...new Set(holdings.map((row) => row.family_member_id).filter(Boolean))];
       const strategyIds = [...new Set([
         ...holdings.map((row) => row.strategy_id),
         ...rebBatches.map((b) => b.strategy_id),
@@ -4759,6 +4771,19 @@
             .then(({ data, error }) => {
               if (error) { console.error('Securities load error:', error); return; }
               (data || []).forEach((s) => { securitiesMap[s.id] = s; });
+            })
+        );
+      }
+
+      if (familyMemberIds.length) {
+        parallelQueries.push(
+          supabaseClient
+            .from('family_members')
+            .select('id, first_name, last_name, id_number, mint_number, available_balance, relationship')
+            .in('id', familyMemberIds)
+            .then(({ data, error }) => {
+              if (error) { console.error('Family members load error:', error); return; }
+              (data || []).forEach((fm) => { familyMembersMap[fm.id] = fm; });
             })
         );
       }
@@ -4844,11 +4869,16 @@
         const ticker = security.symbol ?? '-';
         const isin = security.isin ?? '-';
         const timestamp = row.updated_at || row.created_at || row.as_of_date || row.fill_date || null;
+        const familyMember = row.family_member_id ? (familyMembersMap[row.family_member_id] || null) : null;
+        const familyMemberName = familyMember
+          ? [familyMember.first_name, familyMember.last_name].filter(Boolean).join(' ').trim()
+          : '';
         const profileName = [profile.first_name, profile.last_name].filter(Boolean).join(' ').trim();
-        const clientName = profileName || extractNameFromPackDetails(packDetails) || 'Unknown Client';
+        const clientName = familyMemberName || profileName || extractNameFromPackDetails(packDetails) || 'Unknown Client';
         const accountSeed = deterministicNumberFromText(row.user_id || row.id || `${index + 1}`);
         const profileMintNumber = String(profile.mint_number || '').trim();
-        const clientAccountId = profileMintNumber || `MINT-${String(accountSeed % 1000000).padStart(6, '0')}`;
+        const familyMint = String(familyMember?.mint_number || '').trim();
+        const clientAccountId = familyMint || profileMintNumber || `MINT-${String(accountSeed % 1000000).padStart(6, '0')}`;
         const bndReference = buildBndReference({
           timestamp,
           orderbookSequence: activeOrderbookSequence,
@@ -4857,7 +4887,8 @@
         const clientIdFromPack = extractIdFromPackDetails(packDetails);
         const mintNumber = String(profile.mint_number || '').trim();
         const profileIdNumber = String(profile.id_number || '').trim();
-        const clientIdRegNoValue = profileIdNumber || mintNumber || clientIdFromPack || '-';
+        const familyIdNumber = String(familyMember?.id_number || '').trim();
+        const clientIdRegNoValue = familyIdNumber || profileIdNumber || mintNumber || clientIdFromPack || '-';
         const settlementAccount = 'ComputerShare Nominees';
         const settlementAccountOptions = ['ComputerShare Nominees'];
         const brokerRef = 'Longmark';
@@ -4899,6 +4930,9 @@
         return {
           sourceId: row.id || '',
           userId: row.user_id || '',
+          familyMemberId: row.family_member_id || null,
+          familyMemberName: familyMemberName || null,
+          familyMemberRelationship: familyMember?.relationship || null,
           securityId: row.security_id || '',
           line: index + 1,
           instrumentName,
@@ -5616,16 +5650,25 @@
         if (!els.modal) return;
 
         _reverseState.payload = payload;
+        const isFamily = !!payload.familyMemberId;
         els.investorName.textContent = payload.userName || '-';
         if (payload.context === 'strategy') {
           els.targetLabel.textContent = 'Strategy';
           els.targetName.textContent = payload.strategyName || '-';
-          els.context.textContent = 'Delete this investor\'s holdings under the strategy and refund their wallet.';
+          els.context.textContent = isFamily
+            ? `Delete this family member's holdings under the strategy and refund their available balance.`
+            : `Delete this investor's holdings under the strategy and refund their wallet.`;
         } else {
           els.targetLabel.textContent = 'Security';
           els.targetName.textContent = payload.instrument || payload.ticker || '-';
-          els.context.textContent = 'Delete this holding and refund the investor\'s wallet.';
+          els.context.textContent = isFamily
+            ? `Delete this holding and refund the family member's available balance.`
+            : `Delete this holding and refund the investor's wallet.`;
         }
+        const beforeLabel = document.getElementById('reverseWalletBeforeLabel');
+        const afterLabel = document.getElementById('reverseWalletAfterLabel');
+        if (beforeLabel) beforeLabel.textContent = isFamily ? 'Available balance (before)' : 'Wallet balance (before)';
+        if (afterLabel) afterLabel.textContent = isFamily ? 'Available balance (after)' : 'Wallet balance (after)';
         els.loading.style.display = 'block';
         els.loading.style.color = '';
         els.loading.textContent = 'Loading order details...';
@@ -5637,8 +5680,15 @@
         try {
           let holdingsQuery = supabaseClient
             .from('stock_holdings_c')
-            .select('id, user_id, security_id, quantity, avg_fill, market_value, strategy_id, strategy_name_snapshot, created_at, updated_at, status:"Status", fill_date:"Fill_date", trade_side')
+            .select('id, user_id, family_member_id, security_id, quantity, avg_fill, market_value, strategy_id, strategy_name_snapshot, created_at, updated_at, status:"Status", fill_date:"Fill_date", trade_side')
             .eq('user_id', payload.userId);
+          // Scope to the right account: parent's own (family_member_id IS NULL)
+          // vs holdings the parent bought for a specific family member.
+          if (payload.familyMemberId) {
+            holdingsQuery = holdingsQuery.eq('family_member_id', payload.familyMemberId);
+          } else {
+            holdingsQuery = holdingsQuery.is('family_member_id', null);
+          }
           if (payload.context === 'strategy') {
             holdingsQuery = holdingsQuery.eq('strategy_id', payload.strategyId);
           } else {
@@ -5659,14 +5709,26 @@
             (secs || []).forEach((s) => { securityNameById[s.id] = s.name || s.symbol || s.id; });
           }
 
-          const { data: walletRow, error: wErr } = await supabaseClient
-            .from('wallets')
-            .select('id, balance')
-            .eq('user_id', payload.userId)
-            .maybeSingle();
-          if (wErr) throw new Error(wErr.message);
-          _reverseState.walletId = walletRow?.id || null;
-          _reverseState.walletBefore = Number(walletRow?.balance || 0);
+          if (payload.familyMemberId) {
+            // Child/family-member account: balance lives in family_members.available_balance.
+            const { data: fmRow, error: fmErr } = await supabaseClient
+              .from('family_members')
+              .select('id, available_balance')
+              .eq('id', payload.familyMemberId)
+              .maybeSingle();
+            if (fmErr) throw new Error(fmErr.message);
+            _reverseState.walletId = fmRow?.id || null;
+            _reverseState.walletBefore = Number(fmRow?.available_balance || 0);
+          } else {
+            const { data: walletRow, error: wErr } = await supabaseClient
+              .from('wallets')
+              .select('id, balance')
+              .eq('user_id', payload.userId)
+              .maybeSingle();
+            if (wErr) throw new Error(wErr.message);
+            _reverseState.walletId = walletRow?.id || null;
+            _reverseState.walletBefore = Number(walletRow?.balance || 0);
+          }
 
           const targetName = payload.context === 'strategy'
             ? payload.strategyName
@@ -5680,7 +5742,10 @@
           const dates = holdings.map((h) => new Date(h.created_at || 0).getTime()).filter((n) => Number.isFinite(n) && n > 0);
           const minDate = dates.length ? Math.min(...dates) : 0;
           const maxDate = dates.length ? Math.max(...dates) : 0;
-          const txnBody = { userId: payload.userId };
+          const txnBody = {
+            userId: payload.userId,
+            familyMemberId: payload.familyMemberId || null,
+          };
           if (minDate && maxDate) {
             txnBody.dateFrom = new Date(minDate - 10 * 24 * 60 * 60 * 1000).toISOString();
             txnBody.dateTo   = new Date(maxDate + 10 * 24 * 60 * 60 * 1000).toISOString();
@@ -5817,6 +5882,7 @@
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiToken}` },
             body: JSON.stringify({
               userId: payload.userId,
+              familyMemberId: payload.familyMemberId || null,
               context: payload.context,
               strategyId: payload.strategyId || null,
               sourceId: payload.sourceId || null,
@@ -6335,6 +6401,7 @@
         context: d.context || 'strategy',
         userId: d.userId || '',
         userName: d.userName || '',
+        familyMemberId: d.familyMemberId || null,
         strategyId: d.strategyId || null,
         strategyName: d.strategyName || '',
         sourceId: d.sourceId || null,
@@ -6601,8 +6668,8 @@
         </div>
         <div class="reverse-summary-block">
           <div class="reverse-summary-row"><span>Refund amount</span><strong id="reverseRefundAmount">R 0.00</strong></div>
-          <div class="reverse-summary-row"><span>Wallet balance (before)</span><strong id="reverseWalletBefore">R 0.00</strong></div>
-          <div class="reverse-summary-row"><span>Wallet balance (after)</span><strong id="reverseWalletAfter" style="color:#15803d;">R 0.00</strong></div>
+          <div class="reverse-summary-row"><span id="reverseWalletBeforeLabel">Wallet balance (before)</span><strong id="reverseWalletBefore">R 0.00</strong></div>
+          <div class="reverse-summary-row"><span id="reverseWalletAfterLabel">Wallet balance (after)</span><strong id="reverseWalletAfter" style="color:#15803d;">R 0.00</strong></div>
         </div>
         <div id="reverseWarning" class="reverse-warning" style="display:none;"></div>
         <div class="price-input-group">
