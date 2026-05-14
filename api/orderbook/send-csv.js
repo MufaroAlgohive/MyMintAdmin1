@@ -80,19 +80,22 @@ module.exports = async (req, res) => {
       const balanceAfter = balanceBefore + refundRand;
       const nowIso = new Date().toISOString();
 
-      // 4. Delete holdings (service-role bypasses RLS) + verify.
+      // 4. Delete holdings (service-role bypasses RLS).
+      // Use bare DELETE (no Prefer/select) so PostgREST returns 204 No Content —
+      // some tables/views reject return=representation on DELETE with 405.
+      // We verify success with a follow-up SELECT instead.
       let deletedCount = 0;
       let leftoverIds = [];
       if (holdingIds.length) {
-        const deleted = await requestSupabaseJson(
-          `/rest/v1/stock_holdings_c?id=in.(${buildInFilter(holdingIds)})&select=id`,
-          { method: 'DELETE', useServiceRoleAuth: true, extraHeaders: { Prefer: 'return=representation' } }
+        await requestSupabaseJson(
+          `/rest/v1/stock_holdings_c?id=in.(${buildInFilter(holdingIds)})`,
+          { method: 'DELETE', useServiceRoleAuth: true }
         );
-        deletedCount = Array.isArray(deleted) ? deleted.length : 0;
         const stillThere = await fetchSupabaseJson(
           `/rest/v1/stock_holdings_c?id=in.(${buildInFilter(holdingIds)})&select=id`
         );
         leftoverIds = Array.isArray(stillThere) ? stillThere.map((r) => r.id) : [];
+        deletedCount = holdingIds.length - leftoverIds.length;
         if (leftoverIds.length) {
           return sendJson(res, 500, {
             error: 'Holdings delete did not remove all rows',
