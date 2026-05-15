@@ -4756,6 +4756,7 @@
       ])];
 
       const securitiesMap = {};
+      const intradayPriceMap = {};   // security_id → latest current_price (Rands)
       const profilesMap = {};
       const onboardingPackDetailsMap = {};
       const strategiesMap = {};
@@ -4778,6 +4779,26 @@
             .then(({ data, error }) => {
               if (error) { console.error('Securities load error:', error); return; }
               (data || []).forEach((s) => { securitiesMap[s.id] = s; });
+            })
+        );
+
+        // Fetch the latest intraday price per security from stock_intraday_c.
+        // current_price is the live market price that drives Expected Fill.
+        parallelQueries.push(
+          supabaseClient
+            .from('stock_intraday_c')
+            .select('security_id, current_price, timestamp')
+            .in('security_id', securityIds)
+            .order('timestamp', { ascending: false })
+            .then(({ data, error }) => {
+              if (error) { console.error('Intraday prices load error:', error); return; }
+              const seen = new Set();
+              (data || []).forEach((row) => {
+                if (row.security_id && !seen.has(row.security_id) && row.current_price != null) {
+                  seen.add(row.security_id);
+                  intradayPriceMap[row.security_id] = Number(row.current_price);
+                }
+              });
             })
         );
       }
@@ -4905,8 +4926,10 @@
         const avgFillRaw = (row.avg_fill != null && row.avg_fill !== '') ? Number(row.avg_fill) : NaN;
         const avgFillValue = Number.isFinite(avgFillRaw) ? (avgFillRaw / 100) : NaN;
         const hasAvgFill = Number.isFinite(avgFillValue);
-        const lastPrice = Number(security.last_price);
-        const hasLastPrice = Number.isFinite(lastPrice);
+        // Prefer live intraday price; fall back to securities_c.last_price.
+        const rawLastPrice = intradayPriceMap[row.security_id] ?? Number(security.last_price);
+        const lastPrice = Number(rawLastPrice);
+        const hasLastPrice = Number.isFinite(lastPrice) && lastPrice > 0;
         // Expected Fill uses current market price primarily, falls back to avg fill.
         const expectedFillPrice = hasLastPrice ? lastPrice : (hasAvgFill ? avgFillValue : NaN);
         const hasExpectedFillPrice = Number.isFinite(expectedFillPrice);
