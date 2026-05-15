@@ -41,18 +41,44 @@ const handleAddWallet = async (req, res, token) => {
   if (account_type === 'child') {
     try {
       const members = await fetchSupabaseJson(
-        `/rest/v1/family_members?id=eq.${encodeURIComponent(user_id)}&select=id,available_balance&limit=1`
+        `/rest/v1/family_members?id=eq.${encodeURIComponent(user_id)}&select=id,available_balance,primary_user_id&limit=1`
       );
       if (!Array.isArray(members) || members.length === 0) {
         return sendJson(res, 404, { error: 'Child account not found' });
       }
       const member = members[0];
-      const newBalance = Number(member.available_balance || 0) + numericAmount;
+      // available_balance is stored in cents — convert the Rand amount before adding.
+      const amountCents = Math.round(numericAmount * 100);
+      const newBalance = Number(member.available_balance || 0) + amountCents;
+      const nowIso = new Date().toISOString();
       await requestSupabaseJson(`/rest/v1/family_members?id=eq.${encodeURIComponent(user_id)}`, {
         method: 'PATCH',
         useServiceRoleAuth: true,
-        body: { available_balance: newBalance, updated_at: new Date().toISOString() },
+        body: { available_balance: newBalance, updated_at: nowIso },
       });
+      // Insert into transactions table (user_id = parent, family_member_id = child).
+      const parentUserId = member.primary_user_id;
+      if (parentUserId) {
+        try {
+          await requestSupabaseJson('/rest/v1/transactions', {
+            method: 'POST',
+            useServiceRoleAuth: true,
+            body: {
+              user_id: parentUserId,
+              family_member_id: user_id,
+              amount: amountCents,
+              direction: 'credit',
+              status: 'posted',
+              name: 'Top Up',
+              description: 'Wallet top up',
+              currency: 'ZAR',
+              transaction_date: nowIso,
+            },
+          });
+        } catch (txnErr) {
+          console.error('Child transaction insert failed:', txnErr.message);
+        }
+      }
     } catch (e) {
       return sendJson(res, 500, { error: 'child-wallet-upsert: ' + e.message });
     }
