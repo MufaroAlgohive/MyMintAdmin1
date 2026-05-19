@@ -1064,8 +1064,8 @@
       let minInv, cashAmt;
       if (hasIntraday && totalCents > 0) {
         const equitiesR = totalCents / 100;
-        cashAmt = equitiesR * 0.08;
-        minInv = equitiesR + cashAmt;
+        cashAmt = null;
+        minInv = equitiesR;
       } else {
         minInv = strategy.min_investment ? strategy.min_investment / 100 : null;
         cashAmt = minInv ? minInv * 0.08 : null;
