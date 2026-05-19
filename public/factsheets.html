@@ -1002,29 +1002,19 @@
         }
       }
 
-      /* Intraday prices — latest current_price (cents) per security for min-investment calc */
+      /* Intraday prices — latest current_price (cents) per symbol, direct symbol match */
       const intradayBySymbol = {};
       if (holdings.length > 0) {
-        const secIdsForIntraday = [];
-        const secIdToSym = {};
-        holdings.forEach(h => {
-          const sym = h.ticker || h.symbol || h;
-          const sec = securitiesMap.get(sym) || securitiesMap.get(normalizeSymbol(sym));
-          if (sec?.id && !secIdToSym[sec.id]) {
-            secIdsForIntraday.push(sec.id);
-            secIdToSym[sec.id] = sym;
-          }
-        });
-        if (secIdsForIntraday.length > 0) {
+        const symbols = [...new Set(holdings.map(h => h.ticker || h.symbol || h).filter(Boolean))];
+        if (symbols.length > 0) {
           const { data: intradayRows } = await supabaseClient
             .from('stock_intraday_c')
-            .select('security_id,current_price,timestamp')
-            .in('security_id', secIdsForIntraday)
+            .select('symbol,current_price,timestamp')
+            .in('symbol', symbols)
             .order('timestamp', { ascending: false });
           (intradayRows || []).forEach(r => {
-            const sym = secIdToSym[r.security_id];
-            if (sym && intradayBySymbol[sym] == null) {
-              intradayBySymbol[sym] = Number(r.current_price);
+            if (r.symbol && intradayBySymbol[r.symbol] == null) {
+              intradayBySymbol[r.symbol] = Number(r.current_price);
             }
           });
         }
@@ -1063,12 +1053,12 @@
         };
       });
 
-      /* Min investment — live intraday prices (cents) summed × 1.08, fallback to min_investment/100 */
+      /* Min investment — sum(shares × intraday current_price cents) ÷ 100 × 1.08 */
       let totalCents = 0, hasIntraday = false;
       holdings.forEach(h => {
         const sym = h.ticker || h.symbol || h;
         const shares = Number(h.shares || h.quantity || 1);
-        const priceCents = intradayBySymbol[sym] ?? intradayBySymbol[normalizeSymbol(sym)] ?? null;
+        const priceCents = intradayBySymbol[sym] ?? null;
         if (priceCents != null) { totalCents += shares * priceCents; hasIntraday = true; }
       });
       let minInv, cashAmt;
