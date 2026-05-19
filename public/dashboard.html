@@ -1974,7 +1974,6 @@
             const holdings = (strat && Array.isArray(strat.holdings)) ? strat.holdings : [];
             const dataBySym = {};
             (_returnInsightsData || []).forEach(a => { dataBySym[a.symbol] = a; });
-            const wSum = holdings.reduce((acc, h) => acc + (Number(h.weight) || 0), 0) || 1;
             /* For 1D: pre-compute today_basket (cents) = Σ(current_price_cents × shares) */
             let _todayBasket1d = 0;
             const _stratBvRow = strategyReturnsMap.get(_riSelectedStratId) || {};
@@ -2005,10 +2004,7 @@
               } else {
                 r = a[assetField] != null ? Number(a[assetField]) : null;
               }
-              const w   = Number(h.weight) || 0;
-              const wPct= wSum > 1.5 ? (w) : w;
-              const contrib = (tab === '1d') ? r : (r != null ? r * wPct : null);
-              return { id: sym, name: sym.replace('.JO',''), logo_url: a.logo_url || null, _val: contrib };
+              return { id: sym, name: sym.replace('.JO',''), logo_url: a.logo_url || null, _val: r };
             }).filter(x => x._val != null).sort((a, b) => b._val - a._val);
 
             if (!sAll.length) {
