@@ -884,7 +884,7 @@
             </div>
 
             <!-- ── KPI Strip (7 cols) ── -->
-            <div id="ovKpiStrip" style="display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin-bottom:14px;">
+            <div id="ovKpiStrip" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px;">
               <!-- populated by JS -->
             </div>
 
@@ -5902,16 +5902,10 @@
             icon: '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>' },
           { label: '1Y Return', value: r1y != null ? ovFmtPct(r1y) : '—', positive: r1y != null ? r1y > 0 : null,
             icon: '<path d="M12 2v20M2 12h20"/>' },
-          { label: 'Sharpe Ratio', value: summary.sharpe_ratio != null ? Number(summary.sharpe_ratio).toFixed(2) : '—', positive: summary.sharpe_ratio > 1,
-            icon: '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>' },
           { label: 'Max Drawdown', value: summary.max_drawdown != null ? ovFmtPct(Number(summary.max_drawdown)*100) : '—', positive: false,
             icon: '<polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/>' },
           { label: 'Volatility', value: summary.volatility != null ? ovFmtPct(Number(summary.volatility)*100) : '—', positive: null,
             icon: '<polyline points="2 12 6 8 10 14 14 10 18 14 22 12"/>' },
-          { label: 'Beta', value: summary.beta != null ? Number(summary.beta).toFixed(2) : '—', positive: null,
-            icon: '<path d="M3 3v18h18"/><path d="M3 9l4 4 4-4 4 4 4-4"/>' },
-          { label: 'Alpha', value: summary.alpha != null ? ovFmtPct(Number(summary.alpha)*100) : '—', positive: summary.alpha > 0,
-            icon: '<path d="M6 18L18 6M8 6h10v10"/>' },
         ];
         strip.innerHTML = kpis.map(k => {
           const col = k.positive === true ? '#059669' : k.positive === false ? '#dc2626' : '#0f172a';
