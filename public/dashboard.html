@@ -5640,8 +5640,7 @@
           if (lp > 0) {
             totalAum += (qty * lp);
           } else {
-            let fill = Number(r.avg_fill) || 0;
-            if (fill * qty > 10 * (Number(r.market_value) || 0) && Number(r.market_value) > 0) fill /= 100;
+            const fill = (Number(r.avg_fill) || 0) / 100;
             totalAum += (fill * qty);
           }
         });
@@ -6249,10 +6248,8 @@
           const uid = r.user_id;
           if (!byUser[uid]) byUser[uid] = { costBasis: 0, currentVal: 0, inception: r.created_at, pending: false };
           const qty = Number(r.quantity) || 0;
-          /* Cost basis: avg_fill × qty (cents → rands) */
-          let fill = Number(r.avg_fill) || 0;
-          const mv = Number(r.market_value) || 0;
-          if (fill * qty > 10 * mv && mv > 0) fill /= 100;
+          /* Cost basis: avg_fill is in ZAc cents → divide by 100 to get rands */
+          const fill = (Number(r.avg_fill) || 0) / 100;
           byUser[uid].costBasis += (fill * qty);
           /* Live current value: qty × last_price (cents → rands) */
           const lp = secPriceMap[r.security_id] || 0;
