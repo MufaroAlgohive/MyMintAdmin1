@@ -1311,11 +1311,14 @@
                     <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Strategy Composition</p>
                     <p id="rebCompositionMeta" class="text-xs text-slate-400 mt-0.5">Select a strategy to begin</p>
                   </div>
-                  <div id="rebWalletPoolBox" class="hidden flex-shrink-0 text-right">
-                    <p class="text-[10px] font-semibold text-violet-500 uppercase tracking-wider">Wallet Pool</p>
-                    <p id="rebWalletPoolValue" class="text-sm font-mono font-bold text-violet-700 mt-0.5">R 0.00</p>
+                  <button id="rebWalletPoolBox" type="button" class="hidden flex-shrink-0 text-right rounded-lg px-3 py-1.5 hover:bg-violet-50 transition cursor-pointer group" title="View per-user wallet balances · make a wallet-only purchase">
+                    <p class="text-[10px] font-semibold text-violet-500 uppercase tracking-wider flex items-center justify-end gap-1">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0-2 2c0 1.1.9 2 2 2h4v-4h-4z"/></svg>
+                      Wallet Pool
+                    </p>
+                    <p id="rebWalletPoolValue" class="text-sm font-mono font-bold text-violet-700 mt-0.5 group-hover:text-violet-800">R 0.00</p>
                     <p id="rebWalletPoolMeta" class="text-[10px] text-slate-400 mt-0.5"></p>
-                  </div>
+                  </button>
                 </div>
                 <div class="flex-1 overflow-auto reb-composition-scroll">
                   <table class="w-full text-xs" id="rebIsinsTable">
@@ -1442,6 +1445,23 @@
                 <button id="rebBuyResetBtn" class="flex-1 py-2 rounded-xl text-sm font-medium text-slate-500 bg-slate-100 hover:bg-slate-200 transition">Start Over</button>
                 <button id="rebBuyCommitBtn" class="flex-1 py-2 rounded-xl text-sm font-semibold bg-slate-900 text-white hover:bg-slate-700 transition">Commit Trade Sequence</button>
               </div>
+            </div>
+          </div>
+
+          <!-- WALLET MODAL (per-user balances + wallet-only buy) -->
+          <div id="rebWalletModal" class="hidden fixed inset-0 z-[9000] flex items-center justify-center p-4">
+            <div class="absolute inset-0 bg-black/30" id="rebWalletOverlay"></div>
+            <div class="relative bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-2xl z-10 max-h-[90vh] flex flex-col overflow-hidden">
+              <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+                <div>
+                  <p class="font-semibold text-slate-900 text-sm">Strategy Wallet</p>
+                  <p id="rebWalletModalMeta" class="text-xs text-slate-400 mt-0.5">Per-client rebalance residual</p>
+                </div>
+                <button id="rebWalletCloseBtn" class="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition">
+                  <svg class="w-3.5 h-3.5 text-slate-500" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+                </button>
+              </div>
+              <div id="rebWalletModalBody" class="px-6 py-5 overflow-y-auto flex-1 min-h-0"></div>
             </div>
           </div>
 
@@ -10344,6 +10364,369 @@
         };
       }
 
+      /* ── Wallet Modal: per-user wallet view + wallet-only buy ──
+         Opens when the Wallet Pool badge is clicked. Lists each client's
+         rebalance_residual, lets admin pick a security + qty/lot to buy
+         funded purely from those wallet balances. Uniformity rule applies:
+         if any client can't afford their per-lot allocation, the commit is
+         blocked. */
+      async function rebShowWalletModal() {
+        const modal = document.getElementById("rebWalletModal");
+        const body = document.getElementById("rebWalletModalBody");
+        const metaEl = document.getElementById("rebWalletModalMeta");
+        if (!modal || !body) return;
+        if (!rebSelectedStrategyId) return;
+
+        const strategy = (allStrategiesFullData || []).find((s) => String(s.id) === String(rebSelectedStrategyId));
+        const strategyLabel = strategy?.short_name || strategy?.name || "Strategy";
+        if (metaEl) metaEl.textContent = `${strategyLabel} · per-client rebalance_residual + wallet purchase`;
+
+        body.innerHTML = '<p class="text-xs text-slate-400 text-center py-6">Loading…</p>';
+        modal.classList.remove("hidden");
+
+        const buyUniverse = await rebLoadBuySecurities();
+        const strategyClients = rebClientsForStrategy();
+        let selectedBuyId = null;
+        let buyPerLot = 1;
+        let searchTerm = "";
+
+        const render = () => {
+          const totalWallet = strategyClients.reduce((s, c) => s + Number(rebWalletByClient[String(c.id)] || 0), 0);
+          const q = searchTerm.trim().toLowerCase();
+          const filtered = q
+            ? buyUniverse.filter((i) => `${i.code} ${i.fullSymbol} ${i.description}`.toLowerCase().includes(q))
+            : buyUniverse;
+
+          const selectedInstrument = selectedBuyId ? buyUniverse.find((i) => i.id === selectedBuyId) : null;
+          const pricePerShare = Number(selectedInstrument?.currentPrice || 0);
+          const bufferedPrice = pricePerShare;
+          const perShareTradingCost = bufferedPrice * (1 + REB_BROKERAGE_RATE);
+          const affectedCount = strategyClients.length;
+          const custodyFeeTotal = REB_OFF_CUSTODY_FEE * affectedCount;
+          const custodyFeePerClient = affectedCount > 0 ? custodyFeeTotal / affectedCount : 0;
+
+          /* Per-user affordability check (uniformity by lots × buyPerLot) */
+          const perUserPlan = strategyClients.map((c) => {
+            const walletR = Number(rebWalletByClient[String(c.id)] || 0);
+            const lots = Math.max(0, Number(c.totalCurrentHolding || 0));
+            const sharesNeeded = lots * Math.max(0, Number(buyPerLot) || 0);
+            const cost = sharesNeeded * perShareTradingCost + (sharesNeeded > 0 ? custodyFeePerClient : 0);
+            const afford = walletR >= cost - 0.0001;
+            const remaining = walletR - cost;
+            return { client: c, walletR, lots, sharesNeeded, cost, afford, remaining };
+          });
+          const everyoneAffords = pricePerShare > 0 && buyPerLot > 0 && perUserPlan.every((p) => p.afford && p.sharesNeeded > 0);
+          const anyAfford = perUserPlan.some((p) => p.afford && p.sharesNeeded > 0);
+          const totalShares = perUserPlan.reduce((s, p) => s + p.sharesNeeded, 0);
+          const totalCost = perUserPlan.reduce((s, p) => s + p.cost, 0);
+
+          body.innerHTML = `
+            <div class="space-y-4">
+              <!-- Pool summary -->
+              <div class="rounded-xl border border-violet-100 bg-violet-50 p-3">
+                <div class="flex items-baseline justify-between">
+                  <span class="text-[11px] font-semibold text-violet-600 uppercase tracking-wider">Total Pool</span>
+                  <span class="font-mono font-bold text-violet-800 text-lg">${rebFmtZAR(totalWallet)}</span>
+                </div>
+                <p class="text-[10px] text-violet-500 mt-1">Across ${strategyClients.length} client${strategyClients.length !== 1 ? "s" : ""}</p>
+              </div>
+
+              <!-- Per-user balances -->
+              <div>
+                <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Per-Client Wallet Balances</p>
+                <div class="rounded-xl border border-slate-200 max-h-48 overflow-y-auto">
+                  <table class="w-full text-xs">
+                    <thead class="bg-slate-50 sticky top-0">
+                      <tr class="text-slate-400 font-medium">
+                        <th class="text-left px-3 py-2">Client</th>
+                        <th class="text-right px-3 py-2">Lots</th>
+                        <th class="text-right px-3 py-2">Wallet</th>
+                        ${selectedInstrument ? `<th class="text-right px-3 py-2">Buy Cost</th><th class="text-right px-3 py-2">After</th>` : ''}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${perUserPlan.map((p) => `
+                        <tr class="${selectedInstrument && !p.afford && p.sharesNeeded > 0 ? 'bg-red-50' : 'hover:bg-slate-50'}">
+                          <td class="px-3 py-2 text-slate-800 truncate max-w-[180px]" title="${p.client.id}">${p.client.name}</td>
+                          <td class="px-3 py-2 text-right font-mono text-slate-500">${p.lots.toLocaleString()}</td>
+                          <td class="px-3 py-2 text-right font-mono ${p.walletR > 0 ? 'text-violet-700 font-semibold' : 'text-slate-400'}">${rebFmtZAR(p.walletR)}</td>
+                          ${selectedInstrument ? `
+                            <td class="px-3 py-2 text-right font-mono text-slate-600">${rebFmtZAR(p.cost)}</td>
+                            <td class="px-3 py-2 text-right font-mono font-semibold ${p.afford ? 'text-green-700' : 'text-red-600'}">${rebFmtZAR(p.remaining)}</td>
+                          ` : ''}
+                        </tr>
+                      `).join('') || '<tr><td colspan="3" class="text-center text-slate-400 py-4">No clients</td></tr>'}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- Wallet-only buy form -->
+              <div class="border-t border-slate-100 pt-4">
+                <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Buy from Wallet</p>
+                <div class="space-y-3">
+                  <input id="rebWalletBuySearch" placeholder="Search security…" value="${searchTerm}"
+                    class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-300" />
+                  <select id="rebWalletBuySelect" class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-300">
+                    <option value="">— Select security to buy —</option>
+                    ${filtered.map((i) => `<option value="${i.id}" ${selectedBuyId === i.id ? 'selected' : ''}>${i.code} · ${i.description}${i.currentPrice > 0 ? ` · ${rebFmtZAR(i.currentPrice)}` : ' · N/A'}</option>`).join('')}
+                  </select>
+
+                  ${selectedInstrument ? `
+                    <div class="flex items-center gap-3">
+                      <label class="text-xs text-slate-500 flex-shrink-0">Buy per lot:</label>
+                      <input id="rebWalletBuyPerLot" type="number" min="1" step="1" value="${buyPerLot}"
+                        class="w-24 px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-300" />
+                      <span class="text-xs text-slate-500">shares × lots</span>
+                    </div>
+
+                    <div class="rounded-lg bg-slate-50 p-3 space-y-1.5 text-xs">
+                      <div class="flex justify-between"><span class="text-slate-500">Price/share</span><span class="font-mono">${rebFmtZAR(pricePerShare)}</span></div>
+                      <div class="flex justify-between"><span class="text-slate-500">Brokerage (${(REB_BROKERAGE_RATE * 100).toFixed(2)}%)</span><span class="font-mono text-rose-600">included</span></div>
+                      <div class="flex justify-between"><span class="text-slate-500">Off-custody fee × ${affectedCount}</span><span class="font-mono text-rose-600">${rebFmtZAR(custodyFeeTotal)}</span></div>
+                      <div class="flex justify-between border-t border-slate-200 pt-1.5 mt-1.5"><span class="font-semibold text-slate-700">Total shares</span><span class="font-mono font-bold">${totalShares.toLocaleString()}</span></div>
+                      <div class="flex justify-between"><span class="font-semibold text-slate-700">Total cost</span><span class="font-mono font-bold">${rebFmtZAR(totalCost)}</span></div>
+                    </div>
+
+                    ${!everyoneAffords && anyAfford ? `<p class="text-xs text-red-600">⚠ ${perUserPlan.filter((p) => !p.afford).length} client(s) can't afford this allocation — lower the buy/lot to unblock.</p>` : ''}
+                    ${!anyAfford ? `<p class="text-xs text-amber-600">No clients have enough wallet for ${buyPerLot} share(s)/lot.</p>` : ''}
+
+                    <button id="rebWalletBuyCommitBtn" ${everyoneAffords ? '' : 'disabled'}
+                      class="w-full py-2 rounded-xl text-sm font-semibold transition ${everyoneAffords ? 'bg-violet-600 hover:bg-violet-700 text-white' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}">
+                      Commit Wallet Purchase
+                    </button>
+                  ` : '<p class="text-xs text-slate-400 text-center py-3">Pick a security to see per-user impact.</p>'}
+                </div>
+              </div>
+            </div>`;
+
+          /* Re-wire form controls */
+          const searchInput = document.getElementById("rebWalletBuySearch");
+          if (searchInput) {
+            searchInput.addEventListener("input", (e) => { searchTerm = e.target.value; render(); });
+            if (searchInput.value === searchTerm && document.activeElement?.id !== "rebWalletBuySearch") {
+              // keep focus only if user was typing — avoid stealing
+            }
+          }
+          const select = document.getElementById("rebWalletBuySelect");
+          if (select) select.addEventListener("change", (e) => { selectedBuyId = e.target.value || null; render(); });
+          const qtyInput = document.getElementById("rebWalletBuyPerLot");
+          if (qtyInput) qtyInput.addEventListener("change", (e) => { buyPerLot = Math.max(0, Math.floor(Number(e.target.value) || 0)); render(); });
+          const commitBtn = document.getElementById("rebWalletBuyCommitBtn");
+          if (commitBtn) commitBtn.addEventListener("click", async () => {
+            if (commitBtn.disabled) return;
+            const prevLabel = commitBtn.textContent;
+            commitBtn.disabled = true;
+            commitBtn.textContent = "Processing…";
+            try {
+              const result = await rebPersistWalletOnlyBuy({
+                instrument: selectedInstrument,
+                buyPerLot,
+                perUserPlan,
+                pricePerShare,
+              });
+              document.getElementById("rebWalletModal").classList.add("hidden");
+              rebShowCommitSuccessToast(result);
+              await rebLoadStrategy(rebSelectedStrategyId);
+            } catch (err) {
+              const t = document.createElement("div");
+              t.style.cssText = "position:fixed;bottom:28px;left:50%;transform:translateX(-50%);z-index:99999;display:flex;align-items:center;gap:10px;background:#7f1d1d;color:#fee2e2;font-size:13px;font-weight:600;padding:12px 20px;border-radius:14px;box-shadow:0 8px 32px rgba(0,0,0,0.22);pointer-events:none;white-space:nowrap;animation:toast-in 0.22s ease forwards";
+              t.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fca5a5" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><circle cx="12" cy="16" r="1" fill="currentColor"/></svg> ${String(err?.message || "Wallet purchase failed")}`;
+              document.body.appendChild(t);
+              setTimeout(() => { t.style.animation = "toast-out 0.22s ease forwards"; setTimeout(() => t.remove(), 230); }, 3600);
+              commitBtn.disabled = false;
+              commitBtn.textContent = prevLabel;
+            }
+          });
+        };
+
+        render();
+      }
+
+      /* Wallet-Only Buy commit: no sell, no carryover. Buy events are created
+         with closed_reason = REBALANCE_EVENT_BUY_WALLET so settlement records
+         them at the actual fill price (clean buy). Strategy holdings JSONB
+         updated to add or increase the bought security. */
+      async function rebPersistWalletOnlyBuy({ instrument, buyPerLot, perUserPlan, pricePerShare }) {
+        if (!instrument || !rebSelectedStrategyId) throw new Error("Missing strategy or buy instrument.");
+        const buyQtyPerLot = Math.max(0, Math.floor(Number(buyPerLot) || 0));
+        if (buyQtyPerLot <= 0) throw new Error("Buy per lot must be ≥ 1.");
+        if (!(pricePerShare > 0)) throw new Error("Buy security has no live price.");
+        const strategyId = rebSelectedStrategyId;
+
+        /* Block if a PENDING batch already exists for this strategy */
+        const { data: pendingBatches, error: pendingErr } = await supabaseClient
+          .from("rebalance_batch")
+          .select("id, created_at, status")
+          .eq("strategy_id", strategyId)
+          .eq("status", "PENDING");
+        if (pendingErr) throw new Error(pendingErr.message || "Failed to check pending batches.");
+        if (pendingBatches && pendingBatches.length > 0) {
+          const existing = pendingBatches[0];
+          throw new Error(`A pending rebalance already exists for this strategy (batch ${existing.id.slice(0, 8)}…). Settle or reverse it first.`);
+        }
+
+        /* Uniformity check — every funded client must afford their allocation */
+        const blocked = (perUserPlan || []).filter((p) => p.sharesNeeded > 0 && !p.afford);
+        if (blocked.length) {
+          throw new Error(`${blocked.length} client(s) can't afford ${buyQtyPerLot} share(s)/lot. Lower the qty per lot.`);
+        }
+        const participants = (perUserPlan || []).filter((p) => p.sharesNeeded > 0 && p.afford);
+        if (!participants.length) throw new Error("No clients have enough wallet for this purchase.");
+
+        /* Resolve buy security_id */
+        const buySecurityId = String(instrument.id || "");
+        if (!buySecurityId) throw new Error("Could not resolve buy security ID.");
+        const buyIsinCode = String(instrument.code || "").replace(/\.[A-Z]+$/i, "");
+
+        /* Snapshots for reversal */
+        const strategyRef = (allStrategiesFullData || []).find((s) => String(s.id) === String(strategyId));
+        const holdingsSnapshotBefore = strategyRef?.holdings ? JSON.parse(JSON.stringify(strategyRef.holdings)) : null;
+        const walletSnapshotBefore = { ...rebWalletByClient };
+
+        /* Update strategy holdings JSONB to include the new buy security */
+        await rebAddOrIncreaseStrategyHolding({
+          strategyId,
+          buyInstrument: instrument,
+          buyPerLot: buyQtyPerLot,
+        });
+
+        const rebalanceBatchId = (window.crypto && typeof window.crypto.randomUUID === "function")
+          ? window.crypto.randomUUID()
+          : ("10000000-1000-4000-8000-100000000000".replace(/[018]/g, c =>
+              (+c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (+c / 4)))).toString(16)
+            ));
+        const strategyNameSnapshot = strategyRef?.short_name || strategyRef?.name || "";
+        const nowIso = new Date().toISOString();
+
+        /* Build BUY events (wallet-funded) — uses REBALANCE_EVENT_BUY_WALLET so
+           settlement applies the actual fill price (no carryover concept here). */
+        const buyEventRows = participants.map((p) => ({
+          batch_id: rebalanceBatchId,
+          user_id: String(p.client.id),
+          security_id: buySecurityId,
+          trade_side: "BUY",
+          quantity: Number(p.sharesNeeded || 0),
+          price_at_commit: Math.round(pricePerShare * 100),
+          avg_fill: null,
+          fill_date: null,
+          closed_reason: "REBALANCE_EVENT_BUY_WALLET",
+          strategy_name_snapshot: strategyNameSnapshot,
+          created_at: nowIso,
+          updated_at: nowIso,
+        })).filter((r) => r.quantity > 0);
+        const totalBuyQty = buyEventRows.reduce((s, r) => s + Number(r.quantity || 0), 0);
+
+        const { data: sessionData } = await supabaseClient.auth.getSession();
+        const currentUserId = sessionData?.session?.user?.id || null;
+
+        /* Insert batch — no sell side */
+        const { error: batchErr } = await supabaseClient
+          .from("rebalance_batch")
+          .insert({
+            id: rebalanceBatchId,
+            strategy_id: strategyId,
+            status: "PENDING",
+            holdings_snapshot_before: holdingsSnapshotBefore,
+            wallet_snapshot_before: walletSnapshotBefore,
+            sell_security_id: null,
+            sell_isin_code: null,
+            total_sell_quantity: 0,
+            buy_security_id: null,
+            buy_isin_code: null,
+            total_buy_quantity: 0,
+            extra_buy_security_id: buySecurityId,
+            extra_buy_isin_code: buyIsinCode,
+            total_extra_buy_quantity: totalBuyQty,
+            net_proceeds: 0,
+            strategy_name_snapshot: strategyNameSnapshot,
+            created_by: currentUserId,
+            created_at: nowIso,
+            updated_at: nowIso,
+          });
+        if (batchErr) throw new Error(batchErr.message || "Failed to create rebalance batch.");
+
+        if (buyEventRows.length) {
+          const { error: evtErr } = await supabaseClient
+            .from("rebalance_event")
+            .insert(buyEventRows);
+          if (evtErr) throw new Error(evtErr.message || "Failed to insert rebalance events.");
+        }
+
+        /* Deduct cost from each participant's wallet */
+        const finalWalletByClient = {};
+        participants.forEach((p) => {
+          finalWalletByClient[String(p.client.id)] = rebRoundMoney(Math.max(0, p.remaining));
+        });
+        if (Object.keys(finalWalletByClient).length) {
+          await rebUpsertWalletBalances(strategyId, finalWalletByClient);
+          rebWalletByClient = { ...rebWalletByClient, ...finalWalletByClient };
+        }
+
+        return {
+          batchId: rebalanceBatchId,
+          rows: totalBuyQty > 0 ? [{ side: "BUY", code: buyIsinCode, nominal: totalBuyQty }] : [],
+        };
+      }
+
+      /* Add (or increase shares of) a buy security in the strategy holdings JSONB.
+         Used by wallet-only purchases when there's no sell to balance against. */
+      async function rebAddOrIncreaseStrategyHolding({ strategyId, buyInstrument, buyPerLot }) {
+        if (!strategyId || !buyInstrument?.fullSymbol) return;
+        const strategy = (allStrategiesFullData || []).find((s) => String(s.id) === String(strategyId));
+        if (!strategy) return;
+
+        const buyFullSymbol = String(buyInstrument.fullSymbol || "").trim();
+        const buyTargets = new Set([
+          buyFullSymbol,
+          normalizeSymbol(buyFullSymbol),
+          String(buyInstrument.code || "").trim(),
+          normalizeSymbol(String(buyInstrument.code || "").trim()),
+        ].filter(Boolean));
+
+        const nextHoldings = (Array.isArray(strategy.holdings) ? strategy.holdings : []).map((h) => ({ ...h }));
+        let buyIndex = -1;
+        nextHoldings.forEach((holding, idx) => {
+          if (buyIndex < 0 && rebSymbolMatchesHolding(holding, buyTargets)) buyIndex = idx;
+        });
+
+        const shares = Math.max(1, Number(buyPerLot) || 0);
+        if (buyIndex >= 0) {
+          const existing = nextHoldings[buyIndex] || {};
+          const currentShares = Math.max(0, Number(existing.shares || existing.quantity || 0));
+          nextHoldings[buyIndex] = {
+            ...existing,
+            symbol: existing.symbol || buyFullSymbol,
+            ticker: existing.ticker || existing.symbol || buyFullSymbol,
+            name: existing.name || buyInstrument.description || buyInstrument.code || buyFullSymbol,
+            shares: currentShares + shares,
+            quantity: currentShares + shares,
+            pending: true,
+          };
+        } else {
+          nextHoldings.push({
+            symbol: buyFullSymbol,
+            ticker: buyFullSymbol,
+            name: buyInstrument.description || buyInstrument.code || buyFullSymbol,
+            shares,
+            quantity: shares,
+            pending: true,
+          });
+        }
+
+        const { holdings, minInvestment } = await rebMergeAndRevalueStrategyHoldings(nextHoldings);
+        const { error: strategyUpdateErr } = await supabaseClient
+          .from("strategies_c")
+          .update({ holdings: holdings.length ? holdings : null, min_investment: minInvestment })
+          .eq("id", strategyId);
+        if (strategyUpdateErr) throw new Error(strategyUpdateErr.message || "Failed to update strategy holdings.");
+
+        allStrategiesFullData = (allStrategiesFullData || []).map((item) => {
+          if (String(item.id) !== String(strategyId)) return item;
+          return { ...item, holdings, min_investment: minInvestment };
+        });
+      }
+
       /* ── Wire up rebalancing event listeners (deferred) ── */
       window.addEventListener("DOMContentLoaded", () => {
         const rebPriceHeader = document.getElementById("rebPriceHeader");
@@ -10372,6 +10755,19 @@
             rebShowBuyModal(exec.netProceeds);
           });
         }
+
+        /* Wallet Pool badge → wallet modal */
+        const walletPoolBtn = document.getElementById("rebWalletPoolBox");
+        if (walletPoolBtn) walletPoolBtn.addEventListener("click", () => {
+          if (!rebSelectedStrategyId) return;
+          rebShowWalletModal();
+        });
+        const walletModalClose = document.getElementById("rebWalletCloseBtn");
+        const walletModalOverlay = document.getElementById("rebWalletOverlay");
+        const walletModal = document.getElementById("rebWalletModal");
+        const closeWalletModal = () => { if (walletModal) walletModal.classList.add("hidden"); };
+        if (walletModalClose) walletModalClose.addEventListener("click", closeWalletModal);
+        if (walletModalOverlay) walletModalOverlay.addEventListener("click", closeWalletModal);
 
         /* Strategy selector */
         const stratSel = document.getElementById("rebStrategySelect");
