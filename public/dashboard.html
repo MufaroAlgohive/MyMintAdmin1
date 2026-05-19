@@ -1975,19 +1975,39 @@
             const dataBySym = {};
             (_returnInsightsData || []).forEach(a => { dataBySym[a.symbol] = a; });
             const wSum = holdings.reduce((acc, h) => acc + (Number(h.weight) || 0), 0) || 1;
+            /* For 1D: pre-compute today_basket (cents) = Σ(current_price_cents × shares) */
+            let _todayBasket1d = 0;
+            const _stratBvRow = strategyReturnsMap.get(_riSelectedStratId) || {};
+            const _stratBv = _stratBvRow.basket_value != null ? Number(_stratBvRow.basket_value) : null;
+            if (tab === '1d') {
+              holdings.forEach(h => {
+                const sym = h.ticker || h.symbol || '';
+                const a = dataBySym[sym] || {};
+                const iv = a.id ? _riIntradayMap[a.id] : null;
+                const cp = iv?.current_price != null ? Number(iv.current_price) : null;
+                const shares = Number(h.shares || h.quantity) || 0;
+                if (cp != null && shares > 0) _todayBasket1d += cp * shares;
+              });
+            }
             const sAll = holdings.map(h => {
               const sym = h.ticker || h.symbol || '';
               const a   = dataBySym[sym] || {};
               let r;
               if (tab === '1d') {
+                /* contribution (%) = (current_price_cents × shares × 1d_pct) / basket_value_cents */
                 const iv = a.id ? _riIntradayMap[a.id] : null;
-                r = (iv && iv['1d_pct'] != null) ? Number(iv['1d_pct']) : null;
+                const cp = iv?.current_price != null ? Number(iv.current_price) : null;
+                const shares = Number(h.shares || h.quantity) || 0;
+                const iv1d = iv?.['1d_pct'] != null ? Number(iv['1d_pct']) : null;
+                r = (cp != null && shares > 0 && _stratBv && _stratBv > 0 && iv1d != null)
+                  ? (cp * shares * iv1d) / _stratBv
+                  : null;
               } else {
                 r = a[assetField] != null ? Number(a[assetField]) : null;
               }
               const w   = Number(h.weight) || 0;
               const wPct= wSum > 1.5 ? (w) : w;
-              const contrib = (r != null) ? (r * wPct) : null;
+              const contrib = (tab === '1d') ? r : (r != null ? r * wPct : null);
               return { id: sym, name: sym.replace('.JO',''), logo_url: a.logo_url || null, _val: contrib };
             }).filter(x => x._val != null).sort((a, b) => b._val - a._val);
 
@@ -2039,26 +2059,29 @@
           }
 
           const strategies = (typeof allStrategiesFullData !== 'undefined' && Array.isArray(allStrategiesFullData)) ? allStrategiesFullData : [];
-          /* For 1D: build symbol→intraday pct map and compute weighted avg per strategy */
-          const _symToIntraday = {};
+          /* For 1D: build symbol→current_price_cents map for basket-value calculation */
+          const _symToIntradayPrice = {};
           if (tab === '1d') {
             (_returnInsightsData || []).forEach(a => {
               const iv = _riIntradayMap[a.id];
-              if (iv && iv['1d_pct'] != null) _symToIntraday[a.symbol] = Number(iv['1d_pct']);
+              if (iv?.current_price != null) _symToIntradayPrice[a.symbol] = Number(iv.current_price);
             });
           }
           const sAll = strategies.map(s => {
             let v;
             if (tab === '1d') {
               const hlds = Array.isArray(s.holdings) ? s.holdings : [];
-              const wTotal = hlds.reduce((acc, h) => acc + (Number(h.weight) || 0), 0) || 1;
-              let wSum = 0, wCount = 0;
+              /* today_basket (cents) = Σ(current_price_cents × shares) */
+              let todayBasket = 0, hasPrice = 0;
               hlds.forEach(h => {
                 const sym = h.ticker || h.symbol || '';
-                const pct = _symToIntraday[sym];
-                if (pct != null) { wSum += pct * (Number(h.weight) || 0) / wTotal; wCount++; }
+                const cp = _symToIntradayPrice[sym];
+                const shares = Number(h.shares || h.quantity) || 0;
+                if (cp != null && shares > 0) { todayBasket += cp * shares; hasPrice++; }
               });
-              v = wCount > 0 ? wSum : null;
+              const row = strategyReturnsMap.get(String(s.id)) || {};
+              const bv = row.basket_value != null ? Number(row.basket_value) : null;
+              v = (hasPrice > 0 && bv && bv > 0) ? (todayBasket - bv) / bv * 100 : null;
             } else {
               const row = strategyReturnsMap.get(String(s.id)) || {};
               v = row[sField] != null ? Number(row[sField]) : null;
