@@ -6360,33 +6360,53 @@
           return;
         }
 
-        /* ── Aggregate holdings per user using live prices ── */
-        const byUser = {};
+        /* ── Aggregate holdings per (user, minute-of-purchase) so two separate
+              buys of the same strategy at different minutes appear as separate
+              cards — admin needs to fill / reverse each buy independently. Same
+              minute = one batch (user incremented qty at checkout / single
+              transaction fanned out across N security rows). */
+        const minuteBucket = (iso) => String(iso || '').slice(0, 16); // YYYY-MM-DDTHH:mm
+        const byBatch = {};
         investRows.forEach(r => {
           const uid = r.user_id;
-          if (!byUser[uid]) byUser[uid] = { costBasis: 0, currentVal: 0, inception: r.created_at, pending: false };
+          const bucket = minuteBucket(r.created_at);
+          const key = `${uid}|${bucket}`;
+          if (!byBatch[key]) {
+            byBatch[key] = {
+              uid,
+              bucket,
+              costBasis: 0,
+              currentVal: 0,
+              inception: r.created_at,
+              pending: false,
+            };
+          }
+          const u = byBatch[key];
           const qty = Number(r.quantity) || 0;
           /* Cost basis: avg_fill is in ZAc cents → divide by 100 to get rands */
           const fill = (Number(r.avg_fill) || 0) / 100;
-          byUser[uid].costBasis += (fill * qty);
+          u.costBasis += (fill * qty);
           /* Live current value: qty × last_price (cents → rands) */
           const lp = secPriceMap[r.security_id] || 0;
-          if (lp > 0) byUser[uid].currentVal += (qty * lp);
-          if (r.created_at && new Date(r.created_at) < new Date(byUser[uid].inception))
-            byUser[uid].inception = r.created_at;
+          if (lp > 0) u.currentVal += (qty * lp);
+          if (r.created_at && new Date(r.created_at) < new Date(u.inception))
+            u.inception = r.created_at;
         });
 
-        /* ── Merge pending buy-side rebalance clients ── */
+        /* ── Merge pending buy-side rebalance clients — pending events come
+              from one batch and don't carry a created_at on the event, so we
+              key them under a per-user 'pending' bucket (one card per user
+              for whatever's still pending settlement). */
         if (pendingRebalance && pendingRebalance.events) {
           pendingRebalance.events
             .filter(ev => ev.trade_side === 'BUY' || ev.closed_reason === 'REBALANCE_EVENT_BUY' || ev.closed_reason === 'REBALANCE_EVENT_BUY_WALLET')
             .forEach(ev => {
               const uid = ev.user_id;
-              if (!byUser[uid]) {
-                byUser[uid] = { costBasis: 0, currentVal: 0, inception: new Date().toISOString(), pending: true };
+              const key = `${uid}|pending`;
+              if (!byBatch[key]) {
+                byBatch[key] = { uid, bucket: 'pending', costBasis: 0, currentVal: 0, inception: new Date().toISOString(), pending: true };
               }
-              /* Mark user as having pending allocations */
-              byUser[uid].pending = true;
+              byBatch[key].pending = true;
             });
         }
 
@@ -6397,23 +6417,11 @@
           return (neg ? '-' : '') + 'R' + int.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + '.' + dec;
         };
 
-        /* ── Merge pending buy-side rebalance clients ── */
-        if (pendingRebalance && pendingRebalance.events) {
-          pendingRebalance.events
-            .filter(ev => ev.trade_side === 'BUY' || ev.closed_reason === 'REBALANCE_EVENT_BUY' || ev.closed_reason === 'REBALANCE_EVENT_BUY_WALLET')
-            .forEach(ev => {
-              const uid = ev.user_id;
-              if (!byUser[uid]) {
-                byUser[uid] = { costBasis: 0, currentVal: 0, inception: new Date().toISOString(), pending: true };
-              }
-              byUser[uid].pending = true;
-            });
-        }
-
-        const rows = Object.entries(byUser).map(([uid, data]) => {
+        const rows = Object.values(byBatch).map((data) => {
+          const uid = data.uid;
           const prof = profiles[uid];
           const name = prof ? ([prof.first_name, prof.last_name].filter(Boolean).join(' ').trim() || prof.email || uid) : uid;
-          const inceptionDate = txnInceptionMap[uid] || (data.inception ? data.inception.split('T')[0] : null);
+          const inceptionDate = data.inception ? data.inception.split('T')[0] : (txnInceptionMap[uid] || null);
           const days = inceptionDate ? Math.floor((Date.now() - new Date(inceptionDate)) / 86400000) : 0;
 
           /* Use live current value; fall back to cost basis if no prices available */
@@ -6422,7 +6430,12 @@
           const pnl        = currentVal - data.costBasis;
           const pending    = !!data.pending;
 
-          return { uid, name, invested: data.costBasis, currentVal, pnl, returnPct, days, inceptionDate, pending };
+          /* Per-batch buy time (display only — null for the pending bucket) */
+          const buyTime = (data.bucket && data.bucket !== 'pending')
+            ? data.bucket.replace('T', ' ')
+            : null;
+
+          return { uid, bucket: data.bucket, name, invested: data.costBasis, currentVal, pnl, returnPct, days, inceptionDate, pending, buyTime };
         }).sort((a, b) => b.currentVal - a.currentVal);
 
         if (badge) badge.textContent = rows.length;
@@ -6439,12 +6452,16 @@
             : '—';
           const pendingRowBg = r.pending ? 'background:#fffbeb;border-left:3px solid #f59e0b;' : '';
           const pendingBadge = r.pending ? '<span style="font-size:9px;font-weight:700;color:#92400e;background:#fef3c7;padding:2px 7px;border-radius:6px;text-transform:uppercase;letter-spacing:.04em;margin-left:6px;">Pending</span>' : '';
+          /* Show buy time so two cards for the same user are distinguishable */
+          const buyTimeBadge = r.buyTime
+            ? `<span style="font-size:9px;font-weight:600;color:#7c3aed;background:#ede9fe;padding:2px 6px;border-radius:5px;margin-left:6px;font-family:ui-monospace,monospace;">${r.buyTime}</span>`
+            : '';
           return `
             <div data-inv-idx="${idx}" style="padding:11px 12px;border-bottom:1px solid #f1f5f9;cursor:pointer;${pendingRowBg}" class="investor-row-hover"
               onclick="ovShowInvestorPreview(${idx})">
               <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:7px;">
                 <div style="min-width:0;flex:1;overflow:hidden;">
-                  <div style="font-size:12px;font-weight:600;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${r.name}${pendingBadge}</div>
+                  <div style="font-size:12px;font-weight:600;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${r.name}${pendingBadge}${buyTimeBadge}</div>
                   <div style="font-size:10px;color:#94a3b8;margin-top:1px;">Since ${inceStr} · ${r.days}d</div>
                 </div>
                 <div style="flex-shrink:0;padding-left:10px;padding-top:1px;">
