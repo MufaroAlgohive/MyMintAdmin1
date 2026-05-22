@@ -2459,9 +2459,17 @@
       const cleanupRowIndex = options.rowIndex != null ? String(options.rowIndex) : '';
       const holdings = row.strategyHoldings || [];
       const users = row.strategyUsers || [];
+      /* In archive views, bookId+rowIndex point back to the snapshot row in
+         filledOrderbooksArchive. We thread them through to the investor row
+         and the holdings/detail panels so the click handler can find the
+         right source row (not the live orderbook) and re-render the right
+         panel instance (when the same strategy appears in multiple books). */
+      const archiveAttrs = options.bookId != null && options.rowIndex != null
+        ? ` data-book-id="${escapeHtml(String(options.bookId))}" data-row-index="${escapeHtml(String(options.rowIndex))}"`
+        : '';
 
       const holdingsHtml = holdings.length
-        ? `<div data-strategy-holdings-panel data-strategy-id="${escapeHtml(String(row.strategyId || ''))}">${renderStrategyHoldingsHtml(row, options)}</div>`
+        ? `<div data-strategy-holdings-panel data-strategy-id="${escapeHtml(String(row.strategyId || ''))}"${archiveAttrs}>${renderStrategyHoldingsHtml(row, options)}</div>`
         : '<div class="filled-orderbook-empty">No holdings found for this strategy.</div>';
 
       let usersHtml = '';
@@ -2495,7 +2503,7 @@
             ? `<span class="orderbook-cell-muted" style="font-size:10.5px;display:block;">${escapeHtml(u.createdAtBucket.replace('T', ' '))}</span>`
             : '';
           return `
-          <tr class="investor-row ${isSelected ? 'selected' : ''}" data-investor-row data-investor-key="${escapeHtml(investorKey)}" data-user-id="${escapeHtml(String(u.userId || ''))}" data-family-member-id="${escapeHtml(String(u.familyMemberId || ''))}" data-strategy-id="${escapeHtml(String(row.strategyId || ''))}" data-created-at-from="${escapeHtml(String(u.createdAtFrom || ''))}" data-created-at-to="${escapeHtml(String(u.createdAtTo || ''))}">
+          <tr class="investor-row ${isSelected ? 'selected' : ''}" data-investor-row data-investor-key="${escapeHtml(investorKey)}" data-user-id="${escapeHtml(String(u.userId || ''))}" data-family-member-id="${escapeHtml(String(u.familyMemberId || ''))}" data-strategy-id="${escapeHtml(String(row.strategyId || ''))}" data-created-at-from="${escapeHtml(String(u.createdAtFrom || ''))}" data-created-at-to="${escapeHtml(String(u.createdAtTo || ''))}"${archiveAttrs}>
             <td>${escapeHtml(String(i + 1))}</td>
             <td>${escapeHtml(u.clientName || '-')}${buyTime}</td>
             <td>${escapeHtml(u.clientAccountId || '-')}</td>
@@ -2513,7 +2521,7 @@
 
         usersHtml = `
           <div class="orderbook-detail-title" style="margin-top: 16px;">Investors in ${escapeHtml(row.strategyName || 'Strategy')} <span style="font-size:11px;font-weight:400;color:#94a3b8;margin-left:8px;">(click a row to see this client's individual fills)</span></div>
-          <div class="orderbook-detail-table-wrap" data-investors-table data-strategy-id="${escapeHtml(String(row.strategyId || ''))}">
+          <div class="orderbook-detail-table-wrap" data-investors-table data-strategy-id="${escapeHtml(String(row.strategyId || ''))}"${archiveAttrs}>
             <table class="orderbook-detail-table">
               <thead>
                 <tr>
@@ -2530,7 +2538,7 @@
               <tbody>${uBody}</tbody>
             </table>
           </div>
-          <div id="investorDetailPanel-${escapeHtml(String(row.strategyId || 'na'))}" data-investor-detail-panel data-strategy-id="${escapeHtml(String(row.strategyId || ''))}">${renderInvestorDetailPanel(row)}</div>
+          <div data-investor-detail-panel data-strategy-id="${escapeHtml(String(row.strategyId || ''))}"${archiveAttrs}>${renderInvestorDetailPanel(row)}</div>
         `;
       }
 
@@ -6692,14 +6700,30 @@
     /* Investor row click → select, highlight purple, render detail panel,
        AND re-render the Holdings table above to show only that investor's
        holdings (with their own avg_fill that can be edited independently).
-       Detail panel close button clears the selection. */
-    const refreshStrategyDetailViews = (strategyId) => {
+       Detail panel close button clears the selection.
+
+       bookId/rowIndex are passed for Active / Closed Books snapshots — they
+       point back to filledOrderbooksArchive[book].rows[rowIndex] (the source
+       row that lives on the snapshot, not in the live orderbook) and scope
+       the panel queries to the right instance when the same strategy appears
+       in multiple books on the page. */
+    const refreshStrategyDetailViews = (strategyId, bookId = null, rowIndex = null) => {
       if (!strategyId) return;
-      const stratRow = (allOrderbookRows || []).find((r) => r.isStrategy && String(r.strategyId || '') === String(strategyId));
+      let stratRow = null;
+      if (bookId != null && rowIndex != null) {
+        const book = filledOrderbooksArchive.find((b) => String(b.id) === String(bookId));
+        stratRow = book?.rows?.[Number(rowIndex)] || null;
+      }
+      if (!stratRow) {
+        stratRow = (allOrderbookRows || []).find((r) => r.isStrategy && String(r.strategyId || '') === String(strategyId));
+      }
       if (!stratRow) return;
-      const holdingsPanel = document.querySelector(`[data-strategy-holdings-panel][data-strategy-id="${CSS.escape(strategyId)}"]`);
+      const archiveScope = bookId != null && rowIndex != null
+        ? `[data-book-id="${CSS.escape(String(bookId))}"][data-row-index="${CSS.escape(String(rowIndex))}"]`
+        : ':not([data-book-id])';
+      const holdingsPanel = document.querySelector(`[data-strategy-holdings-panel][data-strategy-id="${CSS.escape(strategyId)}"]${archiveScope}`);
       if (holdingsPanel) holdingsPanel.innerHTML = renderStrategyHoldingsHtml(stratRow);
-      const detailPanel = document.querySelector(`[data-investor-detail-panel][data-strategy-id="${CSS.escape(strategyId)}"]`);
+      const detailPanel = document.querySelector(`[data-investor-detail-panel][data-strategy-id="${CSS.escape(strategyId)}"]${archiveScope}`);
       if (detailPanel) detailPanel.innerHTML = renderInvestorDetailPanel(stratRow);
     };
 
@@ -6708,10 +6732,13 @@
       if (closeBtn) {
         event.preventDefault();
         event.stopPropagation();
-        const prevStrategyId = closeBtn.closest('[data-investor-detail-panel]')?.dataset?.strategyId || '';
+        const prevPanel = closeBtn.closest('[data-investor-detail-panel]');
+        const prevStrategyId = prevPanel?.dataset?.strategyId || '';
+        const prevBookId = prevPanel?.dataset?.bookId || null;
+        const prevRowIndex = prevPanel?.dataset?.rowIndex || null;
         selectedInvestorKey = null;
         document.querySelectorAll('.investor-row.selected').forEach((r) => r.classList.remove('selected'));
-        if (prevStrategyId) refreshStrategyDetailViews(prevStrategyId);
+        if (prevStrategyId) refreshStrategyDetailViews(prevStrategyId, prevBookId, prevRowIndex);
         else document.querySelectorAll('[data-investor-detail-panel]').forEach((p) => { p.innerHTML = ''; });
         return;
       }
@@ -6724,6 +6751,8 @@
 
       const key = investorRow.dataset.investorKey || '';
       const strategyId = investorRow.dataset.strategyId || '';
+      const bookId = investorRow.dataset.bookId || null;
+      const rowIndex = investorRow.dataset.rowIndex || null;
       if (!key) return;
 
       /* Toggle off if clicking same row */
@@ -6743,7 +6772,7 @@
       }
 
       /* Re-render the holdings panel (filter to selected user) + detail panel */
-      refreshStrategyDetailViews(strategyId);
+      refreshStrategyDetailViews(strategyId, bookId, rowIndex);
     });
 
     // Reverse modal close / cancel / confirm / select-txn
