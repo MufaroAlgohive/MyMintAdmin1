@@ -6436,16 +6436,16 @@
             ? ([prof.first_name, prof.last_name].filter(Boolean).join(' ').trim() || prof.email || uid)
             : uid;
 
-          /* If this batch belongs to a family member, render as "Parent (Child)"
-             — mirrors the convention used on investors.html and the orderbook
-             investors panel so admin can tell parent buys vs child buys apart. */
+          /* If this batch belongs to a family member, render as "Child (Parent)". */
           let name = parentName;
+          let isMinor = false;
           if (data.familyMemberId) {
             const fm = familyMembers[data.familyMemberId];
             const childName = fm
               ? ([fm.first_name, fm.last_name].filter(Boolean).join(' ').trim() || String(data.familyMemberId).slice(0, 8))
               : String(data.familyMemberId).slice(0, 8);
-            name = `${parentName} (${childName})`;
+            name = `${childName} (${parentName})`;
+            isMinor = true;
           }
 
           const inceptionDate = data.inception ? data.inception.split('T')[0] : (txnInceptionMap[uid] || null);
@@ -6462,7 +6462,7 @@
             ? data.bucket.replace('T', ' ')
             : null;
 
-          return { uid, familyMemberId: data.familyMemberId, bucket: data.bucket, name, invested: data.costBasis, currentVal, pnl, returnPct, days, inceptionDate, pending, buyTime };
+          return { uid, familyMemberId: data.familyMemberId, bucket: data.bucket, name, isMinor, invested: data.costBasis, currentVal, pnl, returnPct, days, inceptionDate, pending, buyTime };
         }).sort((a, b) => b.currentVal - a.currentVal);
 
         if (badge) badge.textContent = rows.length;
@@ -6479,6 +6479,7 @@
             : '—';
           const pendingRowBg = r.pending ? 'background:#fffbeb;border-left:3px solid #f59e0b;' : '';
           const pendingBadge = r.pending ? '<span style="font-size:9px;font-weight:700;color:#92400e;background:#fef3c7;padding:2px 7px;border-radius:6px;text-transform:uppercase;letter-spacing:.04em;margin-left:6px;">Pending</span>' : '';
+          const minorBadge = r.isMinor ? '<span style="font-size:9px;font-weight:700;color:#5b21b6;background:#ede9fe;padding:2px 7px;border-radius:6px;text-transform:uppercase;letter-spacing:.04em;margin-left:6px;">Minor</span>' : '';
           /* Show buy time so two cards for the same user are distinguishable */
           const buyTimeBadge = r.buyTime
             ? `<span style="font-size:9px;font-weight:600;color:#7c3aed;background:#ede9fe;padding:2px 6px;border-radius:5px;margin-left:6px;font-family:ui-monospace,monospace;">${r.buyTime}</span>`
@@ -6488,7 +6489,7 @@
               onclick="ovShowInvestorPreview(${idx})">
               <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:7px;">
                 <div style="min-width:0;flex:1;overflow:hidden;">
-                  <div style="font-size:12px;font-weight:600;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${r.name}${pendingBadge}${buyTimeBadge}</div>
+                  <div style="font-size:12px;font-weight:600;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${r.name}${minorBadge}${pendingBadge}${buyTimeBadge}</div>
                   <div style="font-size:10px;color:#94a3b8;margin-top:1px;">Since ${inceStr} · ${r.days}d</div>
                 </div>
                 <div style="flex-shrink:0;padding-left:10px;padding-top:1px;">

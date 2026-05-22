@@ -444,7 +444,7 @@
         if (u.familyMemberId) {
           const fm = famMap[u.familyMemberId] || {};
           const childName = [fm.first_name, fm.last_name].filter(Boolean).join(' ') || u.familyMemberId.slice(0, 8);
-          name = `${parentName} (${childName})`;
+          name = `${childName} (${parentName})`;
         } else {
           name = parentName;
         }
@@ -476,7 +476,7 @@
         const csrRetPct   = csrLatest ? csrLatest.inception_pct : retPct;
         const csrYtdPct   = csrLatest != null ? (csrLatest['ytd_pct'] ?? null) : null;
         return {
-          userId: u.userId, investorKey, familyMemberId: u.familyMemberId, name, email: prof.email, mintNo: prof.mint_number,
+          userId: u.userId, investorKey, familyMemberId: u.familyMemberId, isMinor: !!u.familyMemberId, name, email: prof.email, mintNo: prof.mint_number,
           strategy: strat.short_name || strat.name || '—', strategyId: u.strategyId,
           strategyDesc: strat.description, riskLevel: strat.risk_level,
           invested, current, pnl, retPct: +retPct.toFixed(2),
@@ -531,7 +531,7 @@
             border-left:3px solid ${currentInvestor?.investorKey===i.investorKey?'#7c3aed':'transparent'};
             background:${currentInvestor?.investorKey===i.investorKey?'#ede9fe':'transparent'};transition:background 0.12s;">
           <div style="min-width:0;flex:1;">
-            <div style="font-size:12px;font-weight:600;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${i.name}</div>
+            <div style="font-size:12px;font-weight:600;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${i.name}${i.isMinor ? '<span style="font-size:9px;font-weight:700;color:#5b21b6;background:#ede9fe;padding:2px 7px;border-radius:6px;text-transform:uppercase;letter-spacing:.04em;margin-left:6px;">Minor</span>' : ''}</div>
             <div style="font-size:10px;color:#94a3b8;margin-top:1px;">${i.strategy}</div>
           </div>
           <div style="text-align:right;flex-shrink:0;">
