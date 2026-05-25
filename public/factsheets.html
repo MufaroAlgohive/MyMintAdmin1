@@ -1368,28 +1368,27 @@
             .from('securities_c').select('id,symbol,logo_url').in('symbol', allTickers);
           if (logSecs) {
             logSecs.forEach(s => { if (s.logo_url) _logoMap[s.symbol] = s.logo_url; });
-            /* Also fetch latest prices for min investment — latest date first to avoid row-limit truncation */
+            /* Fetch latest intraday prices for min investment from stock_intraday_c */
             const secIds = logSecs.map(s => s.id).filter(Boolean);
             if (secIds.length > 0) {
-              const { data: pd } = await supabaseClient
-                .from('stock_returns_c').select('as_of_date')
-                .order('as_of_date',{ascending:false}).limit(1).maybeSingle();
-              if (pd?.as_of_date) {
-                const { data: pr } = await supabaseClient
-                  .from('stock_returns_c').select('security_id,current_price')
-                  .in('security_id', secIds).eq('as_of_date', pd.as_of_date);
-                const idToSym = {};
-                logSecs.forEach(s => { idToSym[s.id] = s.symbol; });
-                (pr || []).forEach(r => {
-                  const sym = idToSym[r.security_id];
-                  if (sym && r.current_price != null) {
-                    const priceRand = Number(r.current_price) / 100;
-                    _priceMap[sym] = priceRand;
-                    const bare = sym.replace('.JO','');
-                    if (bare !== sym) _priceMap[bare] = priceRand;
-                  }
-                });
-              }
+              const { data: pr } = await supabaseClient
+                .from('stock_intraday_c').select('security_id,current_price')
+                .in('security_id', secIds)
+                .order('timestamp',{ascending:false});
+              const idToSym = {};
+              logSecs.forEach(s => { idToSym[s.id] = s.symbol; });
+              const seen = new Set();
+              (pr || []).forEach(r => {
+                if (seen.has(r.security_id)) return;
+                seen.add(r.security_id);
+                const sym = idToSym[r.security_id];
+                if (sym && r.current_price != null) {
+                  const priceRand = Number(r.current_price) / 100;
+                  _priceMap[sym] = priceRand;
+                  const bare = sym.replace('.JO','');
+                  if (bare !== sym) _priceMap[bare] = priceRand;
+                }
+              });
             }
           }
         }
