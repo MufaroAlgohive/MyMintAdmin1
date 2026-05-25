@@ -4926,22 +4926,45 @@
           }
         } catch(_){}
 
-        /* Fetch spark data for all strategies */
+        /* Fetch spark data for all strategies — limit to last 90 days to stay under row cap */
         try {
           const ids = allStrategiesFullData.map(s => s.id).filter(Boolean);
           if (ids.length > 0) {
-            const { data: retRows } = await supabaseClient
-              .from('strategies_returns_c')
-              .select('strategy_id,basket_value,as_of_date')
-              .in('strategy_id', ids)
-              .order('as_of_date', { ascending: true });
+            const d90 = new Date(); d90.setDate(d90.getDate() - 90);
+            const d90str = d90.toISOString().slice(0, 10);
+            const chunks90 = [];
+            for (let i = 0; i < ids.length; i += 50) chunks90.push(ids.slice(i, i + 50));
+            const sparkResults = await Promise.all(chunks90.map(chunk =>
+              supabaseClient.from('strategies_returns_c')
+                .select('strategy_id,basket_value,as_of_date')
+                .in('strategy_id', chunk)
+                .gte('as_of_date', d90str)
+                .order('as_of_date', { ascending: true })
+            ));
             const sparks = {};
-            (retRows || []).forEach(r => {
-              if (r.basket_value == null) return;
-              if (!sparks[r.strategy_id]) sparks[r.strategy_id] = [];
-              sparks[r.strategy_id].push(Number(r.basket_value));
+            sparkResults.forEach(({ data: retRows }) => {
+              (retRows || []).forEach(r => {
+                if (r.basket_value == null) return;
+                if (!sparks[r.strategy_id]) sparks[r.strategy_id] = [];
+                sparks[r.strategy_id].push(Number(r.basket_value));
+              });
             });
             window._fsSparkMap = sparks;
+          }
+        } catch(_){}
+
+        /* Ensure strategyYtdMap is populated — fetchStrategyReturns if the map is missing entries */
+        try {
+          const ids = allStrategiesFullData.map(s => s.id).filter(Boolean);
+          const missing = ids.some(id => !strategyYtdMap || !strategyYtdMap.has(String(id)));
+          if (missing) {
+            const retMap = await fetchStrategyReturns(ids);
+            if (!strategyYtdMap) strategyYtdMap = new Map();
+            if (!strategyReturnsMap) strategyReturnsMap = new Map();
+            Object.entries(retMap).forEach(([id, row]) => {
+              strategyYtdMap.set(id, row.ytd_pct ?? null);
+              strategyReturnsMap.set(id, row);
+            });
           }
         } catch(_){}
 
