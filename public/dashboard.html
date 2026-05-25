@@ -3397,14 +3397,25 @@
       const fetchStrategyReturns = async (strategyIds) => {
         if (!strategyIds || !strategyIds.length) return {};
         const map = {};
+        const uniqIds = [...new Set(strategyIds.filter(Boolean))];
+        /* Step 1: get the latest as_of_date (avoids 1000-row limit — strategies_returns_c has 300+ rows per strategy) */
+        const { data: dateRow } = await supabaseClient
+          .from('strategies_returns_c')
+          .select('as_of_date')
+          .order('as_of_date', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const latestDate = dateRow?.as_of_date;
+        if (!latestDate) return map;
+        /* Step 2: fetch all strategies for that single date — exactly 1 row per strategy */
         const chunks = [];
-        for (let i = 0; i < strategyIds.length; i += 50) chunks.push(strategyIds.slice(i, i + 50));
+        for (let i = 0; i < uniqIds.length; i += 200) chunks.push(uniqIds.slice(i, i + 200));
         const results = await Promise.all(
           chunks.map(chunk =>
             supabaseClient.from('strategies_returns_c')
               .select('strategy_id, 1d_pct, 5d_pct, 1m_pct, 6m_pct, ytd_pct, 1y_pct, 5y_pct, basket_value, as_of_date')
               .in('strategy_id', chunk)
-              .order('as_of_date', { ascending: false })
+              .eq('as_of_date', latestDate)
           )
         );
         results.forEach(({ data }) => {
