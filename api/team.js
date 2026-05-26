@@ -511,6 +511,29 @@ module.exports = async (req, res) => {
         return sendJson(res, 500, { error: 'Supabase did not return an action link' });
       }
 
+      // Resolve the Supabase verify hop server-side.
+      // Supabase's verify endpoint (action_link) 302-redirects to
+      //   <mintBase>/?admin_view=1#access_token=...&refresh_token=...
+      // If we let the iframe follow this redirect itself, Next.js SSR runs
+      // before the browser processes the hash, shows the login screen, and
+      // the user appears to be signed out.
+      // By following the redirect here (redirect:'manual') we extract the
+      // final Location URL — which already contains the tokens in the hash —
+      // and hand it directly to the iframe, bypassing the SSR issue entirely.
+      try {
+        const verifyRes = await fetch(actionLink, { redirect: 'manual' });
+        const location = verifyRes.headers.get('location');
+        if (location && location.includes('access_token')) {
+          console.log('[Impersonate] Resolved verify redirect to final Mint URL');
+          actionLink = location;
+        } else {
+          console.warn('[Impersonate] Verify redirect did not contain tokens; falling back to action_link. Status:', verifyRes.status, 'Location:', location);
+        }
+      } catch (err) {
+        // Non-fatal: fall back to the original action_link
+        console.warn('[Impersonate] Could not follow action_link server-side:', err.message);
+      }
+
       await writeAudit({
         action: 'impersonate',
         target_email: profile.email,
