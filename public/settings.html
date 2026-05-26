@@ -188,8 +188,8 @@
         <!-- ─── Landing: iOS grouped settings ─── -->
         <div id="settingsLanding" class="view visible">
 
-          <div class="settings-section-label">Studio</div>
-          <div class="settings-group">
+          <div class="settings-section-label" id="studioSectionLabel" style="display:none;">Studio</div>
+          <div class="settings-group" id="studioSectionGroup" style="display:none;">
             <div class="settings-row" id="openClientStudioBtn">
               <div class="row-icon" style="background:#e8e0fd;">
                 <svg viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12" y2="18.01"/></svg>
@@ -409,6 +409,9 @@
       });
 
       document.getElementById('backToSettingsBtn').addEventListener('click', () => {
+        // Tear down any active impersonation session so leaving via "Settings"
+        // is as clean as the explicit Exit button.
+        exitImpersonation();
         showView(settingsLanding, clientStudio);
         document.getElementById('topBarTitle').textContent = 'Settings';
       });
@@ -419,13 +422,35 @@
 
       // Dev/Live environment toggle for the Mint app
       let currentMintEnv = 'dev';
+      let studioConfig = { devUrl: '', liveUrl: '' };
       document.getElementById('envToggle').addEventListener('click', e => {
         const btn = e.target.closest('button[data-env]'); if (!btn) return;
+        if (btn.disabled) return;
         currentMintEnv = btn.dataset.env;
         document.querySelectorAll('#envToggle button').forEach(b => b.classList.toggle('active', b === btn));
-        // If we're currently impersonating someone, reload them in the newly selected env
         if (currentClient) loadClientImpersonation(currentClient);
       });
+
+      // Load Mint Dev/Live URLs once so we can disable env buttons whose URL
+      // isn't configured server-side.
+      (async () => {
+        try {
+          const r = await fetch('/api/studio-config', { headers: { 'Authorization': `Bearer ${(await supabaseClient.auth.getSession()).data.session?.access_token || ''}` } });
+          if (!r.ok) return;
+          const cfg = await r.json();
+          studioConfig.devUrl  = cfg.devUrl || '';
+          studioConfig.liveUrl = cfg.liveUrl || '';
+          const devBtn  = document.querySelector('#envToggle button[data-env="dev"]');
+          const liveBtn = document.querySelector('#envToggle button[data-env="live"]');
+          if (devBtn  && !studioConfig.devUrl)  { devBtn.disabled  = true; devBtn.title  = 'MINT_APP_URL_DEV is not set';  devBtn.style.opacity  = '0.5'; }
+          if (liveBtn && !studioConfig.liveUrl) { liveBtn.disabled = true; liveBtn.title = 'MINT_APP_URL_LIVE is not set'; liveBtn.style.opacity = '0.5'; }
+          // If active env is not configured but the other is, switch to that one.
+          if (currentMintEnv === 'dev' && !studioConfig.devUrl && studioConfig.liveUrl) {
+            currentMintEnv = 'live';
+            if (liveBtn) liveBtn.click();
+          }
+        } catch (err) { console.warn('[Studio] studio-config fetch failed:', err); }
+      })();
 
       // Exit client view — tear down iframe and return to list
       document.getElementById('exitImpersonationBtn').addEventListener('click', exitImpersonation);
@@ -651,13 +676,27 @@
       function fmtDate(d){if(!d)return'';const dt=new Date(d);if(isNaN(dt))return'';const diff=Math.floor((Date.now()-dt)/86400000);if(diff===0)return'Today';if(diff===1)return'Yesterday';if(diff<7)return`${diff}d ago`;return dt.toLocaleDateString('en-ZA',{day:'numeric',month:'short'});}
     </script>
   <script>
-    // Reveal Team links (sidebar + settings row) only for admins.
+    // Reveal Team links + Client View Studio only for admins.
     window.addEventListener('access-guard:ready', function (e) {
-      if (e.detail && e.detail.role === 'admin') {
+      var isAdmin = !!(e.detail && e.detail.role === 'admin');
+      if (isAdmin) {
         var nav = document.getElementById('teamNavLink');
         if (nav) nav.style.display = '';
         var row = document.getElementById('settingsTeamRow');
         if (row) row.style.display = '';
+        var label = document.getElementById('studioSectionLabel');
+        if (label) label.style.display = '';
+        var group = document.getElementById('studioSectionGroup');
+        if (group) group.style.display = '';
+      } else {
+        // Belt-and-braces: if a non-admin somehow lands on /settings.html#clientStudio
+        // or has the studio view open, force them back to the landing view.
+        var studio = document.getElementById('clientStudio');
+        if (studio && !studio.classList.contains('hidden')) {
+          studio.classList.add('hidden');
+          var landing = document.getElementById('settingsLanding');
+          if (landing) { landing.classList.remove('hidden'); landing.classList.add('visible'); }
+        }
       }
     });
   </script>
