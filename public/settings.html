@@ -438,8 +438,8 @@
           const r = await fetch('/api/studio-config', { headers: { 'Authorization': `Bearer ${(await supabaseClient.auth.getSession()).data.session?.access_token || ''}` } });
           if (!r.ok) return;
           const cfg = await r.json();
-          studioConfig.devUrl  = cfg.devUrl || '';
-          studioConfig.liveUrl = cfg.liveUrl || '';
+          studioConfig.devUrl  = cfg.mintAppUrlDev  || cfg.devUrl  || '';
+          studioConfig.liveUrl = cfg.mintAppUrlLive || cfg.liveUrl || '';
           const devBtn  = document.querySelector('#envToggle button[data-env="dev"]');
           const liveBtn = document.querySelector('#envToggle button[data-env="live"]');
           if (devBtn  && !studioConfig.devUrl)  { devBtn.disabled  = true; devBtn.title  = 'MINT_APP_URL_DEV is not set';  devBtn.style.opacity  = '0.5'; }
