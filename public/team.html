@@ -72,6 +72,16 @@
     .audit-when{font-size:11px;color:#8e8e93;}
     .audit-detail{font-size:12px;color:#3c3c43;}
     .audit-notice{background:#fff8e1;color:#7a4d00;border:1px solid #ffe0a3;padding:10px 14px;border-radius:10px;font-size:13px;margin-bottom:12px;display:none;}
+    .audit-impersonate{background:#fde8f4;color:#a3217a;}
+    .env-badge{display:inline-flex;align-items:center;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;}
+    .env-live{background:#fde8e8;color:#c0392b;}
+    .env-dev{background:#e8f4fd;color:#0071e3;}
+    .filter-row{display:flex;flex-wrap:wrap;gap:10px;padding:14px 20px;border-bottom:1px solid #f2f2f7;align-items:flex-end;}
+    .filter-field{display:flex;flex-direction:column;gap:4px;min-width:160px;flex:1;}
+    .filter-field label{font-size:11px;font-weight:600;color:#8e8e93;text-transform:uppercase;letter-spacing:.05em;margin-bottom:0;}
+    .filter-field input{padding:7px 10px;font-size:13px;border:1px solid #d1d1d6;border-radius:8px;color:#1c1c1e;outline:none;}
+    .filter-field input:focus{border-color:#7c3aed;}
+    .filter-actions{display:flex;gap:8px;}
     .page-chips{display:flex;flex-wrap:wrap;gap:4px;}
     .page-chip{background:#f2f2f7;color:#3c3c43;font-size:11px;padding:2px 8px;border-radius:6px;font-weight:500;}
     .td-actions{display:flex;gap:6px;align-items:center;}
@@ -139,6 +149,7 @@
       <div class="tabs">
         <button class="tab-btn active" data-tab="members">Members</button>
         <button class="tab-btn" data-tab="audit">Audit Log</button>
+        <button class="tab-btn" data-tab="impersonation">Impersonation Log</button>
       </div>
 
       <div class="tab-pane active" id="tab-members">
@@ -161,6 +172,52 @@
               </tr>
             </thead>
             <tbody id="teamTableBody">
+              <tr><td colspan="5" class="empty-state">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="tab-pane" id="tab-impersonation">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Impersonation Log</span>
+            <button class="btn btn-ghost" id="impRefreshBtn">Refresh</button>
+          </div>
+          <div class="filter-row">
+            <div class="filter-field">
+              <label for="impAdmin">Admin (actor email)</label>
+              <input type="text" id="impAdmin" placeholder="e.g. jane@mymint.co.za">
+            </div>
+            <div class="filter-field">
+              <label for="impClient">Client email</label>
+              <input type="text" id="impClient" placeholder="e.g. client@example.com">
+            </div>
+            <div class="filter-field">
+              <label for="impFrom">From</label>
+              <input type="date" id="impFrom">
+            </div>
+            <div class="filter-field">
+              <label for="impTo">To</label>
+              <input type="date" id="impTo">
+            </div>
+            <div class="filter-actions">
+              <button class="btn btn-primary" id="impApplyBtn">Apply</button>
+              <button class="btn btn-ghost" id="impClearBtn">Clear</button>
+            </div>
+          </div>
+          <div class="audit-notice" id="impNotice"></div>
+          <table>
+            <thead>
+              <tr>
+                <th>When</th>
+                <th>Admin (viewed as)</th>
+                <th>Client</th>
+                <th>Environment</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody id="impTableBody">
               <tr><td colspan="5" class="empty-state">Loading...</td></tr>
             </tbody>
           </table>
@@ -396,10 +453,25 @@
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
         document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.id === 'tab-' + tab));
         if (tab === 'audit') loadAudit();
+        if (tab === 'impersonation') loadImpersonation();
       });
     });
 
     document.getElementById('auditRefreshBtn').addEventListener('click', loadAudit);
+    document.getElementById('impRefreshBtn').addEventListener('click', loadImpersonation);
+    document.getElementById('impApplyBtn').addEventListener('click', loadImpersonation);
+    document.getElementById('impClearBtn').addEventListener('click', () => {
+      document.getElementById('impAdmin').value = '';
+      document.getElementById('impClient').value = '';
+      document.getElementById('impFrom').value = '';
+      document.getElementById('impTo').value = '';
+      loadImpersonation();
+    });
+    ['impAdmin','impClient','impFrom','impTo'].forEach(id => {
+      document.getElementById(id).addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') loadImpersonation();
+      });
+    });
 
     const fmtAuditWhen = (iso) => {
       if (!iso) return '';
@@ -437,6 +509,11 @@
           return `Removed${d.role ? ' (was ' + escape(d.role) + ')' : ''}`;
         case 'signup':
           return `Completed signup${d.full_name ? ' as ' + escape(d.full_name) : ''}`;
+        case 'impersonate': {
+          const env = d.mint_environment ? ` <strong>${escape(d.mint_environment)}</strong>` : '';
+          const name = d.target_name ? ` (${escape(d.target_name)})` : '';
+          return `Viewed Mint as client${name} on${env}`;
+        }
         default:
           return escape(JSON.stringify(d));
       }
@@ -459,6 +536,60 @@
         </tr>
       `).join('');
     };
+
+    const renderImpersonation = (entries) => {
+      const body = document.getElementById('impTableBody');
+      if (!entries.length) {
+        body.innerHTML = '<tr><td colspan="5" class="empty-state">No impersonation events match these filters.</td></tr>';
+        return;
+      }
+      const escape = (s) => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      body.innerHTML = entries.map(e => {
+        const d = e.details || {};
+        const env = (d.mint_environment || '').toLowerCase();
+        const envBadge = env
+          ? `<span class="env-badge env-${env === 'live' ? 'live' : 'dev'}">${escape(env)}</span>`
+          : '<span style="color:#8e8e93;font-size:12px;">—</span>';
+        const targetName = d.target_name ? `<div style="font-size:11px;color:#8e8e93;margin-top:2px">${escape(d.target_name)}</div>` : '';
+        return `
+          <tr>
+            <td><span class="audit-when">${fmtAuditWhen(e.created_at)}</span></td>
+            <td>${escape(e.actor_email || '—')}</td>
+            <td>
+              <div>${escape(e.target_email || '—')}</div>
+              ${targetName}
+            </td>
+            <td>${envBadge}</td>
+            <td><span class="audit-detail">${escape(d.mint_base || '')}</span></td>
+          </tr>
+        `;
+      }).join('');
+    };
+
+    async function loadImpersonation() {
+      const notice = document.getElementById('impNotice');
+      notice.style.display = 'none';
+      document.getElementById('impTableBody').innerHTML = '<tr><td colspan="5" class="empty-state">Loading...</td></tr>';
+      const params = new URLSearchParams({ action: 'audit-list', audit_action: 'impersonate', limit: '200' });
+      const admin = document.getElementById('impAdmin').value.trim();
+      const client = document.getElementById('impClient').value.trim();
+      const from = document.getElementById('impFrom').value.trim();
+      const to = document.getElementById('impTo').value.trim();
+      if (admin) params.set('actor_email', admin);
+      if (client) params.set('target_email', client);
+      if (from) params.set('from', from + 'T00:00:00Z');
+      if (to) params.set('to', to + 'T23:59:59Z');
+      const data = await api('GET', '/api/team?' + params.toString());
+      if (!data.ok) {
+        document.getElementById('impTableBody').innerHTML = `<tr><td colspan="5" class="empty-state">${data.error || 'Could not load impersonation log'}</td></tr>`;
+        return;
+      }
+      if (data.notice) {
+        notice.textContent = data.notice;
+        notice.style.display = 'block';
+      }
+      renderImpersonation(data.entries || []);
+    }
 
     async function loadAudit() {
       const notice = document.getElementById('auditNotice');

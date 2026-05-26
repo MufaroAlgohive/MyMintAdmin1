@@ -540,10 +540,28 @@ module.exports = async (req, res) => {
       const result = await requireAdmin(req, res);
       if (!result) return;
       const limit = Math.min(parseInt(url.searchParams.get('limit') || '100', 10) || 100, 500);
+
+      const filters = [];
+      const auditAction = (url.searchParams.get('audit_action') || '').trim();
+      if (auditAction) filters.push(`action=eq.${encodeURIComponent(auditAction)}`);
+      const actorEmail = (url.searchParams.get('actor_email') || '').trim();
+      if (actorEmail) filters.push(`actor_email=ilike.${encodeURIComponent('%' + actorEmail + '%')}`);
+      const targetEmail = (url.searchParams.get('target_email') || '').trim();
+      if (targetEmail) filters.push(`target_email=ilike.${encodeURIComponent('%' + targetEmail + '%')}`);
+      const fromDate = (url.searchParams.get('from') || '').trim();
+      if (fromDate) filters.push(`created_at=gte.${encodeURIComponent(fromDate)}`);
+      const toDate = (url.searchParams.get('to') || '').trim();
+      if (toDate) filters.push(`created_at=lte.${encodeURIComponent(toDate)}`);
+
+      const qs = [
+        'select=id,action,target_email,target_member_id,actor_email,actor_user_id,details,created_at',
+        'order=created_at.desc',
+        `limit=${limit}`,
+        ...filters
+      ].join('&');
+
       try {
-        const rows = await supabaseRequest(
-          `/rest/v1/admin_team_audit?select=id,action,target_email,target_member_id,actor_email,actor_user_id,details,created_at&order=created_at.desc&limit=${limit}`
-        );
+        const rows = await supabaseRequest(`/rest/v1/admin_team_audit?${qs}`);
         return sendJson(res, 200, { ok: true, entries: rows });
       } catch (err) {
         // If the table doesn't exist yet, return an actionable hint
