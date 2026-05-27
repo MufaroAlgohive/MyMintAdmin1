@@ -689,7 +689,11 @@
           const ip = !afRaw;
           /* Prefer intraday live price; fall back to securities_c.last_price (rands);
              fall back to avg_fill if no market price is available. */
-          const lp = intradayMap[h.security_id] ?? Number(sec.last_price) || af;
+          const intraLp = intradayMap[h.security_id];
+          const lastLp = Number(sec.last_price);
+          const lp = (intraLp != null && Number.isFinite(intraLp)) ? intraLp
+                   : (Number.isFinite(lastLp) && lastLp > 0) ? lastLp
+                   : af;
           const mv = (lp*qty), cb = (af*qty), pr = mv - cb;
           if (!ip) { tv += mv; tc += cb; }
           return { symbol: sec.symbol, name: sec.name, value: mv, pnlRands: pr, isPending: ip, strategyId: h.strategy_id };
