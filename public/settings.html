@@ -655,7 +655,7 @@
 
       async function loadClientInspectorData(client, reqId) {
         const [hr, tr] = await Promise.all([
-          supabaseClient.from('stock_holdings_c').select('id,security_id,quantity,avg_fill,Expected_fill,strategy_id,Status,trade_side,is_active').eq('user_id',client.id).eq('Status','active').eq('is_active',true).eq('trade_side','BUY'),
+          supabaseClient.from('stock_holdings_c').select('id,security_id,quantity,avg_fill,strategy_id,Status,trade_side,is_active').eq('user_id',client.id).eq('Status','active').eq('is_active',true).eq('trade_side','BUY'),
           supabaseClient.from('transactions').select('id,name,description,amount,direction,status,transaction_date,created_at').eq('user_id',client.id).order('created_at',{ascending:false}).limit(6),
         ]);
         if (reqId !== inspectorRequestId) return;
@@ -680,25 +680,15 @@
         if (strIds.length) { const {data:s} = await supabaseClient.from('strategies_c').select('id,name,short_name,risk_level').in('id',strIds); (s||[]).forEach(x=>strMap[x.id]=x); }
         if (reqId !== inspectorRequestId) return;
 
-        /* Cost basis per share = higher of (avg_fill / 100) and Expected_fill,
-           both in rands. avg_fill is stored in cents, Expected_fill is rands
-           set at click time. Guard against legacy rows that stored
-           Expected_fill in cents — if it's >5× avg_fill-in-rands, divide. */
-        const costBasisPerShare = (h) => {
-          const avgRands = Number(h.avg_fill || 0) / 100;
-          let expRands = Number(h.Expected_fill);
-          if (!Number.isFinite(expRands) || expRands <= 0) expRands = 0;
-          if (expRands > 0 && avgRands > 0 && expRands > avgRands * 5) {
-            expRands = expRands / 100; // legacy cents row
-          }
-          return Math.max(avgRands, expRands);
-        };
-
+        /* Match the orderbook's Client PnL exactly:
+             cost = avg_fill / 100 (cents → rands)
+             live = intraday_price ?? last_price
+             PnL  = qty × (live − cost) */
         let portfolioValue = 0, totalCost = 0, totalPnL = 0;
         const fh = holdings.filter(h=>secMap[h.security_id]).map(h => {
           const sec = secMap[h.security_id];
           const qty = Number(h.quantity || 0);
-          const cost = costBasisPerShare(h);
+          const cost = (Number(h.avg_fill) || 0) / 100;
           const intraLp = intradayMap[h.security_id];
           const lastLp = Number(sec.last_price);
           const livePrice = Number.isFinite(intraLp) ? intraLp
