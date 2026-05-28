@@ -564,12 +564,9 @@
       });
 
       async function loadAllUsers() {
-        const loading    = document.getElementById('clientListLoading');
         const countBadge = document.getElementById('clientCountBadge');
         const scrollArea = document.getElementById('clientScrollArea');
-        loading.style.display = 'block';
-        scrollArea.innerHTML = '';
-        scrollArea.appendChild(loading);
+        scrollArea.innerHTML = '<div class="client-loading">Loading…</div>';
         countBadge.textContent = '…';
         try {
           const results = [];
@@ -592,10 +589,8 @@
             return { id: p.id, name, initials, email: p.email || '', strategyLabel: '' };
           });
           countBadge.textContent = allUsersClients.length;
-          loading.style.display = 'none';
           renderClientList(allUsersClients);
         } catch(err) {
-          loading.style.display = 'none';
           countBadge.textContent = 'Err';
           scrollArea.innerHTML = `<div class="client-empty">Error: ${escapeHtml(err.message||'Unknown')}</div>`;
         }
