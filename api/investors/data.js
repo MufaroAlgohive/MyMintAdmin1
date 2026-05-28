@@ -69,7 +69,7 @@ module.exports = async (req, res) => {
       }
     });
 
-    const [profiles, secMeta, secLive, txns, familyMembers] = await Promise.all([
+    const [profiles, secMeta, secReturns, secIntraday, txns, familyMembers] = await Promise.all([
       userIds.length
         ? sbGet(`profiles?select=id,first_name,last_name,email,mint_number&id=in.(${userIds.join(',')})`)
         : Promise.resolve([]),
@@ -79,6 +79,12 @@ module.exports = async (req, res) => {
       secIds.length
         ? sbGet(`stock_returns_c?select=security_id,symbol,current_price,1d_pct,ytd_pct,1y_pct,as_of_date&security_id=in.(${secIds.join(',')})&order=as_of_date.desc`)
         : Promise.resolve([]),
+      /* Live intraday prices — same source the orderbook uses for its Live
+         Price + Client PnL columns. First-write-wins per security_id with
+         desc ordering gives us the latest tick. */
+      secIds.length
+        ? sbGet(`stock_intraday_c?select=security_id,current_price,timestamp&security_id=in.(${secIds.join(',')})&order=timestamp.desc`)
+        : Promise.resolve([]),
       userIds.length
         ? sbGet(`transactions?select=user_id,amount,direction,name,description,status,transaction_date&user_id=in.(${userIds.join(',')})&order=transaction_date.desc`)
         : Promise.resolve([]),
@@ -86,6 +92,29 @@ module.exports = async (req, res) => {
         ? sbGet(`family_members?select=id,first_name,last_name&id=in.(${famIds.join(',')})`)
         : Promise.resolve([]),
     ]);
+
+    /* Merge intraday current_price (cents) into secLive rows so the client
+       gets one shape. Intraday wins when present; stock_returns_c fills the
+       gap for securities without an intraday tick. */
+    const intradayByid = {};
+    (secIntraday || []).forEach((row) => {
+      if (!row?.security_id) return;
+      if (intradayByid[row.security_id]) return; // first (latest) wins
+      if (row.current_price != null) intradayByid[row.security_id] = Number(row.current_price);
+    });
+    const secLive = (secReturns || []).map((r) => {
+      const intraCents = intradayByid[r.security_id];
+      if (Number.isFinite(intraCents) && intraCents > 0) {
+        return { ...r, current_price: intraCents };
+      }
+      return r;
+    });
+    /* Surface intraday-only securities (no stock_returns_c row) too. */
+    const returnsIds = new Set((secReturns || []).map((r) => r.security_id));
+    Object.entries(intradayByid).forEach(([sid, cents]) => {
+      if (returnsIds.has(sid)) return;
+      secLive.push({ security_id: sid, current_price: cents });
+    });
 
     res.statusCode = 200;
     res.end(JSON.stringify({ holdings, strategies, stratHist, profiles, secMeta, secLive, txns, familyMembers }));
