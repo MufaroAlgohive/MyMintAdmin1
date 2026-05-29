@@ -77,3 +77,57 @@ LIMIT 50;
 -- FROM public.profiles
 -- WHERE COALESCE(NULLIF(TRIM(first_name), ''), NULL) IS NULL
 --   AND COALESCE(NULLIF(TRIM(last_name),  ''), NULL) IS NULL;
+
+-- ─────────────────────────────────────────────────────────────────────
+-- DIAGNOSTIC: if the preview at step 1 returned 0 rows but the UI still
+-- shows "Unknown User", the names probably aren't in
+-- user_onboarding_pack_details.pack_details. Sumsub data also lives in
+-- user_onboarding.sumsub_raw on some accounts. Run these to find out
+-- where the name actually is for the missing users.
+-- ─────────────────────────────────────────────────────────────────────
+
+-- 4a. Count: of the unnamed profiles, how many have ANY onboarding rows.
+SELECT
+  (SELECT COUNT(*) FROM public.profiles
+     WHERE COALESCE(NULLIF(TRIM(first_name), ''), NULL) IS NULL
+       AND COALESCE(NULLIF(TRIM(last_name),  ''), NULL) IS NULL) AS unnamed_profiles,
+  (SELECT COUNT(*) FROM public.profiles pr
+     WHERE COALESCE(NULLIF(TRIM(pr.first_name), ''), NULL) IS NULL
+       AND COALESCE(NULLIF(TRIM(pr.last_name),  ''), NULL) IS NULL
+       AND EXISTS (SELECT 1 FROM public.user_onboarding_pack_details p
+                    WHERE p.user_id = pr.id AND p.pack_details IS NOT NULL)) AS have_pack_details,
+  (SELECT COUNT(*) FROM public.profiles pr
+     WHERE COALESCE(NULLIF(TRIM(pr.first_name), ''), NULL) IS NULL
+       AND COALESCE(NULLIF(TRIM(pr.last_name),  ''), NULL) IS NULL
+       AND EXISTS (SELECT 1 FROM public.user_onboarding o
+                    WHERE o.user_id = pr.id AND o.sumsub_raw IS NOT NULL)) AS have_sumsub_raw;
+
+-- 4b. Sample: for unnamed profiles, show the actual keys present in
+-- sumsub_raw JSON so we know which fields to pull from.
+SELECT
+  pr.id, pr.email,
+  jsonb_object_keys(o.sumsub_raw::jsonb) AS sumsub_raw_keys
+FROM public.profiles pr
+JOIN public.user_onboarding o ON o.user_id = pr.id
+WHERE COALESCE(NULLIF(TRIM(pr.first_name), ''), NULL) IS NULL
+  AND COALESCE(NULLIF(TRIM(pr.last_name),  ''), NULL) IS NULL
+  AND o.sumsub_raw IS NOT NULL
+LIMIT 20;
+
+-- 4c. Sample: actual extracted names from sumsub_raw with common shapes.
+SELECT
+  pr.id, pr.email,
+  o.sumsub_raw #>> '{info,firstName}'      AS info_first,
+  o.sumsub_raw #>> '{info,lastName}'       AS info_last,
+  o.sumsub_raw #>> '{fixedInfo,firstName}' AS fixed_first,
+  o.sumsub_raw #>> '{fixedInfo,lastName}'  AS fixed_last,
+  o.sumsub_raw #>> '{firstName}'           AS root_first,
+  o.sumsub_raw #>> '{lastName}'            AS root_last,
+  o.sumsub_raw #>> '{applicant,info,firstName}' AS applicant_info_first,
+  o.sumsub_raw #>> '{applicant,info,lastName}'  AS applicant_info_last
+FROM public.profiles pr
+JOIN public.user_onboarding o ON o.user_id = pr.id
+WHERE COALESCE(NULLIF(TRIM(pr.first_name), ''), NULL) IS NULL
+  AND COALESCE(NULLIF(TRIM(pr.last_name),  ''), NULL) IS NULL
+  AND o.sumsub_raw IS NOT NULL
+LIMIT 20;
