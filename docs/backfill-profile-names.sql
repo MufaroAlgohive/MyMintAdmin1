@@ -131,3 +131,51 @@ WHERE COALESCE(NULLIF(TRIM(pr.first_name), ''), NULL) IS NULL
   AND COALESCE(NULLIF(TRIM(pr.last_name),  ''), NULL) IS NULL
   AND o.sumsub_raw IS NOT NULL
 LIMIT 20;
+
+-- ─────────────────────────────────────────────────────────────────────
+-- 5. COMBINED BACKFILL — fills first/last name from EITHER pack_details
+-- OR sumsub_raw. Run this once. Safe to re-run.
+-- ─────────────────────────────────────────────────────────────────────
+UPDATE public.profiles AS pr
+SET
+  first_name = COALESCE(NULLIF(TRIM(pr.first_name), ''), c.picked_first_name),
+  last_name  = COALESCE(NULLIF(TRIM(pr.last_name),  ''), c.picked_last_name)
+FROM (
+  SELECT
+    m.id AS profile_id,
+    /* Try pack_details first, then sumsub_raw. info → fixedInfo → root. */
+    COALESCE(
+      NULLIF(TRIM(p.pack_details #>> '{info,firstName}'), ''),
+      NULLIF(TRIM(p.pack_details #>> '{fixedInfo,firstName}'), ''),
+      NULLIF(TRIM(p.pack_details #>> '{firstName}'), ''),
+      NULLIF(TRIM(o.sumsub_raw  #>> '{info,firstName}'), ''),
+      NULLIF(TRIM(o.sumsub_raw  #>> '{fixedInfo,firstName}'), ''),
+      NULLIF(TRIM(o.sumsub_raw  #>> '{firstName}'), ''),
+      NULLIF(TRIM(o.sumsub_raw  #>> '{applicant,info,firstName}'), '')
+    ) AS picked_first_name,
+    COALESCE(
+      NULLIF(TRIM(p.pack_details #>> '{info,lastName}'), ''),
+      NULLIF(TRIM(p.pack_details #>> '{fixedInfo,lastName}'), ''),
+      NULLIF(TRIM(p.pack_details #>> '{lastName}'), ''),
+      NULLIF(TRIM(o.sumsub_raw  #>> '{info,lastName}'), ''),
+      NULLIF(TRIM(o.sumsub_raw  #>> '{fixedInfo,lastName}'), ''),
+      NULLIF(TRIM(o.sumsub_raw  #>> '{lastName}'), ''),
+      NULLIF(TRIM(o.sumsub_raw  #>> '{applicant,info,lastName}'), '')
+    ) AS picked_last_name
+  FROM public.profiles m
+  LEFT JOIN public.user_onboarding_pack_details p ON p.user_id = m.id
+  LEFT JOIN public.user_onboarding o ON o.user_id = m.id
+  WHERE COALESCE(NULLIF(TRIM(m.first_name), ''), NULL) IS NULL
+    AND COALESCE(NULLIF(TRIM(m.last_name),  ''), NULL) IS NULL
+    AND (p.pack_details IS NOT NULL OR o.sumsub_raw IS NOT NULL)
+) c
+WHERE pr.id = c.profile_id
+  AND (c.picked_first_name IS NOT NULL OR c.picked_last_name IS NOT NULL);
+
+-- 6. Verify how many remain. Anything left → those users have no Sumsub
+-- data anywhere in the DB. Use scripts/sync-names-from-sumsub.js to fetch
+-- them live from Sumsub.
+SELECT COUNT(*) AS still_unnamed
+FROM public.profiles
+WHERE COALESCE(NULLIF(TRIM(first_name), ''), NULL) IS NULL
+  AND COALESCE(NULLIF(TRIM(last_name),  ''), NULL) IS NULL;
