@@ -5289,7 +5289,19 @@
       const profileId = String(profile?.id || '').trim();
       const onboardingRow = onboardingMap[profileId] || {};
       const mandatePrefill = getMandatePrefillData(profile, onboardingRow);
-      const fullName = [profile.first_name, profile.last_name].filter(Boolean).join(' ').trim() || 'Unknown User';
+      const directName = [profile.first_name, profile.last_name].filter(Boolean).join(' ').trim();
+      let fullName = directName;
+      if (!fullName && profileId) {
+        const pack = packJsonMap[profileId];
+        if (pack) {
+          const fn = String(pickPackValue(pack, ['info.firstName', 'fixedInfo.firstName', 'firstName']) || '').trim();
+          const ln = String(pickPackValue(pack, ['info.lastName', 'fixedInfo.lastName', 'lastName']) || '').trim();
+          const composite = [fn, ln].filter(Boolean).join(' ').trim();
+          const full = String(pickPackValue(pack, ['fullName', 'info.fullName', 'fixedInfo.fullName']) || '').trim();
+          fullName = composite || full;
+        }
+      }
+      if (!fullName) fullName = 'Unknown User';
 
       return {
         profileId,
@@ -5364,7 +5376,19 @@
 
     const buildNotCompletedEmailEntry = (profile = {}) => {
       const profileId = String(profile?.id || '').trim();
-      const fullName = [profile?.first_name, profile?.last_name].filter(Boolean).join(' ').trim() || 'Unknown User';
+      const directName = [profile?.first_name, profile?.last_name].filter(Boolean).join(' ').trim();
+      let fullName = directName;
+      if (!fullName && profileId) {
+        const pack = packJsonMap[profileId];
+        if (pack) {
+          const fn = String(pickPackValue(pack, ['info.firstName', 'fixedInfo.firstName', 'firstName']) || '').trim();
+          const ln = String(pickPackValue(pack, ['info.lastName', 'fixedInfo.lastName', 'lastName']) || '').trim();
+          const composite = [fn, ln].filter(Boolean).join(' ').trim();
+          const full = String(pickPackValue(pack, ['fullName', 'info.fullName', 'fixedInfo.fullName']) || '').trim();
+          fullName = composite || full;
+        }
+      }
+      if (!fullName) fullName = 'Unknown User';
       const email = String(profile?.email || '').trim() || '-';
       return { profileId, fullName, email };
     };
@@ -6565,7 +6589,24 @@
 
       const renderProfileItem = (profile) => {
         const clone = profileTemplate.content.firstElementChild.cloneNode(true);
-        const fullName = [profile.first_name, profile.last_name].filter(Boolean).join(' ') || 'Unknown User';
+        /* Name fallback ladder:
+           1. profiles.first_name + profiles.last_name (authoritative)
+           2. user_onboarding_pack_details.pack_details (Sumsub-sourced data
+              already loaded into packJsonMap when this list renders)
+           3. 'Unknown User' literal */
+        const directName = [profile.first_name, profile.last_name].filter(Boolean).join(' ').trim();
+        let fullName = directName;
+        if (!fullName) {
+          const pack = profile?.id ? packJsonMap[profile.id] : null;
+          if (pack) {
+            const fn = String(pickPackValue(pack, ['info.firstName', 'fixedInfo.firstName', 'firstName']) || '').trim();
+            const ln = String(pickPackValue(pack, ['info.lastName', 'fixedInfo.lastName', 'lastName']) || '').trim();
+            const composite = [fn, ln].filter(Boolean).join(' ').trim();
+            const full = String(pickPackValue(pack, ['fullName', 'info.fullName', 'fixedInfo.fullName']) || '').trim();
+            fullName = composite || full;
+          }
+        }
+        if (!fullName) fullName = 'Unknown User';
         const uid = profile.id;
 
         if (profile.id) {
