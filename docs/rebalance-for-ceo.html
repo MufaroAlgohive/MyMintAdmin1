@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office"
+      xmlns:w="urn:schemas-microsoft-com:office:word"
+      xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta charset="utf-8" />
+<title>How MINT Rebalancing Works</title>
+<!-- Word-friendly defaults so the .docx that comes out of "Save As" looks clean. -->
+<style>
+  body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; line-height: 1.5; max-width: 760px; margin: 0 auto; padding: 32px; color: #1a1a1a; }
+  h1 { font-size: 22pt; color: #2d3748; margin-top: 0; }
+  h2 { font-size: 15pt; color: #2d3748; margin-top: 28px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; }
+  h3 { font-size: 12pt; color: #4a5568; margin-top: 18px; }
+  .lead { font-size: 12pt; color: #4a5568; font-style: italic; margin-bottom: 24px; }
+  .box { background: #f7fafc; border-left: 4px solid #4299e1; padding: 12px 16px; margin: 14px 0; }
+  .example { background: #fefcbf; border-left: 4px solid #d69e2e; padding: 12px 16px; margin: 14px 0; }
+  table { border-collapse: collapse; margin: 12px 0; width: 100%; }
+  th, td { border: 1px solid #cbd5e0; padding: 8px 12px; text-align: left; font-size: 10pt; }
+  th { background: #edf2f7; }
+  .num { text-align: right; font-family: Consolas, monospace; }
+</style>
+</head>
+<body>
+
+<h1>How MINT Rebalancing Works</h1>
+<p class="lead">A non-technical walkthrough for leadership — what happens when we change a strategy's holdings, where the money goes, and what the client sees.</p>
+
+<h2>What "rebalancing" actually means</h2>
+<p>Every MINT strategy (e.g. <em>Yield Basket</em>, <em>MyGrowthFund</em>) is a fixed recipe of underlying securities. Over time we improve the recipe: maybe we drop Sun International and replace it with Boxer Retail. That swap, applied across every client who holds that strategy, is a <strong>rebalance</strong>.</p>
+
+<p>The CRM (the admin side I use) drives it. The MINT app (what clients see) just reflects whatever the CRM has done. Clients don't trigger or even confirm rebalances — they're administrative actions on our side.</p>
+
+<h2>The basic flow, end to end</h2>
+<ol>
+  <li><strong>Open the CRM</strong> &rarr; Rebalance tab &rarr; pick a strategy.</li>
+  <li><strong>Choose what to sell</strong> (the security being removed) and <strong>what to buy</strong> (the security being added).</li>
+  <li><strong>Click Execute.</strong> The CRM creates a "pending rebalance" record listing every client holding the strategy and how many shares each one is selling/buying.</li>
+  <li>The pending rebalance shows up on the <strong>Orderbook</strong> tab. We send the orders to the broker, wait for fills, then enter the actual fill prices and click <strong>Fill &amp; Settle</strong>.</li>
+  <li>The CRM now updates each client's portfolio: the old position is marked closed, the new position is created. <strong>Any leftover cash from the swap</strong> goes into a special bucket I'll explain below.</li>
+  <li>In the MINT app, each affected client sees:
+    <ul>
+      <li>Their old security gone from the strategy</li>
+      <li>Their new security appearing</li>
+      <li>The strategy's total value unchanged (minus brokerage fees)</li>
+      <li>A new entry under "Recent Transactions" that says e.g. <em>"Rebalance: Yield Basket — sold 5 SUI, bought 3 BOX"</em></li>
+    </ul>
+  </li>
+</ol>
+
+<h2>Why there's "leftover cash" after a rebalance</h2>
+<p>Imagine a client sold R1,000 worth of Sun International, and we want to redeploy that into Boxer Retail. Boxer trades in lots, so we might only spend R895 on whole shares. The extra <strong>R105 is leftover cash</strong>. That money doesn't vanish — it belongs to the client, just in cash form.</p>
+
+<div class="box">
+<strong>Key principle:</strong> The leftover cash is <strong>still part of the client's strategy</strong>. It hasn't been spent yet, but it's earmarked for that specific strategy. Next time we rebalance that strategy, that cash is added to the new buy power. The client's strategy total stays the same as before the rebalance (minus fees).</p>
+</div>
+
+<h3>An example</h3>
+<div class="example">
+A client invested <strong>R5,000</strong> in Yield Basket. Today the positions are worth <strong>R5,200</strong> (R200 gain).<br/><br/>
+We rebalance: swap one of the holdings, leaving <strong>R150</strong> in cash.<br/><br/>
+The client opens MINT and sees:
+<table>
+  <tr><th>Item</th><th class="num">Value</th></tr>
+  <tr><td>Positions in Yield Basket</td><td class="num">R 5,050</td></tr>
+  <tr><td>Rebalance cash (in the strategy)</td><td class="num">R 150</td></tr>
+  <tr><td><strong>Total Yield Basket value</strong></td><td class="num"><strong>R 5,200</strong></td></tr>
+</table>
+The R200 gain is preserved. Without showing the R150 cash, the strategy would <em>look like</em> it shrank by R150 — that would be alarming and wrong.
+</div>
+
+<h2>Why each strategy has its own cash bucket</h2>
+<p>If a client is invested in <strong>three different strategies</strong>, each strategy gets its own leftover cash bucket. The cash from a Yield Basket rebalance can only be reinvested into Yield Basket. It can't be mixed up with cash from MyGrowthFund or another strategy.</p>
+
+<p>This matches what intuitively makes sense: the cash <em>belongs to</em> that strategy. It also means clients can clearly see, per strategy, "this strategy has R150 sitting in cash waiting for the next rebalance to deploy it."</p>
+
+<h2>Family member accounts</h2>
+<p>Some clients have their children invested in the same MINT strategies (under the parent's main account). Each child has their own holdings. When we rebalance a strategy that affects both the parent's own holdings <em>and</em> the children's holdings, each person's leftover cash is tracked separately — the parent's cash from the rebalance doesn't get mixed with the child's cash.</p>
+
+<p><em>Note for context: today the rebalance still groups all family-member holdings together for execution simplicity. The data tracking is already in place to split it; turning it on properly is a small remaining piece of work.</em></p>
+
+<h2>What clients see in their MINT activity</h2>
+<p>Every rebalance writes one entry per client into their "Recent Transactions" list in MINT. It's a R0 entry (no money in or out — the swap is positions↔positions) but the label tells them what happened, e.g.:</p>
+<div class="box">
+<strong>Rebalance: MyGrowthFund</strong><br/>
+<em>sold 8 × SUI, bought 5 × BOX</em><br/>
+<small>29 May 2026</small>
+</div>
+<p>This gives clients a clear, dated audit trail of every administrative change to their portfolio, without us having to build a new screen in the app.</p>
+
+<h2>The numbers behind it (for context, not detail)</h2>
+<table>
+  <tr><th>What the CRM tracks</th><th>Why</th></tr>
+  <tr><td>Each client's positions (which securities, how many shares, at what price)</td><td>The actual investment holdings.</td></tr>
+  <tr><td>Each rebalance event (who, what was sold, what was bought, when)</td><td>Full audit trail for compliance and internal review.</td></tr>
+  <tr><td>Each strategy's leftover cash, per client</td><td>So MINT can show the right total value and so future rebalances have the right buy power.</td></tr>
+  <tr><td>One "Rebalance: …" entry per client per event</td><td>So clients see a clear history in their MINT app.</td></tr>
+</table>
+
+<h2>What this means for the business</h2>
+<ul>
+  <li><strong>Rebalances are non-destructive to the client's wealth.</strong> A swap doesn't lose money — any cash that wasn't redeployed sits in the strategy as cash, fully visible to the client.</li>
+  <li><strong>Clients always see their full picture.</strong> Positions + leftover cash = strategy value. No phantom "where did my money go" moments.</li>
+  <li><strong>Each strategy is self-contained.</strong> Yield Basket's cash stays in Yield Basket. Clean separation, clean reporting.</li>
+  <li><strong>Family accounts are handled correctly.</strong> Parent and child holdings are tracked independently so neither subsidises the other.</li>
+  <li><strong>Full audit trail.</strong> Every rebalance is logged in the CRM (admin view), in the database (compliance), and in the client's transactions list (transparency).</li>
+</ul>
+
+<h2>Open questions to discuss</h2>
+<ol>
+  <li>Should clients eventually be able to <em>spend</em> the leftover cash directly (e.g. transfer to wallet), or does it always stay locked to the strategy until the next rebalance redeploys it?</li>
+  <li>Should we send a notification to the client when a rebalance happens, or is the activity feed enough?</li>
+  <li>For family accounts: do we want a separate dashboard view per child, or keep everything aggregated under the parent's view?</li>
+</ol>
+
+</body>
+</html>

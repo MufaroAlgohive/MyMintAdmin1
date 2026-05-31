@@ -5896,7 +5896,13 @@
 
         // â”€â”€ 1. Close / reduce existing SELL positions for every user â”€â”€
         for (const evt of sellEvts) {
-          const { data: activePositions, error: fetchErr } = await supabaseClient
+          /* Critical: scope by family_member_id too. Without this, when a
+             parent AND their child both hold the same security in the same
+             strategy, the lookup returns both rows and .find(...) silently
+             picks one — risking the child's position getting closed when only
+             the parent's should be. evt.family_member_id is NULL for parent
+             events and a uuid for per-child events. */
+          let activeQuery = supabaseClient
             .from('stock_holdings_c')
             .select('id, quantity')
             .eq('strategy_id', strategyId)
@@ -5904,6 +5910,10 @@
             .eq('security_id', evt.security_id)
             .eq('is_active', true)
             .eq('trade_side', 'BUY');
+          activeQuery = evt.family_member_id
+            ? activeQuery.eq('family_member_id', evt.family_member_id)
+            : activeQuery.is('family_member_id', null);
+          const { data: activePositions, error: fetchErr } = await activeQuery;
 
           if (fetchErr) { errors.push(`SELL lookup: ${fetchErr.message}`); continue; }
 
@@ -5958,6 +5968,7 @@
               // Materialise the leftover shares as an active BUY in stock_holdings_c
               const { error: matErr } = await supabaseClient.from('stock_holdings_c').insert({
                 user_id: evt.user_id,
+                family_member_id: evt.family_member_id || null,
                 security_id: evt.security_id,
                 quantity: remaining,
                 strategy_id: strategyId,
@@ -5980,6 +5991,7 @@
           // Insert SELL audit row into stock_holdings_c
           const { error: sellInsertErr } = await supabaseClient.from('stock_holdings_c').insert({
             user_id: evt.user_id,
+            family_member_id: evt.family_member_id || null,
             security_id: evt.security_id,
             quantity: Number(evt.quantity) || 0,
             strategy_id: strategyId,
@@ -6026,6 +6038,7 @@
               .from('stock_holdings_c')
               .insert({
                 user_id: evt.user_id,
+                family_member_id: evt.family_member_id || null,
                 security_id: evt.security_id,
                 quantity: qty,
                 strategy_id: strategyId,
@@ -6072,14 +6085,13 @@
           await applyBuySettlement(walletBuyEvts, extraBuyFillCents || buyFillCents, 'WALLET_BUY', null);
         }
 
-        /* ── 2.5 Write a R0 transactions row per affected user so the
-           rebalance shows up in their MINT activity feed. One row per
-           (user, batch). The MINT transactions list reads name/description
-           as the display, so we describe the swap there. Amount = 0
-           because the swap is positions↔positions, not money in/out. */
+        /* ── 2.5 Write a R0 transactions row per affected (user,family_member)
+           so each rebalance shows up in MINT's activity feed for the right
+           owner. Amount = 0 because positions↔positions isn't money in/out;
+           MINT's list reads name/description for the display label. */
         try {
-          const securityIds = [...new Set([...sellEvts, ...buyEvts, ...walletBuyEvts]
-            .map((e) => e.security_id).filter(Boolean))];
+          const allEvtsForTxn = [...sellEvts, ...buyEvts, ...walletBuyEvts];
+          const securityIds = [...new Set(allEvtsForTxn.map((e) => e.security_id).filter(Boolean))];
           const symbolBySecId = {};
           if (securityIds.length) {
             const { data: secs } = await supabaseClient
@@ -6089,11 +6101,23 @@
             (secs || []).forEach((s) => { symbolBySecId[s.id] = s.symbol || String(s.id).slice(0, 6); });
           }
           const stratName = batch?.strategy_name_snapshot || 'Strategy';
-          const allUserIds = [...new Set([...sellEvts, ...buyEvts, ...walletBuyEvts]
-            .map((e) => String(e.user_id || '')).filter(Boolean))];
-          const txnRows = allUserIds.map((uid) => {
-            const userSells = sellEvts.filter((e) => String(e.user_id) === uid);
-            const userBuys = [...buyEvts, ...walletBuyEvts].filter((e) => String(e.user_id) === uid);
+          /* Group by (user_id, family_member_id) so parent and child each
+             get their own activity entry. The composite key handles NULL
+             via a sentinel string. */
+          const ownerKeys = new Set();
+          allEvtsForTxn.forEach((e) => {
+            const uid = String(e.user_id || '');
+            if (!uid) return;
+            const fm = e.family_member_id ? String(e.family_member_id) : '';
+            ownerKeys.add(`${uid}|${fm}`);
+          });
+          const txnRows = [...ownerKeys].map((key) => {
+            const [uid, fm] = key.split('|');
+            const fmId = fm || null;
+            const own = (e) => String(e.user_id) === uid
+              && (e.family_member_id ? String(e.family_member_id) : '') === (fmId || '');
+            const userSells = sellEvts.filter(own);
+            const userBuys = [...buyEvts, ...walletBuyEvts].filter(own);
             const sellSummary = userSells.length
               ? `sold ${userSells.reduce((s, e) => s + Number(e.quantity || 0), 0)} × ${symbolBySecId[userSells[0].security_id] || '?'}`
               : '';
@@ -6103,7 +6127,7 @@
             const parts = [sellSummary, buySummary].filter(Boolean);
             return {
               user_id: uid,
-              family_member_id: null,
+              family_member_id: fmId,
               amount: 0,
               direction: 'credit',
               status: 'posted',

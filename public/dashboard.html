@@ -8851,7 +8851,7 @@
             if (secIds.length) {
               let holdingsQuery = supabaseClient
                 .from("stock_holdings_c")
-                .select("security_id, user_id, quantity, avg_fill, strategy_id")
+                .select("security_id, user_id, family_member_id, quantity, avg_fill, strategy_id")
                 .eq("is_active", true)
                 .eq("trade_side", "BUY")
                 .in("security_id", secIds);
@@ -8944,19 +8944,27 @@
                 if (!code) return;
                 if (!rebRawHoldings[code]) rebRawHoldings[code] = [];
                 const uid = String(r.user_id);
+                const fmId = r.family_member_id ? String(r.family_member_id) : null;
                 const qty = Number(r.quantity) || 0;
                 /* avg_fill stored in cents (consistent with orderbook PnL convention) */
                 const fillCents = Number(r.avg_fill) || 0;
-                const existing = rebRawHoldings[code].find(x => x.userId === uid);
+                /* Key by (user, family_member) so parent + child holdings of
+                   the same security in the same strategy stay distinct. */
+                const existing = rebRawHoldings[code].find(x => x.userId === uid && (x.familyMemberId || null) === fmId);
                 if (existing) {
-                  /* Weighted-average the fill across multiple rows for the same client */
                   const totalQty = existing.quantity + qty;
                   existing.avgFillCents = totalQty > 0
                     ? ((existing.avgFillCents * existing.quantity) + (fillCents * qty)) / totalQty
                     : 0;
                   existing.quantity = totalQty;
                 } else {
-                  rebRawHoldings[code].push({ userId: uid, name: nameById[uid] || uid, quantity: qty, avgFillCents: fillCents });
+                  rebRawHoldings[code].push({
+                    userId: uid,
+                    familyMemberId: fmId,
+                    name: nameById[uid] || uid,
+                    quantity: qty,
+                    avgFillCents: fillCents,
+                  });
                 }
               });
             }
