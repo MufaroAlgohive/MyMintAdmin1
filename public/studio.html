@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Client View Studio — Admin</title>
+    <style>html{opacity:0}</style>
+    <style>
+      *{box-sizing:border-box;margin:0;padding:0;}
+      body{
+        font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
+        background:#f2f2f7;
+        color:#1c1c1e;
+        -webkit-font-smoothing:antialiased;
+      }
+      /* ── Sidebar ── */
+      .sidebar{position:fixed;left:0;top:0;width:220px;height:100vh;background:#fff;border-right:1px solid #e5e5ea;display:flex;flex-direction:column;z-index:1000;}
+      .sidebar-header{display:flex;align-items:center;gap:10px;padding:20px 20px 16px;border-bottom:1px solid #f2f2f7;}
+      .sidebar-logo{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+      .sidebar-brand-name{font-size:14px;font-weight:700;color:#1c1c1e;line-height:1.2;}
+      .sidebar-brand-sub{font-size:10px;color:#8e8e93;font-weight:500;letter-spacing:.04em;text-transform:uppercase;}
+      .sidebar-nav{flex:1;display:flex;flex-direction:column;gap:2px;padding:14px 12px;overflow-y:auto;}
+      .sidebar-section-label{font-size:10px;font-weight:600;color:#8e8e93;letter-spacing:.07em;text-transform:uppercase;padding:8px 8px 4px;margin-top:6px;}
+      .nav-icon{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;text-decoration:none;color:#64748b;font-size:13px;font-weight:500;transition:all 0.15s ease;white-space:nowrap;}
+      .nav-icon svg{width:18px;height:18px;fill:#94a3b8;transition:fill 0.15s ease;flex-shrink:0;}
+      .nav-icon:hover{background:#f5f3ff;color:#5b21b6;}
+      .nav-icon:hover svg{fill:#7c3aed;}
+      .nav-icon.active{background:#ede9fe;color:#5b21b6;font-weight:600;}
+      .nav-icon.active svg{fill:#7c3aed;}
+      .sidebar-footer{border-top:1px solid #f2f2f7;padding:12px;}
+      .sidebar-user{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;margin-bottom:4px;}
+      .sidebar-avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#a855f7);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;}
+      .sidebar-user-name{font-size:12px;font-weight:600;color:#1c1c1e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+      .sidebar-user-role{font-size:10px;color:#8e8e93;font-weight:500;}
+      .sidebar-signout{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;cursor:pointer;color:#ff3b30;font-size:13px;font-weight:500;border:none;background:none;width:100%;text-align:left;}
+      .sidebar-signout svg{width:18px;height:18px;fill:#ff3b30;}
+      .sidebar-signout:hover{background:#fff1f0;}
+      /* ── Layout ── */
+      .main{margin-left:220px;min-height:100vh;display:flex;flex-direction:column;}
+      .top-bar{height:56px;border-bottom:1px solid #e5e5ea;background:rgba(255,255,255,.94);backdrop-filter:blur(12px);display:flex;align-items:center;gap:10px;padding:0 24px;position:sticky;top:0;z-index:100;}
+      .top-bar h1{font-size:17px;font-weight:700;color:#1c1c1e;letter-spacing:-.01em;}
+      .top-bar svg{width:20px;height:20px;fill:#7c3aed;}
+      /* ── Studio ── */
+      .page{padding:28px 24px;}
+      .studio-toolbar{display:flex;align-items:center;gap:12px;margin-bottom:20px;}
+      .toolbar-title{font-size:17px;font-weight:700;color:#1c1c1e;flex:1;}
+      .toggle-wrap{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#3c3c43;font-weight:600;white-space:nowrap;}
+      .toggle-wrap input{accent-color:#7c3aed;}
+      .studio-grid{display:grid;grid-template-columns:364px 1fr;gap:16px;align-items:start;}
+      @media(max-width:1200px){.studio-grid{grid-template-columns:1fr;}}
+      /* ── Phone ── */
+      .preview-stage{background:radial-gradient(circle at 20% 10%,#f0ebff,#e8e0fd 40%,#f2f2f7 100%);border:1px solid #e5e5ea;border-radius:20px;padding:20px;display:flex;align-items:flex-start;justify-content:center;}
+      .phone-shell{width:324px;background:#111;border-radius:46px;padding:12px;box-shadow:0 24px 60px rgba(0,0,0,.28),0 0 0 1px #2c2c2e;flex-shrink:0;}
+      .phone-screen{background:#f8f6fa;border-radius:36px;height:600px;overflow:hidden;display:flex;flex-direction:column;position:relative;}
+      .phone-notch{width:106px;height:26px;background:#111;border-radius:0 0 18px 18px;margin:0 auto;flex-shrink:0;}
+      .frame-off .phone-shell{width:324px;background:#fff;border-radius:18px;padding:0;box-shadow:0 10px 28px rgba(15,23,42,.1),0 0 0 1px #e5e5ea;}
+      .frame-off .phone-screen{border-radius:18px;height:600px;}
+      .frame-off .phone-notch{display:none;}
+      /* phone slide panels */
+      .phone-screens-wrap{flex:1;overflow:hidden;position:relative;}
+      .phone-panels{display:flex;width:200%;height:100%;transition:transform .32s cubic-bezier(.4,0,.2,1);}
+      .phone-panels.show-profile{transform:translateX(-50%);}
+      .phone-panel{flex:0 0 50%;height:100%;display:flex;flex-direction:column;overflow:hidden;}
+      /* ── Client list ── */
+      .client-list-view{display:flex;flex-direction:column;height:100%;}
+      .client-list-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px 8px;flex-shrink:0;}
+      .client-list-head h3{font-size:16px;font-weight:700;color:#1c1c1e;}
+      .client-count{font-size:11px;color:#7c3aed;background:#ede9fe;border-radius:999px;padding:3px 9px;font-weight:700;}
+      .client-search{margin:0 12px 8px;width:calc(100% - 24px);border:1px solid #e5e5ea;border-radius:10px;padding:9px 12px;font-size:13px;outline:none;background:#f2f2f7;flex-shrink:0;}
+      .client-search:focus{border-color:#7c3aed;background:#fff;}
+      .client-scroll{flex:1;overflow-y:auto;padding:2px 10px 14px;}
+      .client-card{display:flex;align-items:center;gap:10px;padding:10px 8px;border-radius:12px;cursor:pointer;transition:background .1s;}
+      .client-card:hover{background:#f5f3ff;}
+      .client-avatar{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;}
+      .client-name{font-size:13px;font-weight:600;color:#1c1c1e;}
+      .client-strategy{font-size:11px;color:#8e8e93;}
+      .client-empty,.client-loading{text-align:center;font-size:12px;color:#8e8e93;padding:28px 12px;}
+      .client-tabs{display:flex;gap:4px;padding:0 12px 8px;flex-shrink:0;}
+      .client-tab{flex:1;padding:7px 0;border:none;border-radius:9px;font-size:12px;font-weight:700;cursor:pointer;background:#f2f2f7;color:#8e8e93;transition:all .15s;}
+      .client-tab.active{background:#ede9fe;color:#7c3aed;}
+      /* ── Profile ── */
+      .client-profile-view{display:flex;flex-direction:column;height:100%;overflow:hidden;}
+      .cp-header{flex-shrink:0;min-height:188px;background:linear-gradient(180deg,#0d0b1a 0%,#2c1a57 18%,#6b3ea6 36%,#c088e0 52%,#e8c9f0 64%,#f6eefa 74%,#f8f6fa 100%);padding:10px 14px 16px;}
+      .cp-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+      .cp-back{width:28px;height:28px;border:none;border-radius:50%;background:rgba(255,255,255,.2);color:#fff;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;}
+      .cp-title{font-size:12px;color:rgba(255,255,255,.85);font-weight:600;}
+      .cp-avatar{width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.22);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;border:2px solid rgba(255,255,255,.28);}
+      .cp-name{font-size:18px;color:#fff;font-weight:700;margin-top:6px;}
+      .cp-email{font-size:10px;color:rgba(255,255,255,.7);margin-top:2px;}
+      .cp-balance{margin-top:8px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:12px;padding:10px 12px;color:#fff;}
+      .cp-balance .label{font-size:9px;text-transform:uppercase;opacity:.75;letter-spacing:.08em;font-weight:700;}
+      .cp-balance .val{font-size:20px;font-weight:700;margin-top:2px;}
+      .cp-balance .delta{font-size:10px;margin-top:2px;opacity:.85;}
+      .cp-body{flex:1;overflow-y:auto;padding:8px 12px 16px;background:#f8f6fa;}
+      .cp-section{margin-bottom:10px;}
+      .cp-section-head{display:flex;align-items:center;justify-content:space-between;padding:0 2px;margin-bottom:5px;}
+      .cp-section-head h4{font-size:11px;font-weight:700;color:#6c6c70;text-transform:uppercase;letter-spacing:.04em;}
+      .cp-section-head span{font-size:10px;color:#8e8e93;}
+      .cp-card{background:#fff;border-radius:11px;padding:9px;border:1px solid #f2f2f7;margin-bottom:5px;}
+      .cp-row{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+      .cp-pnl-pos{color:#34c759;} .cp-pnl-neg{color:#ff3b30;} .cp-muted{color:#8e8e93;}
+      .cp-pending{font-size:9px;font-weight:700;color:#92400e;background:#fef3c7;border-radius:5px;padding:2px 6px;text-transform:uppercase;}
+      /* ── Client launch card ── */
+      .impersonation-panel{display:flex;flex-direction:column;height:100%;background:#f8f6fa;align-items:center;justify-content:center;padding:20px;}
+      .client-launch-card{width:100%;background:#fff;border-radius:18px;box-shadow:0 2px 16px rgba(0,0,0,.08);overflow:hidden;display:flex;flex-direction:column;align-items:center;padding:24px 20px 20px;}
+      .clc-avatar{width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;margin-bottom:12px;}
+      .clc-name{font-size:15px;font-weight:700;color:#1c1c1e;text-align:center;margin-bottom:2px;}
+      .clc-email{font-size:11px;color:#8e8e93;text-align:center;margin-bottom:16px;word-break:break-all;}
+      .clc-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%;margin-bottom:18px;}
+      .clc-stat{background:#f8f6fa;border-radius:10px;padding:9px 12px;}
+      .clc-stat .k{font-size:9px;color:#8e8e93;font-weight:700;text-transform:uppercase;letter-spacing:.06em;}
+      .clc-stat .v{font-size:13px;font-weight:700;color:#1c1c1e;margin-top:2px;}
+      .clc-open-btn{width:100%;border:none;border-radius:12px;background:#7c3aed;color:#fff;font-size:13px;font-weight:700;padding:13px 16px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:background .15s;}
+      .clc-open-btn:hover{background:#6d28d9;}
+      .clc-open-btn:disabled{background:#c4b5fd;cursor:not-allowed;}
+      .clc-open-btn svg{flex-shrink:0;}
+      .clc-env-badge{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;padding:4px 9px;border-radius:20px;margin-bottom:14px;}
+      .clc-env-badge.dev{background:#ede9fe;color:#6d28d9;}
+      .clc-env-badge.live{background:#dcfce7;color:#15803d;}
+      .clc-loading{display:flex;flex-direction:column;align-items:center;gap:12px;color:#3c3c43;font-size:13px;font-weight:600;}
+      .clc-loading .spinner{width:30px;height:30px;border:3px solid #e5e5ea;border-top-color:#7c3aed;border-radius:50%;animation:spin .9s linear infinite;}
+      .clc-error{color:#ff3b30;font-size:12px;font-weight:600;text-align:center;line-height:1.4;padding:4px 0;}
+      @keyframes spin{to{transform:rotate(360deg);}}
+      .env-toggle{display:inline-flex;border:1px solid #e5e5ea;border-radius:8px;overflow:hidden;background:#fff;}
+      .env-toggle button{border:none;background:none;padding:6px 12px;font-size:12px;font-weight:600;color:#3c3c43;cursor:pointer;}
+      .env-toggle button.active{background:#7c3aed;color:#fff;}
+      .env-toggle button:disabled{opacity:.4;cursor:not-allowed;}
+      .exit-btn{display:inline-flex;align-items:center;gap:6px;border:none;background:#fff1f0;color:#ff3b30;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;}
+      .exit-btn:hover{background:#ffe1de;}
+      /* ── Inspector ── */
+      .inspector{background:#fff;border:1px solid rgba(0,0,0,.06);border-radius:18px;padding:18px;position:sticky;top:76px;}
+      .inspector-title{font-size:15px;font-weight:700;color:#1c1c1e;margin-bottom:4px;}
+      .inspector-note{font-size:12px;color:#8e8e93;line-height:1.4;margin-bottom:14px;}
+      .inspector-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:14px;}
+      .metric{border:1px solid #f2f2f7;border-radius:10px;padding:10px;background:#fafafa;}
+      .metric .k{font-size:10px;text-transform:uppercase;color:#8e8e93;letter-spacing:.06em;font-weight:700;}
+      .metric .v{font-size:14px;margin-top:3px;font-weight:700;color:#1c1c1e;}
+      .inspector-section-label{font-size:11px;font-weight:700;color:#3c3c43;text-transform:uppercase;letter-spacing:.05em;margin:10px 0 6px;}
+      .inspector-list{border:1px solid #f2f2f7;border-radius:10px;overflow:hidden;background:#fff;margin-bottom:14px;}
+      .inspector-item{display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:9px 12px;border-bottom:1px solid #f2f2f7;}
+      .inspector-item:last-child{border-bottom:none;}
+      .placeholder{color:#8e8e93;font-size:12px;padding:16px;text-align:center;}
+    </style>
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <a class="sidebar-logo" href="/index.html"><img src="/icon.png" alt="Mint" style="width:36px;height:36px;border-radius:10px;"></a>
+        <div><div class="sidebar-brand-name">Mint</div><div class="sidebar-brand-sub">Admin Panel</div></div>
+      </div>
+      <nav class="sidebar-nav">
+        <span class="sidebar-section-label">Main</span>
+        <a class="nav-icon" href="/index.html"><svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>Clients</a>
+        <a class="nav-icon active" href="/studio.html"><svg viewBox="0 0 24 24"><path d="M17 1.01L7 1c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-1.99-2-1.99zM17 19H7V5h10v14z"/></svg>Client View Studio</a>
+        <span class="sidebar-section-label">Investments</span>
+        <a class="nav-icon" href="/dashboard.html"><svg viewBox="0 0 24 24"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>Dashboard</a>
+        <a class="nav-icon" href="/strategies.html"><svg viewBox="0 0 24 24"><path d="M3 3h7v7H3zm0 11h7v7H3zm11-11h7v7h-7zm0 11h7v7h-7z"/></svg>Strategies</a>
+        <a class="nav-icon" href="/factsheets.html"><svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>Factsheets</a>
+        <a class="nav-icon" href="/investors.html"><svg viewBox="0 0 24 24"><path d="M3.5 18.49l6-6.01 4 4L22 6.92l-1.41-1.41-7.09 7.97-4-4L2 16.99z"/></svg>Investors</a>
+        <a class="nav-icon" href="/orderbook.html"><svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 3c1.93 0 3.5 1.57 3.5 3.5S13.93 13 12 13s-3.5-1.57-3.5-3.5S10.07 6 12 6zm7 13H5v-.23c0-.62.28-1.2.76-1.58C7.47 15.82 9.64 15 12 15s4.53.82 6.24 2.19c.48.38.76.97.76 1.58V19z"/></svg>Order Book</a>
+        <span class="sidebar-section-label">Banking</span>
+        <a class="nav-icon" href="/eft.html"><svg viewBox="0 0 24 24"><path d="M20 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/></svg>EFT Payments</a>
+        <span class="sidebar-section-label">System</span>
+        <a class="nav-icon" href="/settings.html"><svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.62l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.62l2.03 1.58c-.05.32-.07.64-.07.94s.02.62.07.94l-2.03 1.58c-.18.14-.23.41-.12.62l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.62l-2.01-1.58z"/></svg>Settings</a>
+        <a class="nav-icon" id="teamNavLink" href="/team.html" style="display:none">
+          <svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
+          Team
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="sidebar-user">
+          <div class="sidebar-avatar" id="sidebarAvatarInitials">A</div>
+          <div><div class="sidebar-user-name" id="sidebarUserEmail">Admin</div><div class="sidebar-user-role">Administrator</div></div>
+        </div>
+        <button class="sidebar-signout" id="signOutBtn"><svg viewBox="0 0 24 24"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5-5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>Sign out</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="top-bar">
+        <svg viewBox="0 0 24 24"><path d="M17 1.01L7 1c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-1.99-2-1.99zM17 19H7V5h10v14z"/></svg>
+        <h1>Client View Studio</h1>
+      </div>
+
+      <div class="page">
+        <div class="studio-toolbar">
+          <div class="env-toggle" id="envToggle" title="Pick which Mint deployment to load">
+            <button type="button" data-env="dev" class="active">Dev</button>
+            <button type="button" data-env="live">Live</button>
+          </div>
+          <button type="button" class="exit-btn" id="exitImpersonationBtn" style="display:none;">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5-5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>
+            Exit client view
+          </button>
+          <div style="flex:1;"></div>
+          <label class="toggle-wrap">
+            <input id="frameToggle" type="checkbox" checked>
+            Phone frame
+          </label>
+        </div>
+
+        <div class="studio-grid">
+          <div class="preview-stage" id="previewStage">
+            <div class="phone-shell">
+              <div class="phone-screen">
+                <div class="phone-notch"></div>
+                <div class="phone-screens-wrap">
+                  <div class="phone-panels" id="phonePanels">
+                    <!-- List panel -->
+                    <div class="phone-panel">
+                      <div class="client-list-view">
+                        <div class="client-list-head">
+                          <h3>Clients</h3>
+                          <span id="clientCountBadge" class="client-count">…</span>
+                        </div>
+                        <div class="client-tabs" id="clientTabs">
+                          <button class="client-tab active" data-tab="invested">Invested</button>
+                          <button class="client-tab" data-tab="all">All Users</button>
+                        </div>
+                        <input id="clientSearch" class="client-search" type="text" placeholder="Search…" />
+                        <div id="clientScrollArea" class="client-scroll">
+                          <div id="clientListLoading" class="client-loading">Loading clients…</div>
+                        </div>
+                      </div>
+                    </div>
+                    <!-- Client launch card -->
+                    <div class="phone-panel" style="position:relative;">
+                      <div class="impersonation-panel" id="impersonationPanel"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <aside class="inspector">
+            <div class="inspector-title">Client Breakdown</div>
+            <p class="inspector-note" id="inspectorHint">Select a client to load their full profile and data breakdown.</p>
+            <div class="inspector-grid">
+              <div class="metric"><div class="k">Client</div><div class="v" id="mClient">—</div></div>
+              <div class="metric"><div class="k">Portfolio</div><div class="v" id="mPortfolio">—</div></div>
+              <div class="metric"><div class="k">P&amp;L</div><div class="v" id="mPnl">—</div></div>
+              <div class="metric"><div class="k">Strategies</div><div class="v" id="mStrategies">—</div></div>
+            </div>
+            <div class="inspector-section-label">Top Holdings</div>
+            <div id="inspectorHoldings" class="inspector-list"><div class="placeholder">No client selected</div></div>
+            <div class="inspector-section-label">Recent Transactions</div>
+            <div id="inspectorTransactions" class="inspector-list"><div class="placeholder">No client selected</div></div>
+          </aside>
+        </div>
+      </div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+      const SUPABASE_URL = 'https://mfxnghmuccevsxwcetej.supabase.co';
+      const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1meG5naG11Y2NldnN4d2NldGVqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg4NTI1ODAsImV4cCI6MjA4NDQyODU4MH0.lktfglzBMaHd79hLFDRH1HHSwsEwZ56Tv6e287kQiFg';
+      const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+      const previewStage = document.getElementById('previewStage');
+      const phonePanels  = document.getElementById('phonePanels');
+      let allClients = [];
+      let allUsersClients = [];
+      let activeClientTab = 'invested';
+      let currentClient = null;
+      let impersonationRequestId = 0;
+      let inspectorRequestId = 0;
+
+      function getActiveClients() {
+        return activeClientTab === 'all' ? allUsersClients : allClients;
+      }
+
+      // Auth guard
+      (async () => {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (!session) { window.location.href = '/signin.html'; return; }
+        const email = session?.user?.email || '';
+        document.getElementById('sidebarUserEmail').textContent = email || 'Admin';
+        document.getElementById('sidebarAvatarInitials').textContent = email ? email[0].toUpperCase() : 'A';
+        document.querySelector('html').style.opacity = '1';
+        // Load clients immediately on page load
+        await loadClientsInStrategies();
+      })();
+
+      function showPhonePanel(panel) {
+        phonePanels.classList.toggle('show-profile', panel === 'profile');
+      }
+
+      async function signOut() {
+        await supabaseClient.auth.signOut();
+        window.location.href = '/signin.html';
+      }
+
+      document.getElementById('signOutBtn').addEventListener('click', signOut);
+
+      document.getElementById('frameToggle').addEventListener('change', e => {
+        previewStage.classList.toggle('frame-off', !e.target.checked);
+      });
+
+      // Dev/Live environment toggle
+      let currentMintEnv = 'dev';
+      let studioConfig = { devUrl: '', liveUrl: '' };
+      document.getElementById('envToggle').addEventListener('click', e => {
+        const btn = e.target.closest('button[data-env]'); if (!btn) return;
+        if (btn.disabled) return;
+        currentMintEnv = btn.dataset.env;
+        document.querySelectorAll('#envToggle button').forEach(b => b.classList.toggle('active', b === btn));
+        if (currentClient) loadClientImpersonation(currentClient);
+      });
+
+      (async () => {
+        try {
+          const r = await fetch('/api/studio-config', { headers: { 'Authorization': `Bearer ${(await supabaseClient.auth.getSession()).data.session?.access_token || ''}` } });
+          if (!r.ok) return;
+          const cfg = await r.json();
+          studioConfig.devUrl  = cfg.mintAppUrlDev  || cfg.devUrl  || '';
+          studioConfig.liveUrl = cfg.mintAppUrlLive || cfg.liveUrl || '';
+          const devBtn  = document.querySelector('#envToggle button[data-env="dev"]');
+          const liveBtn = document.querySelector('#envToggle button[data-env="live"]');
+          if (devBtn  && !studioConfig.devUrl)  { devBtn.disabled  = true; devBtn.title  = 'MINT_APP_URL_DEV is not set';  devBtn.style.opacity  = '0.5'; }
+          if (liveBtn && !studioConfig.liveUrl) { liveBtn.disabled = true; liveBtn.title = 'MINT_APP_URL_LIVE is not set'; liveBtn.style.opacity = '0.5'; }
+          if (currentMintEnv === 'dev' && !studioConfig.devUrl && studioConfig.liveUrl) {
+            currentMintEnv = 'live';
+            if (liveBtn) liveBtn.click();
+          }
+        } catch (err) { console.warn('[Studio] studio-config fetch failed:', err); }
+      })();
+
+      document.getElementById('exitImpersonationBtn').addEventListener('click', exitImpersonation);
+
+      function exitImpersonation() {
+        impersonationRequestId++;
+        inspectorRequestId++;
+        document.getElementById('impersonationPanel').innerHTML = '';
+        document.getElementById('exitImpersonationBtn').style.display = 'none';
+        currentClient = null;
+        showPhonePanel('list');
+        document.getElementById('inspectorHint').textContent = 'Select a client to load their full profile and data breakdown.';
+        document.getElementById('mClient').textContent = '—';
+        document.getElementById('mPortfolio').textContent = '—';
+        document.getElementById('mPnl').textContent = '—';
+        document.getElementById('mPnl').style.color = '';
+        document.getElementById('mStrategies').textContent = '—';
+        document.getElementById('inspectorHoldings').innerHTML = '<div class="placeholder">No client selected</div>';
+        document.getElementById('inspectorTransactions').innerHTML = '<div class="placeholder">No client selected</div>';
+      }
+
+      async function loadClientsInStrategies() {
+        const loading    = document.getElementById('clientListLoading');
+        const countBadge = document.getElementById('clientCountBadge');
+        const scrollArea = document.getElementById('clientScrollArea');
+        loading.style.display = 'block';
+        countBadge.textContent = '…';
+        try {
+          const { data: holdings, error: holdingsErr } = await supabaseClient
+            .from('stock_holdings_c').select('user_id,strategy_id').eq('is_active',true).eq('trade_side','BUY');
+          if (holdingsErr) throw holdingsErr;
+          const userIds     = [...new Set((holdings||[]).map(h=>h.user_id).filter(Boolean))];
+          const strategyIds = [...new Set((holdings||[]).map(h=>h.strategy_id).filter(Boolean))];
+          if (!userIds.length) { loading.style.display='none'; countBadge.textContent='0'; scrollArea.innerHTML='<div class="client-empty">No clients found.</div>'; return; }
+          const { data: strategies } = await supabaseClient.from('strategies_c').select('id,name,short_name').in('id',strategyIds);
+          const stratMap = {};
+          (strategies||[]).forEach(s=>{ stratMap[s.id]=s.name||s.short_name||'Strategy'; });
+          const userStrategies = {};
+          (holdings||[]).forEach(h=>{ if(!userStrategies[h.user_id]) userStrategies[h.user_id]=new Set(); userStrategies[h.user_id].add(stratMap[h.strategy_id]||'Strategy'); });
+          const profileResults=[];
+          for(let i=0;i<userIds.length;i+=50){
+            const {data:p}=await supabaseClient.from('profiles').select('id,first_name,last_name,email').in('id',userIds.slice(i,i+50));
+            if(p) profileResults.push(...p);
+          }
+          allClients = profileResults.map(p=>{
+            const strats=[...(userStrategies[p.id]||new Set())];
+            const name=[p.first_name,p.last_name].filter(Boolean).join(' ')||p.email||'Unknown';
+            const initials=name.split(' ').filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+            return {id:p.id,name,initials,email:p.email||'',strategyLabel:strats.join(', ')};
+          }).sort((a,b)=>a.name.localeCompare(b.name));
+          countBadge.textContent = allClients.length;
+          loading.style.display='none';
+          renderClientList(allClients);
+        } catch(err) {
+          loading.style.display='none'; countBadge.textContent='Err';
+          scrollArea.innerHTML=`<div class="client-empty">Error: ${escapeHtml(err.message||'Unknown')}</div>`;
+        }
+      }
+
+      function renderClientList(clients) {
+        const scrollArea = document.getElementById('clientScrollArea');
+        if(!clients.length){ scrollArea.innerHTML='<div class="client-empty">No clients match.</div>'; return; }
+        scrollArea.innerHTML = clients.map(c=>`
+          <div class="client-card" data-client-id="${c.id}">
+            <div class="client-avatar">${escapeHtml(c.initials)}</div>
+            <div style="flex:1;min-width:0;"><div class="client-name">${escapeHtml(c.name)}</div><div class="client-strategy">${escapeHtml(c.strategyLabel)}</div></div>
+            <span style="color:#c7c7cc;font-size:15px;">›</span>
+          </div>`).join('');
+      }
+
+      document.getElementById('clientTabs').addEventListener('click', async e => {
+        const btn = e.target.closest('.client-tab'); if (!btn) return;
+        const tab = btn.dataset.tab;
+        if (tab === activeClientTab) return;
+        activeClientTab = tab;
+        document.querySelectorAll('.client-tab').forEach(b => b.classList.toggle('active', b === btn));
+        document.getElementById('clientSearch').value = '';
+        if (tab === 'all') {
+          if (!allUsersClients.length) {
+            await loadAllUsers();
+          } else {
+            document.getElementById('clientCountBadge').textContent = allUsersClients.length;
+            renderClientList(allUsersClients);
+          }
+        } else {
+          document.getElementById('clientCountBadge').textContent = allClients.length;
+          renderClientList(allClients);
+        }
+      });
+
+      async function loadAllUsers() {
+        const countBadge = document.getElementById('clientCountBadge');
+        const scrollArea = document.getElementById('clientScrollArea');
+        scrollArea.innerHTML = '<div class="client-loading">Loading…</div>';
+        countBadge.textContent = '…';
+        try {
+          const results = [];
+          let from = 0;
+          const PAGE = 1000;
+          while (true) {
+            const { data, error } = await supabaseClient
+              .from('profiles')
+              .select('id,first_name,last_name,email')
+              .order('first_name', { ascending: true })
+              .range(from, from + PAGE - 1);
+            if (error) throw error;
+            if (data) results.push(...data);
+            if (!data || data.length < PAGE) break;
+            from += PAGE;
+          }
+          allUsersClients = results.map(p => {
+            const name = [p.first_name, p.last_name].filter(Boolean).join(' ') || p.email || 'Unknown';
+            const initials = name.split(' ').filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+            return { id: p.id, name, initials, email: p.email || '', strategyLabel: '' };
+          });
+          countBadge.textContent = allUsersClients.length;
+          renderClientList(allUsersClients);
+        } catch(err) {
+          countBadge.textContent = 'Err';
+          scrollArea.innerHTML = `<div class="client-empty">Error: ${escapeHtml(err.message||'Unknown')}</div>`;
+        }
+      }
+
+      document.getElementById('clientSearch').addEventListener('input',e=>{
+        const q=(e.target.value||'').toLowerCase().trim();
+        const clients = getActiveClients();
+        if(!q){renderClientList(clients);return;}
+        renderClientList(clients.filter(c=>c.name.toLowerCase().includes(q)||c.email.toLowerCase().includes(q)||c.strategyLabel.toLowerCase().includes(q)));
+      });
+
+      document.getElementById('clientScrollArea').addEventListener('click',e=>{
+        const card=e.target.closest('.client-card'); if(!card) return;
+        const client=getActiveClients().find(c=>c.id===card.dataset.clientId); if(client) loadClientImpersonation(client);
+      });
+
+      async function getAdminBearer() {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (!session?.access_token) throw new Error('Not signed in — please reload.');
+        return session.access_token;
+      }
+
+      function renderLaunchCard(client, env, state) {
+        const panel = document.getElementById('impersonationPanel');
+        const envLabel = env === 'live' ? 'Live' : 'Dev';
+        const envClass = env === 'live' ? 'live' : 'dev';
+        const dot = env === 'live' ? '🟢' : '🔵';
+
+        if (state === 'loading') {
+          panel.innerHTML = `
+            <div class="clc-loading">
+              <div class="spinner"></div>
+              <span>Generating sign-in link…</span>
+            </div>`;
+          return;
+        }
+
+        const errorHtml = state?.error
+          ? `<div class="clc-error">${escapeHtml(state.error)}</div>` : '';
+        const btnLabel = state?.error ? 'Try again' : `Open as ${escapeHtml(client.name)} in Mint`;
+        const btnDisabled = state === 'loading' ? 'disabled' : '';
+
+        panel.innerHTML = `
+          <div class="client-launch-card">
+            <div class="clc-avatar">${escapeHtml(client.initials || '?')}</div>
+            <div class="clc-name">${escapeHtml(client.name)}</div>
+            <div class="clc-email">${escapeHtml(client.email)}</div>
+            <span class="clc-env-badge ${envClass}">${dot} ${envLabel}</span>
+            <div class="clc-stats">
+              <div class="clc-stat"><div class="k">Portfolio</div><div class="v" id="clcPortfolio">${document.getElementById('mPortfolio')?.textContent || '…'}</div></div>
+              <div class="clc-stat"><div class="k">P&amp;L</div><div class="v" id="clcPnl">${document.getElementById('mPnl')?.textContent || '…'}</div></div>
+            </div>
+            ${errorHtml}
+            <button class="clc-open-btn" id="clcOpenBtn" ${btnDisabled}>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg>
+              ${btnLabel}
+            </button>
+          </div>`;
+
+        document.getElementById('clcOpenBtn').addEventListener('click', () => openClientInNewTab(client));
+      }
+
+      async function openClientInNewTab(client) {
+        const reqId = ++impersonationRequestId;
+        const envAtClick = currentMintEnv;
+        renderLaunchCard(client, envAtClick, 'loading');
+        try {
+          const token = await getAdminBearer();
+          if (reqId !== impersonationRequestId) return;
+          const res = await fetch('/api/team?action=impersonate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ user_id: client.id, target: envAtClick })
+          });
+          if (reqId !== impersonationRequestId) return;
+          const data = await res.json().catch(() => ({}));
+          if (reqId !== impersonationRequestId) return;
+          if (!res.ok || !data.actionLink) {
+            renderLaunchCard(client, envAtClick, { error: data.error || `Sign-in failed (${res.status})` });
+            return;
+          }
+          renderLaunchCard(client, envAtClick, 'ready');
+          window.open(data.actionLink, '_blank', 'noopener');
+        } catch (err) {
+          if (reqId !== impersonationRequestId) return;
+          console.error('[Studio] impersonation failed:', err);
+          renderLaunchCard(client, envAtClick, { error: err?.message || 'Unknown error' });
+        }
+      }
+
+      async function loadClientImpersonation(client) {
+        const reqId = ++impersonationRequestId;
+        const inspReqId = ++inspectorRequestId;
+        currentClient = client;
+        const envAtStart = currentMintEnv;
+        showPhonePanel('profile');
+        document.getElementById('exitImpersonationBtn').style.display = 'inline-flex';
+        renderLaunchCard(client, envAtStart, 'loading');
+        document.getElementById('inspectorHint').textContent = 'Loading data for ' + client.name + '…';
+        document.getElementById('mClient').textContent = client.name;
+        document.getElementById('mPortfolio').textContent = '…';
+        document.getElementById('mPnl').textContent = '…';
+        document.getElementById('mPnl').style.color = '';
+        document.getElementById('mStrategies').textContent = '…';
+        document.getElementById('inspectorHoldings').innerHTML = '<div class="placeholder">Loading…</div>';
+        document.getElementById('inspectorTransactions').innerHTML = '<div class="placeholder">Loading…</div>';
+        const inspectorResult = await Promise.allSettled([loadClientInspectorData(client, inspReqId)]);
+        if (reqId !== impersonationRequestId) return;
+        if (inspectorResult[0].status === 'rejected') {
+          console.error('[Studio] inspector load failed:', inspectorResult[0].reason);
+          document.getElementById('inspectorHint').textContent = 'Could not load data.';
+        }
+        renderLaunchCard(client, envAtStart, 'ready');
+      }
+
+      async function loadClientInspectorData(client, reqId) {
+        const [hr, tr] = await Promise.all([
+          supabaseClient.from('stock_holdings_c').select('id,security_id,quantity,avg_fill,strategy_id,Status,trade_side,is_active').eq('user_id',client.id).eq('Status','active').eq('is_active',true).eq('trade_side','BUY'),
+          supabaseClient.from('transactions').select('id,name,description,amount,direction,status,transaction_date,created_at').eq('user_id',client.id).order('created_at',{ascending:false}).limit(6),
+        ]);
+        if (reqId !== inspectorRequestId) return;
+        const holdings = hr.data || [], transactions = tr.data || [];
+        const secIds = [...new Set(holdings.map(h=>h.security_id).filter(Boolean))];
+        const strIds = [...new Set(holdings.map(h=>h.strategy_id).filter(Boolean))];
+        const secMap = {}, strMap = {}, intradayMap = {};
+        if (secIds.length) {
+          const {data:s} = await supabaseClient.from('securities_c').select('id,symbol,name,last_price,logo_url').in('id',secIds);
+          (s||[]).forEach(x=>secMap[x.id]=x);
+          const {data:iq} = await supabaseClient.from('stock_intraday_c').select('security_id,current_price,timestamp').in('security_id',secIds).order('timestamp',{ascending:false});
+          const seen = new Set();
+          (iq||[]).forEach(row => {
+            if (row.security_id && !seen.has(row.security_id) && row.current_price != null) {
+              seen.add(row.security_id);
+              intradayMap[row.security_id] = Number(row.current_price) / 100;
+            }
+          });
+        }
+        if (strIds.length) { const {data:s} = await supabaseClient.from('strategies_c').select('id,name,short_name,risk_level').in('id',strIds); (s||[]).forEach(x=>strMap[x.id]=x); }
+        if (reqId !== inspectorRequestId) return;
+        let portfolioValue = 0, totalCost = 0, totalPnL = 0;
+        const fh = holdings.filter(h=>secMap[h.security_id]).map(h => {
+          const sec = secMap[h.security_id];
+          const qty = Number(h.quantity || 0);
+          const cost = (Number(h.avg_fill) || 0) / 100;
+          const intraLp = intradayMap[h.security_id];
+          const lastLp = Number(sec.last_price);
+          const livePrice = Number.isFinite(intraLp) ? intraLp
+                          : (Number.isFinite(lastLp) && lastLp > 0) ? lastLp
+                          : cost;
+          const marketValue = livePrice * qty;
+          const costTotal   = cost * qty;
+          const pnlRands    = marketValue - costTotal;
+          const pnlPct      = costTotal > 0 ? (pnlRands / costTotal) * 100 : 0;
+          const isPending   = !cost;
+          portfolioValue += marketValue;
+          totalCost      += costTotal;
+          totalPnL       += pnlRands;
+          return { symbol: sec.symbol, name: sec.name, value: marketValue, pnlRands, pnlPct, isPending, strategyId: h.strategy_id };
+        }).sort((a,b)=>b.value-a.value);
+        const sa = {};
+        fh.forEach(h => { if (!h.strategyId) return; if (!sa[h.strategyId]) sa[h.strategyId]={value:0,count:0}; if (!h.isPending) sa[h.strategyId].value += h.value; sa[h.strategyId].count += 1; });
+        const se = Object.entries(sa).map(([id,v])=>({id,strategy:strMap[id],value:v.value,count:v.count})).filter(s=>s.strategy);
+        const totalPnLPct = totalCost > 0 ? (totalPnL / totalCost) * 100 : 0;
+        renderInspector({ client, totalValue: portfolioValue, totalPnl: totalPnL, totalPnlPct: totalPnLPct, strategyCount: se.length, holdings: fh.slice(0,8), transactions });
+      }
+
+      function renderInspector(s) {
+        document.getElementById('inspectorHint').textContent='Live data for '+s.client.name;
+        document.getElementById('mClient').textContent=s.client.name;
+        document.getElementById('mPortfolio').textContent=`R${fmt(s.totalValue)}`;
+        const pe=document.getElementById('mPnl');
+        pe.textContent=`${s.totalPnl>=0?'+':''}R${fmt(Math.abs(s.totalPnl))}`;
+        pe.style.color=s.totalPnl>=0?'#34c759':'#ff3b30';
+        document.getElementById('mStrategies').textContent=String(s.strategyCount);
+        document.getElementById('inspectorHoldings').innerHTML=s.holdings.length?s.holdings.map(h=>`<div class="inspector-item"><span>${escapeHtml(h.symbol)}${h.isPending?' · Pending':''}</span><span style="font-weight:700;">R${fmt(h.value)}</span></div>`).join(''):'<div class="placeholder">No holdings</div>';
+        document.getElementById('inspectorTransactions').innerHTML=(s.transactions||[]).length?s.transactions.map(t=>{
+          const a=Math.abs(Number(t.amount||0)/100),cr=t.direction==='credit';
+          return `<div class="inspector-item"><span>${escapeHtml(t.name||t.description||'Transaction')}</span><span style="font-weight:700;color:${cr?'#34c759':'#1c1c1e'};">${cr?'+':''}R${fmt(a)}</span></div>`;
+        }).join(''):'<div class="placeholder">No transactions</div>';
+      }
+
+      function escapeHtml(s){if(!s)return'';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+      function fmt(n){return Number(n||0).toLocaleString('en-ZA',{minimumFractionDigits:2,maximumFractionDigits:2});}
+    </script>
+    <script src="/access-guard.js"></script>
+    <script>
+      window.addEventListener('access-guard:ready', function (e) {
+        var isAdmin = !!(e.detail && e.detail.role === 'admin');
+        if (isAdmin) {
+          var nav = document.getElementById('teamNavLink');
+          if (nav) nav.style.display = '';
+        }
+      });
+    </script>
+  </body>
+</html>
