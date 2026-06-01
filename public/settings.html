@@ -437,14 +437,15 @@
         document.querySelectorAll('.nav-icon').forEach(el => el.classList.remove('active'));
         const studioNavLink = document.querySelector('.nav-icon[href="/settings.html?studio=1"]');
         if (studioNavLink) studioNavLink.classList.add('active');
-        // Wait for session then open
-        const { data: { session } } = await supabaseClient.auth.getSession();
-        if (session) {
-          showView(clientStudio, settingsLanding);
-          document.getElementById('topBarTitle').textContent = 'Client View Studio';
-          showPhonePanel('list');
-          await loadClientsInStrategies();
-        }
+        (async () => {
+          const { data: { session } } = await supabaseClient.auth.getSession();
+          if (session) {
+            showView(clientStudio, settingsLanding);
+            document.getElementById('topBarTitle').textContent = 'Client View Studio';
+            showPhonePanel('list');
+            await loadClientsInStrategies();
+          }
+        })();
       }
 
       document.getElementById('backToSettingsBtn').addEventListener('click', () => {
