@@ -268,7 +268,7 @@
     const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     /* ─── State ─── */
-    let allInvestors = [], allStrategies = [], stratNavMap = {}, stratMetricsMap = {};
+    let allInvestors = [], allStrategies = [], stratNavMap = {}, stratMetricsMap = {}, txnNameById = {};
     let currentInvestor = null, currentTab = 'performance';
     const _charts = new WeakMap();
     function disposeChart(el) {
@@ -360,7 +360,7 @@
          bypassing Supabase RLS so ALL investors are always visible to admins. */
       const resp = await fetch('/api/investors/data');
       if (!resp.ok) throw new Error(`Investor data fetch failed: ${resp.status}`);
-      const { holdings, strategies, stratHist, profiles, secMeta, secLive, txns, familyMembers } = await resp.json();
+      const { holdings, strategies, stratHist, profiles, secMeta, secLive, txns, familyMembers, drawdowns } = await resp.json();
 
       const profMap    = Object.fromEntries((profiles||[]).map(p => [p.id, p]));
       const famMap     = Object.fromEntries((familyMembers||[]).map(fm => [fm.id, fm]));
@@ -394,6 +394,12 @@
       /* Group txns by user */
       const txnByUser = {};
       (txns||[]).forEach(t => { (txnByUser[t.user_id] = txnByUser[t.user_id] || []).push(t); });
+
+      /* Group buffer drawdowns by user + a txn lookup so the buffer-events view
+         can label each ledger row with its source transaction. */
+      const ddByUser = {};
+      (drawdowns||[]).forEach(d => { (ddByUser[d.user_id] = ddByUser[d.user_id] || []).push(d); });
+      txnNameById = Object.fromEntries((txns||[]).map(t => [t.id, t.name || t.description || '']));
 
       /* Build investor objects */
       const byUser = {};
@@ -488,6 +494,7 @@
           days, annualised, inception,
           holdings: u.holdings,
           txns: userTxns,
+          drawdowns: ddByUser[u.userId] || [],
         };
       }).filter(Boolean).sort((a,b) => b.current - a.current);
 
@@ -906,20 +913,39 @@
       const txns = i.txns || [];
       if (!txns.length) return `<div style="background:#fff;border-radius:10px;padding:30px;text-align:center;color:#94a3b8;">No transactions found.</div>`;
 
-      /* KPI summary across all this user's transactions */
-      let totalDeposits = 0, totalWithdrawals = 0, totalFees = 0, totalInvested = 0, totalBufferConsumed = 0;
+      /* KPI summary across all this user's transactions. Fees are split by
+         where the money actually goes: broker (EasyEquities), custodian (ISIN),
+         and MINT's own revenue (the 3.8% txn fee). The 8% execution reserve is
+         tracked separately — it's the user's money, not a fee. */
+      let totalDeposits = 0, totalWithdrawals = 0, totalInvested = 0;
+      let feeBroker = 0, feeCustody = 0, feeMint = 0, bufferHeld = 0;
       for (const t of txns) {
         const amt = Number(t.amount) / 100;
         const cls = classifyTxn(t);
         if (cls.label === 'DEPOSIT') totalDeposits += amt;
         else if (cls.label === 'WITHDRAWAL') totalWithdrawals += amt;
-        else if (cls.label === 'FEE') totalFees += amt;
+        else if (cls.label === 'FEE') feeMint += amt;
         else if (cls.label === 'INVESTMENT') {
           totalInvested += Number(t.base_amount_cents || 0) / 100;
-          totalFees += (Number(t.broker_fee_cents || 0) + Number(t.isin_fee_cents || 0) + Number(t.transaction_fee_cents || 0)) / 100;
-          totalBufferConsumed += Number(t.buffer_consumed_cents || 0) / 100;
+          feeBroker  += Number(t.broker_fee_cents || 0) / 100;
+          feeCustody += Number(t.isin_fee_cents || 0) / 100;
+          feeMint    += Number(t.transaction_fee_cents || 0) / 100;
+          bufferHeld += Number(t.buffer_cents || 0) / 100;
         }
       }
+      const totalFees = feeBroker + feeCustody + feeMint;
+
+      /* Execution-reserve movements come from the buffer_drawdowns_c ledger
+         (authoritative, per event). Falls back to nothing when empty. */
+      const dds = i.drawdowns || [];
+      let ddConsumed = 0, ddShortfall = 0, ddRefunded = 0;
+      for (const d of dds) {
+        const v = Number(d.delta_cents || 0) / 100;
+        if (d.event_type === 'slippage_drawdown') ddConsumed += v;
+        else if (d.event_type === 'shortfall') ddShortfall += v;
+        else if (/refund/.test(d.event_type || '')) ddRefunded += v;
+      }
+      const bufferRemaining = Math.max(0, bufferHeld - ddConsumed - ddRefunded);
 
       const kpi = (label, value, color) => `
         <div style="background:#f8fafc;border-radius:8px;padding:10px 12px;">
@@ -927,17 +953,78 @@
           <div style="font-size:14px;font-weight:700;color:${color};font-family:ui-monospace,monospace;margin-top:2px;">${fmtR2(value)}</div>
         </div>`;
 
+      const ddTypeChip = (type) => {
+        const map = {
+          slippage_drawdown:   { t: 'Slippage', c: '#0284c7', bg: '#e0f2fe' },
+          shortfall:           { t: 'Shortfall', c: '#dc2626', bg: '#fee2e2' },
+          cancel_refund:       { t: 'Cancel refund', c: '#059669', bg: '#dcfce7' },
+          sale_refund:         { t: 'Sale refund', c: '#059669', bg: '#dcfce7' },
+          partial_sale_refund: { t: 'Partial refund', c: '#059669', bg: '#dcfce7' },
+        };
+        const m = map[type] || { t: type || '—', c: '#64748b', bg: '#f1f5f9' };
+        return `<span style="font-size:10px;color:${m.c};background:${m.bg};padding:2px 7px;border-radius:10px;font-weight:600;">${m.t}</span>`;
+      };
+
+      /* Buffer-events ledger section — admin-only; never shown to the user. */
+      const bufferEventsHtml = dds.length ? `
+        <div style="background:#fff;border-radius:10px;padding:14px;box-shadow:0 0 0 1px rgba(0,0,0,0.04);margin-bottom:14px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <div style="font-size:11px;color:#94a3b8;font-weight:600;letter-spacing:0.04em;">EXECUTION RESERVE — BUFFER EVENTS (${dds.length})</div>
+            <div style="font-size:10px;color:#94a3b8;">Admin only · not shown to client</div>
+          </div>
+          <table class="ov-table">
+            <thead><tr><th>Date</th><th>Transaction</th><th>Event</th><th class="r">Quoted</th><th class="r">Filled</th><th class="r">Qty</th><th class="r">Amount</th></tr></thead>
+            <tbody>
+              ${dds.map(d => {
+                const expR = d.expected_fill_cents != null ? Number(d.expected_fill_cents)/100 : null;
+                const actR = d.actual_fill_cents != null ? Number(d.actual_fill_cents)/100 : null;
+                const delta = Number(d.delta_cents || 0) / 100;
+                const isRefund = /refund/.test(d.event_type || '');
+                const amtColor = d.event_type === 'shortfall' ? '#dc2626' : (isRefund ? '#059669' : '#0284c7');
+                const amtSign = isRefund ? '+' : '−';
+                return `<tr>
+                  <td>${fmtDate(d.created_at)}</td>
+                  <td style="color:#64748b;">${txnNameById[d.transaction_id] || (d.transaction_id ? d.transaction_id.slice(0,8) : '—')}</td>
+                  <td>${ddTypeChip(d.event_type)}</td>
+                  <td class="r ov-mono">${expR != null ? fmtR2(expR) : '—'}</td>
+                  <td class="r ov-mono">${actR != null ? fmtR2(actR) : '—'}</td>
+                  <td class="r ov-mono">${d.quantity != null ? d.quantity : '—'}</td>
+                  <td class="r ov-mono" style="color:${amtColor};font-weight:600;">${amtSign}${fmtR2(delta)}</td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>` : '';
+
       return `
         <div style="background:#fff;border-radius:10px;padding:14px;box-shadow:0 0 0 1px rgba(0,0,0,0.04);margin-bottom:14px;">
           <div style="font-size:11px;color:#94a3b8;font-weight:600;letter-spacing:0.04em;margin-bottom:10px;">CASH FLOW SUMMARY</div>
-          <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;">
+          <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;">
             ${kpi('Deposits', totalDeposits, '#059669')}
             ${kpi('Invested (base)', totalInvested, '#7c3aed')}
             ${kpi('Fees paid', totalFees, '#b45309')}
-            ${kpi('Buffer used', totalBufferConsumed, '#0284c7')}
+            ${kpi('Buffer used', ddConsumed, '#0284c7')}
+            ${kpi('Buffer available', bufferRemaining, '#64748b')}
             ${kpi('Withdrawals', totalWithdrawals, '#dc2626')}
           </div>
         </div>
+        <div style="background:#fff;border-radius:10px;padding:14px;box-shadow:0 0 0 1px rgba(0,0,0,0.04);margin-bottom:14px;">
+          <div style="font-size:11px;color:#94a3b8;font-weight:600;letter-spacing:0.04em;margin-bottom:10px;">FEES — WHERE THE MONEY GOES</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px;">
+            ${kpi('Broker (0.25%)', feeBroker, '#b45309')}
+            ${kpi('Custody / ISIN', feeCustody, '#b45309')}
+            ${kpi('MINT revenue (3.8%)', feeMint, '#059669')}
+          </div>
+          <div style="font-size:11px;color:#94a3b8;font-weight:600;letter-spacing:0.04em;margin:14px 0 10px;">EXECUTION RESERVE (8% BUFFER)</div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
+            ${kpi('Held', bufferHeld, '#0f172a')}
+            ${kpi('Consumed', ddConsumed, '#0284c7')}
+            ${kpi('Refunded', ddRefunded, '#059669')}
+            ${kpi('Still locked', bufferRemaining, '#64748b')}
+          </div>
+          ${ddShortfall > 0 ? `<div style="margin-top:10px;font-size:11px;color:#dc2626;font-weight:600;">⚠ Shortfall (slippage beyond buffer, absorbed by MINT): ${fmtR2(ddShortfall)}</div>` : ''}
+        </div>
+        ${bufferEventsHtml}
         <div style="background:#fff;border-radius:10px;padding:14px;box-shadow:0 0 0 1px rgba(0,0,0,0.04);">
           <div style="font-size:11px;color:#94a3b8;font-weight:600;letter-spacing:0.04em;margin-bottom:10px;">TRANSACTIONS (${txns.length})</div>
           <table class="ov-table">

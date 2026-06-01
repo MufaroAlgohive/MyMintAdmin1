@@ -69,7 +69,7 @@ module.exports = async (req, res) => {
       }
     });
 
-    const [profiles, secMeta, secReturns, secIntraday, txns, familyMembers] = await Promise.all([
+    const [profiles, secMeta, secReturns, secIntraday, txns, familyMembers, drawdowns] = await Promise.all([
       userIds.length
         ? sbGet(`profiles?select=id,first_name,last_name,email,mint_number&id=in.(${userIds.join(',')})`)
         : Promise.resolve([]),
@@ -91,10 +91,17 @@ module.exports = async (req, res) => {
          buffer_cents = the cash held during a buy; buffer_consumed_cents is
          how much of that buffer the actual fill needed. */
       userIds.length
-        ? sbGet(`transactions?select=user_id,family_member_id,amount,direction,name,description,status,transaction_date,broker_fee_cents,isin_fee_cents,transaction_fee_cents,base_amount_cents,buffer_cents,buffer_consumed_cents&user_id=in.(${userIds.join(',')})&order=transaction_date.desc`)
+        ? sbGet(`transactions?select=id,user_id,family_member_id,amount,direction,name,description,status,transaction_date,broker_fee_cents,isin_fee_cents,transaction_fee_cents,base_amount_cents,buffer_cents,buffer_consumed_cents&user_id=in.(${userIds.join(',')})&order=transaction_date.desc`)
         : Promise.resolve([]),
       famIds.length
         ? sbGet(`family_members?select=id,first_name,last_name&id=in.(${famIds.join(',')})`)
+        : Promise.resolve([]),
+      /* Execution-reserve (8% buffer) ledger — the per-event audit trail of how
+         each transaction's buffer was consumed (slippage_drawdown / shortfall)
+         or returned (cancel_refund / sale_refund). Admin-only on the CRM; the
+         user-facing app never shows slippage. */
+      userIds.length
+        ? sbGet(`buffer_drawdowns_c?select=transaction_id,holding_id,user_id,family_member_id,event_type,delta_cents,expected_fill_cents,actual_fill_cents,quantity,created_at&user_id=in.(${userIds.join(',')})&order=created_at.desc`)
         : Promise.resolve([]),
     ]);
 
@@ -122,7 +129,7 @@ module.exports = async (req, res) => {
     });
 
     res.statusCode = 200;
-    res.end(JSON.stringify({ holdings, strategies, stratHist, profiles, secMeta, secLive, txns, familyMembers }));
+    res.end(JSON.stringify({ holdings, strategies, stratHist, profiles, secMeta, secLive, txns, familyMembers, drawdowns }));
   } catch (err) {
     res.statusCode = 500;
     res.end(JSON.stringify({ error: err.message }));
