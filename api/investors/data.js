@@ -86,7 +86,7 @@ module.exports = async (req, res) => {
       }
     });
 
-    const [profiles, secMeta, secReturns, secIntraday, txns, familyMembers, drawdowns] = await Promise.all([
+    const [profiles, secMeta, secReturns, secIntraday, txns, familyMembers, drawdowns, residuals] = await Promise.all([
       userIds.length
         ? sbGet(`profiles?select=id,first_name,last_name,email,mint_number&id=in.(${userIds.join(',')})`)
         : Promise.resolve([]),
@@ -120,6 +120,14 @@ module.exports = async (req, res) => {
       userIds.length
         ? sbGet(`buffer_drawdowns_c?select=transaction_id,holding_id,user_id,family_member_id,event_type,delta_cents,expected_fill_cents,actual_fill_cents,quantity,created_at&user_id=in.(${userIds.join(',')})&order=created_at.desc`)
         : Promise.resolve([]),
+      /* Per-strategy residual cash from rebalances. balance_cents is the leftover
+         cash that stays in the strategy after a position swap. The investors page
+         adds this to each client's value so the portfolio total isn't understated,
+         and shows it broken out (holdings vs cash) in the detail. Service-role read
+         bypasses the owner-only SELECT RLS so the admin sees every client's row. */
+      userIds.length
+        ? sbGet(`strategy_rebalance_residuals?select=user_id,strategy_id,family_member_id,balance_cents&user_id=in.(${userIds.join(',')})`)
+        : Promise.resolve([]),
     ]);
 
     /* Merge intraday current_price (cents) into secLive rows so the client
@@ -146,7 +154,7 @@ module.exports = async (req, res) => {
     });
 
     res.statusCode = 200;
-    res.end(JSON.stringify({ holdings, strategies, stratHist, profiles, secMeta, secLive, txns, familyMembers, drawdowns }));
+    res.end(JSON.stringify({ holdings, strategies, stratHist, profiles, secMeta, secLive, txns, familyMembers, drawdowns, residuals }));
   } catch (err) {
     res.statusCode = 500;
     res.end(JSON.stringify({ error: err.message }));

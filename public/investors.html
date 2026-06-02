@@ -371,7 +371,16 @@
          bypassing Supabase RLS so ALL investors are always visible to admins. */
       const resp = await fetch('/api/investors/data');
       if (!resp.ok) throw new Error(`Investor data fetch failed: ${resp.status}`);
-      const { holdings, strategies, stratHist, profiles, secMeta, secLive, txns, familyMembers, drawdowns } = await resp.json();
+      const { holdings, strategies, stratHist, profiles, secMeta, secLive, txns, familyMembers, drawdowns, residuals } = await resp.json();
+
+      /* Per-strategy residual cash (rebalance leftovers), keyed by
+         user|familyMember|strategy so each investor card can add its own cash
+         component to the value and break it out in the detail. */
+      const residualByKey = {};
+      (residuals||[]).forEach(r => {
+        const key = `${r.user_id}:${r.family_member_id || ''}:${r.strategy_id || ''}`;
+        residualByKey[key] = (residualByKey[key] || 0) + (Number(r.balance_cents)||0)/100;
+      });
 
       const profMap    = Object.fromEntries((profiles||[]).map(p => [p.id, p]));
       const famMap     = Object.fromEntries((familyMembers||[]).map(fm => [fm.id, fm]));
@@ -506,6 +515,13 @@
         const csrInvested = csrLatest ? (csrLatest.basket_value - csrLatest.inception_pnl) / 100 : invested;
         const csrRetPct   = csrLatest ? csrLatest.inception_pct : retPct;
         const csrYtdPct   = csrLatest != null ? (csrLatest['ytd_pct'] ?? null) : null;
+        /* Residual cash left in this strategy from rebalances. Held in
+           strategy_rebalance_residuals; it's the client's money but sits as cash,
+           not positions. Broken out from holdings value in the detail view. */
+        const residualCash = residualByKey[`${u.userId}:${u.familyMemberId || ''}:${u.strategyId || ''}`] || 0;
+        /* holdingsValue = live positions; value = positions + cash = full total. */
+        const holdingsValue = csrAum;
+        const value = holdingsValue + residualCash;
         return {
           type: isStrategy ? 'strategy' : 'security',
           userId: u.userId, investorKey, familyMemberId: u.familyMemberId, isMinor: !!u.familyMemberId, name, email: prof.email, mintNo: prof.mint_number,
@@ -513,12 +529,13 @@
           strategyDesc: strat.description, riskLevel: strat.risk_level,
           invested, current, pnl, retPct: +retPct.toFixed(2),
           csrAum, csrInvested, csrPnl, csrRetPct, csrYtdPct,
+          residualCash, holdingsValue, value,
           days, annualised, inception,
           holdings: u.holdings,
           txns: userTxns,
           drawdowns: ddByUser[u.userId] || [],
         };
-      }).sort((a,b) => b.current - a.current);
+      }).sort((a,b) => (b.value ?? b.current) - (a.value ?? a.current));
 
       allStrategies = strategies || [];
       return investors;
@@ -527,7 +544,9 @@
     /* âââ KPI Bar âââ */
     function renderKpiBar(investors) {
       const visible = investors.filter(i => i.type === activeView);
-      const aum  = visible.reduce((s,i)=>s+i.csrAum,0);
+      /* TOTAL AUM includes residual cash (i.value = holdings + residual) so the
+         headline portfolio matches what clients actually hold after rebalances. */
+      const aum  = visible.reduce((s,i)=>s+(i.value ?? i.csrAum),0);
       const inv  = visible.reduce((s,i)=>s+i.csrInvested,0);
       const pnl  = visible.reduce((s,i)=>s+i.csrPnl,0);
       /* Weighted average return &mdash; weight by each investor's AUM so small accounts don't distort the figure */
@@ -590,7 +609,7 @@
             <div style="font-size:10px;color:#94a3b8;margin-top:1px;">${i.strategy}</div>
           </div>
           <div style="text-align:right;flex-shrink:0;">
-            <div style="font-size:12px;font-weight:600;color:#0f172a;font-family:ui-monospace,monospace;">${fmtR(i.current)}</div>
+            <div style="font-size:12px;font-weight:600;color:#0f172a;font-family:ui-monospace,monospace;">${fmtR(i.value ?? i.current)}</div>
             <div style="font-size:10px;font-weight:600;color:${pctClr(i.retPct)};">${fmtPct(i.retPct)}</div>
           </div>
         </div>
@@ -633,8 +652,9 @@
               </div>
             </div>
             <div style="text-align:right;flex-shrink:0;">
-              <div style="font-size:20px;font-weight:700;color:#0f172a;font-family:ui-monospace,monospace;">${fmtR2(i.current)}</div>
+              <div style="font-size:20px;font-weight:700;color:#0f172a;font-family:ui-monospace,monospace;">${fmtR2(i.value ?? i.current)}</div>
               <div style="font-size:12px;font-weight:600;color:${pctClr(i.retPct)};">${fmtPct(i.retPct)} all-time</div>
+              ${i.residualCash > 0 ? `<div style="font-size:10.5px;color:#64748b;margin-top:3px;font-family:ui-monospace,monospace;">Holdings ${fmtR2(i.holdingsValue)} &middot; <span style="color:#0e7490;">Cash ${fmtR2(i.residualCash)}</span></div>` : ''}
             </div>
           </div>
           <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px;">
