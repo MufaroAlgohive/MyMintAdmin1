@@ -258,7 +258,7 @@
             </div>
             <input id="investorSearch" placeholder="Search investors..." style="width:100%;border:1.5px solid #e2e8f0;border-radius:8px;padding:7px 10px;font-size:12px;color:#0f172a;outline:none;box-sizing:border-box;" />
             <select id="strategyFilter" style="width:100%;border:1.5px solid #e2e8f0;border-radius:8px;padding:7px 10px;font-size:12px;color:#64748b;background:#fff;outline:none;box-sizing:border-box;"><option value="">All Strategies</option></select>
-            <div style="display:flex;justify-content:space-between;padding:4px 10px;font-size:11px;font-weight:500;color:#94a3b8;border-bottom:1px solid #f1f5f9;margin-bottom:4px;"><span>Name â</span><div style="display:flex;gap:24px;"><span>Value â</span><span>Ret %</span></div></div>
+            <div style="display:flex;justify-content:space-between;padding:4px 10px;font-size:11px;font-weight:500;color:#94a3b8;border-bottom:1px solid #f1f5f9;margin-bottom:4px;"><span>Name &darr;</span><div style="display:flex;gap:24px;"><span>Value &darr;</span><span>Ret %</span></div></div>
             <div id="investorList" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:2px;"></div>
           </div>
           <div id="detailPanel" style="background:white;border-radius:12px;box-shadow:0 0 0 1px rgba(0,0,0,0.05),0 1px 4px rgba(0,0,0,0.06);overflow:hidden;display:flex;flex-direction:column;"></div>
@@ -519,8 +519,10 @@
            strategy_rebalance_residuals; it's the client's money but sits as cash,
            not positions. Broken out from holdings value in the detail view. */
         const residualCash = residualByKey[`${u.userId}:${u.familyMemberId || ''}:${u.strategyId || ''}`] || 0;
-        /* holdingsValue = live positions; value = positions + cash = full total. */
-        const holdingsValue = csrAum;
+        /* holdingsValue = LIVE positions value (current = Σ live price × qty),
+           which matches the orderbook. csrAum (basket_value snapshot) can be stale
+           after a rebalance, so we use current here. value = positions + cash. */
+        const holdingsValue = current;
         const value = holdingsValue + residualCash;
         return {
           type: isStrategy ? 'strategy' : 'security',
@@ -1079,7 +1081,7 @@
           <button onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none';this.querySelector('.chev').style.transform=this.nextElementSibling.style.display==='none'?'rotate(0deg)':'rotate(180deg)';"
             style="width:100%;display:flex;justify-content:space-between;align-items:center;padding:14px;background:none;border:none;cursor:pointer;font-size:11px;color:#94a3b8;font-weight:600;letter-spacing:0.04em;">
             FEES &mdash; WHERE THE MONEY GOES
-            <span class="chev" style="transition:transform 0.2s;display:inline-block;">â¾</span>
+            <span class="chev" style="transition:transform 0.2s;display:inline-block;">&#9662;</span>
           </button>
           <div style="display:none;padding:0 14px 14px;">
             <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
@@ -1093,7 +1095,7 @@
           <button onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none';this.querySelector('.chev').style.transform=this.nextElementSibling.style.display==='none'?'rotate(0deg)':'rotate(180deg)';"
             style="width:100%;display:flex;justify-content:space-between;align-items:center;padding:14px;background:none;border:none;cursor:pointer;font-size:11px;color:#94a3b8;font-weight:600;letter-spacing:0.04em;">
             EXECUTION RESERVE (8% BUFFER)
-            <span class="chev" style="transition:transform 0.2s;display:inline-block;">â¾</span>
+            <span class="chev" style="transition:transform 0.2s;display:inline-block;">&#9662;</span>
           </button>
           <div style="display:none;padding:0 14px 14px;">
             <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
@@ -1102,7 +1104,7 @@
               ${kpi('Refunded', ddRefunded, '#059669')}
               ${kpi('Still locked', bufferRemaining, '#64748b')}
             </div>
-            ${ddShortfall > 0 ? `<div style="margin-top:10px;font-size:11px;color:#dc2626;font-weight:600;">â  Shortfall (slippage beyond buffer, absorbed by MINT): ${fmtR2(ddShortfall)}</div>` : ''}
+            ${ddShortfall > 0 ? `<div style="margin-top:10px;font-size:11px;color:#dc2626;font-weight:600;">&#9888; Shortfall (slippage beyond buffer, absorbed by MINT): ${fmtR2(ddShortfall)}</div>` : ''}
           </div>
         </div>
         ${bufferEventsHtml}
