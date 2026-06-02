@@ -9636,7 +9636,10 @@
 
           const walletAfterMainByClient = residualClients.reduce((acc, c) => {
             const userId = String(c.id);
-            const mainResidual = Number(residualSplitAfterMain[userId] || 0);
+            /* rebDistributeMoneyByLots returns CENTS — divide by 100 to get rands
+               so this stays consistent with walletBeforeByClient (rands) and
+               rebFmtZAR (rands). Without /100 the display showed ×100 too large. */
+            const mainResidual = (Number(residualSplitAfterMain[userId] || 0)) / 100;
             acc[userId] = rebRoundMoney(Number(walletBeforeByClient[userId] || 0) + mainResidual);
             return acc;
           }, {});
