@@ -1,9 +1,0 @@
-refactor: merge rebalance residuals endpoint into send-csv (Vercel 12-fn limit)
-
-The standalone api/rebalance/residuals.js pushed the deployment to 13 serverless
-functions, over the Hobby plan's limit of 12. Folded its load/upsert logic into
-api/orderbook/send-csv.js as two new actions (rebalance-load-residuals /
-rebalance-upsert-residuals) — same service-role helpers, same auth gate — and
-deleted the standalone file. dashboard.html now calls the merged endpoint.
-
-Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
