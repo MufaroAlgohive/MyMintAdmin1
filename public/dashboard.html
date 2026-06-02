@@ -8602,30 +8602,38 @@
          split residuals without further schema work. MINT already reads
          the right scope: parent views ask for IS NULL, child views ask
          for = <family_member_id>. */
+      /* Get the current session's access token for service-role API calls. */
+      async function rebApiToken() {
+        const { data } = await supabaseClient.auth.getSession();
+        return data?.session?.access_token || null;
+      }
+
       async function rebLoadWalletBalances(strategyId, userIds) {
         const ids = [...new Set((userIds || []).map((id) => String(id)).filter(Boolean))];
         if (!ids.length || !strategyId) return {};
 
+        /* Read residuals through the service-role endpoint. RLS on
+           strategy_rebalance_residuals only lets a user read their OWN rows, so a
+           direct browser read returned {} for every other client. The endpoint
+           uses the service-role key and is scoped by the active owner
+           (rebSelectedFamilyMemberId; null = parent's own residuals). */
         try {
-          /* Scope by the active owner. rebSelectedFamilyMemberId is set by
-             the family-scope dropdown in the rebalance UI; null = parent's
-             own residuals. The same scope drives event inserts so residual
-             reads and writes stay in lockstep. */
-          let query = supabaseClient
-            .from("strategy_rebalance_residuals")
-            .select("user_id, balance_cents")
-            .eq("strategy_id", strategyId)
-            .in("user_id", ids);
-          query = rebSelectedFamilyMemberId
-            ? query.eq("family_member_id", rebSelectedFamilyMemberId)
-            : query.is("family_member_id", null);
-
-          const { data, error } = await query;
-          if (error) throw error;
-          return (data || []).reduce((acc, row) => {
-            const userId = String(row.user_id || "");
-            if (!userId) return acc;
-            acc[userId] = rebRoundMoney((Number(row.balance_cents) || 0) / 100);
+          const token = await rebApiToken();
+          if (!token) return {};
+          const resp = await fetch("/api/rebalance/residuals", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({
+              action: "load",
+              strategyId,
+              userIds: ids,
+              familyMemberId: rebSelectedFamilyMemberId || null,
+            }),
+          });
+          if (!resp.ok) throw new Error(`load failed: ${resp.status}`);
+          const { balances } = await resp.json();
+          return Object.entries(balances || {}).reduce((acc, [userId, rands]) => {
+            acc[userId] = rebRoundMoney(Number(rands) || 0);
             return acc;
           }, {});
         } catch (err) {
@@ -8638,39 +8646,28 @@
         const entries = Object.entries(balancesByUser || {}).filter(([userId]) => userId);
         if (!entries.length || !strategyId) return;
 
-        const nowIso = new Date().toISOString();
-        /* Manual upsert per row: PostgREST's onConflict can't target the
-           COALESCE expression index, so we do read-then-update-or-insert.
-           Same row count as a bulk upsert (one round trip per user) and
-           simpler than maintaining two partial unique constraints. */
-        await Promise.all(entries.map(async ([userId, balance]) => {
-          const balanceCents = Math.round((Number(balance) || 0) * 100);
-
-          let updateQuery = supabaseClient
-            .from("strategy_rebalance_residuals")
-            .update({ balance_cents: balanceCents, updated_at: nowIso })
-            .eq("user_id", userId)
-            .eq("strategy_id", strategyId);
-          updateQuery = familyMemberId
-            ? updateQuery.eq("family_member_id", familyMemberId)
-            : updateQuery.is("family_member_id", null);
-          /* Return the updated row(s) so we know whether to insert. */
-          const { data: updated, error: updateErr } = await updateQuery.select("user_id");
-          if (updateErr) throw new Error(`Residual update failed for ${userId}: ${updateErr.message}`);
-
-          if (!updated || !updated.length) {
-            const { error: insertErr } = await supabaseClient
-              .from("strategy_rebalance_residuals")
-              .insert({
-                user_id: userId,
-                strategy_id: strategyId,
-                family_member_id: familyMemberId || null,
-                balance_cents: balanceCents,
-                updated_at: nowIso,
-              });
-            if (insertErr) throw new Error(`Residual insert failed for ${userId}: ${insertErr.message}`);
-          }
-        }));
+        /* Write residuals through the service-role endpoint. The table has no
+           write RLS policy (writes are service-role only by design), so a direct
+           browser upsert fails with "new row violates row-level security policy".
+           Throws on failure so rebExecute surfaces the error instead of silently
+           committing a batch with no residual. */
+        const token = await rebApiToken();
+        if (!token) throw new Error("No session token for residual upsert");
+        const resp = await fetch("/api/rebalance/residuals", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            action: "upsert",
+            strategyId,
+            balancesByUser: Object.fromEntries(entries),
+            familyMemberId: familyMemberId || null,
+          }),
+        });
+        if (!resp.ok) {
+          let detail = `${resp.status}`;
+          try { const j = await resp.json(); detail = j.details || j.error || detail; } catch (_) {}
+          throw new Error(`Residual upsert failed: ${detail}`);
+        }
       }
 
       /* ── State ── */
