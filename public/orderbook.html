@@ -1606,6 +1606,20 @@
     const MANUALLY_CLOSED_BOOKS_KEY = 'orderbook-manually-closed-v1';
     let filledOrderbooksArchive = [];
     let holdingFillDateById = new Map();
+    /* Per-holding execution economics for the MINT PnL column, keyed by
+       stock_holdings_c id. Built once per load from the authoritative holdings
+       + the reconciled buffer ledger so every render path (main rows, strategy
+       parents, per-investor detail) sums the SAME cent-accurate figures and
+       never re-parses formatted strings (which broke under comma-decimal locales).
+         â€¢ mintGainByHolding     = profit from filling BELOW the client's quote:
+                                    max(0, Expected_fill âˆ’ avg_fill) Ã— qty (cents).
+                                    Present for every FILLED holding (even when 0).
+         â€¢ mintBufferUsedByHolding = slippage the 8% reserve absorbed (cents) â€” MINT net 0.
+         â€¢ mintShortfallByHolding  = slippage BEYOND the reserve (cents) â€” MINT real loss.
+       MINT PnL (row) = (Î£ gain âˆ’ Î£ shortfall) / 100. */
+    let mintGainByHolding = new Map();
+    let mintBufferUsedByHolding = new Map();
+    let mintShortfallByHolding = new Map();
     let strategyFillStateById = new Map();
     let showActiveBooksFilledColumn = false;
     let isArchiveBooksLoading = true;
@@ -3327,39 +3341,61 @@
       return `<td style="color:${color};font-weight:600;">${escapeHtml(display)}</td>`;
     };
 
-    /* MINT PnL = avg_fill âˆ’ Expected_fill, in rands, totalled by qty. Captures
-       the difference between what the client paid (avg_fill) and what we
-       committed to fill at (Expected_fill). Positive = slippage gain for MINT. */
-    const renderMintPnlCell = (row) => {
-      const avg = Number(row?.avgFillNumber);
-      const act = Number(row?.actualFillNumber);
-      let mintPnl;
-      if (row?.isStrategy) {
-        /* avgFill/actualFill on strategy rows are already RAND TOTALS â€” the
-           display strings parse cleanly with the leading "R ". Fall back to
-           per-share Ã— qty if either is null. */
-        const parseRand = (s) => {
-          const txt = String(s || '').replace(/[^\d.\-]/g, '');
-          const v = Number(txt);
-          return Number.isFinite(v) ? v : NaN;
-        };
-        const avgTotal = parseRand(row.avgFill);
-        const actTotal = parseRand(row.actualFill);
-        if (Number.isFinite(avgTotal) && Number.isFinite(actTotal)) {
-          mintPnl = avgTotal - actTotal;
-        }
-      } else {
-        const qty = Math.abs(Number(row?.quantityValue) || 0);
-        if (Number.isFinite(avg) && Number.isFinite(act) && qty > 0) {
-          mintPnl = (avg - act) * qty;
-        }
+    /* Collect every stock_holdings_c id a row represents â€” single security,
+       multi-user aggregated security, or strategy parent (sum of its holdings). */
+    const collectHoldingIds = (row) => {
+      const out = [];
+      const push = (v) => { if (v) out.push(String(v)); };
+      if (row?.isStrategy && Array.isArray(row.strategyHoldings)) {
+        row.strategyHoldings.forEach((h) => {
+          if (Array.isArray(h.sourceIds) && h.sourceIds.length) h.sourceIds.forEach(push);
+          else push(h.sourceId);
+        });
+      } else if (Array.isArray(row?.sourceIds) && row.sourceIds.length) {
+        row.sourceIds.forEach(push);
+      } else if (row?.sourceId) {
+        push(row.sourceId);
       }
-      if (!Number.isFinite(mintPnl)) {
+      return [...new Set(out)];
+    };
+
+    /* MINT PnL = the TRUE execution result, summed per holding from the buffer
+       ledger + fill prices (never from formatted strings, so no locale comma bug):
+         â€¢ gain  = filled BELOW the client's quote  â†’ max(0, Expected âˆ’ avg) Ã— qty
+         â€¢ loss  = slippage BEYOND the 8% reserve    â†’ âˆ’shortfall (0 if reserve absorbed it)
+       So a cheaper fill reads as profit; slippage inside the cushion reads 0; only
+       slippage that exhausts the reserve shows a real (red) loss. Unfilled â†’ "-". */
+    const renderMintPnlCell = (row) => {
+      const ids = collectHoldingIds(row);
+      let filled = false;
+      let gainCents = 0;
+      let shortfallCents = 0;
+      let bufferUsedCents = 0;
+      ids.forEach((id) => {
+        if (mintGainByHolding.has(id)) { filled = true; gainCents += mintGainByHolding.get(id) || 0; }
+        shortfallCents += mintShortfallByHolding.get(id) || 0;
+        bufferUsedCents += mintBufferUsedByHolding.get(id) || 0;
+      });
+      if (!filled) {
         return '<td style="color:#64748b;font-weight:600;">-</td>';
       }
-      const color = mintPnl > 0 ? '#059669' : (mintPnl < 0 ? '#dc2626' : '#64748b');
-      const display = mintPnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      return `<td style="color:${color};font-weight:600;">${escapeHtml(display)}</td>`;
+      const netCents = gainCents - shortfallCents;
+      const display = (netCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const color = netCents > 0 ? '#059669' : (netCents < 0 ? '#dc2626' : '#64748b');
+      const fmt = (c) => (c / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      let title;
+      if (shortfallCents > 0) {
+        title = `Slippage beat the 8% execution reserve â€” MINT covered R ${fmt(shortfallCents)} out of pocket`
+          + (gainCents > 0 ? `, offset by R ${fmt(gainCents)} gained on cheaper fills.` : '.');
+      } else if (gainCents > 0) {
+        title = `Filled R ${fmt(gainCents)} below the client's quoted price â€” MINT spread profit`
+          + (bufferUsedCents > 0 ? `; R ${fmt(bufferUsedCents)} of slippage elsewhere was absorbed by the client's reserve (MINT net 0 on that).` : '.');
+      } else if (bufferUsedCents > 0) {
+        title = `Slippage of R ${fmt(bufferUsedCents)} fully absorbed by the client's execution reserve â€” MINT net 0.`;
+      } else {
+        title = 'Filled at the client’s quoted price â€” MINT net 0 on execution.';
+      }
+      return `<td style="color:${color};font-weight:600;" title="${escapeHtml(title)}">${escapeHtml(display)}</td>`;
     };
 
     const buildStrateBirIndividuals = (lines) => {
@@ -5231,10 +5267,32 @@
       const rebBatches = rebBatchesResult.data || [];
       const batchById = rebBatches.reduce((acc, b) => { acc[b.id] = b; return acc; }, {});
       holdingFillDateById.clear();
+      mintGainByHolding.clear();
+      mintBufferUsedByHolding.clear();
+      mintShortfallByHolding.clear();
       holdings.forEach((h) => {
         if (h.id && h.fill_date) {
           holdingFillDateById.set(String(h.id), String(h.fill_date));
         }
+        /* MINT gain = how far BELOW the client's quote we filled. avg_fill is
+           cents, Expected_fill is rands (guard the legacy rows that stored it in
+           cents). Only filled holdings (avg_fill > 0) get an entry, which also
+           marks the holding as "filled" for the render. Slippage (avg above the
+           quote) yields 0 here â€” that loss is the buffer ledger's job, not a gain. */
+        const hid = h.id ? String(h.id) : '';
+        if (!hid) return;
+        const avgCents = Number(h.avg_fill);
+        if (!Number.isFinite(avgCents) || avgCents <= 0) return; // not yet filled
+        const avgRands = avgCents / 100;
+        let expectedRands = Number(h.expected_fill);
+        if (!Number.isFinite(expectedRands) || expectedRands <= 0) {
+          expectedRands = avgRands; // legacy: no quote recorded â†’ no spread
+        } else if (expectedRands > avgRands * 5) {
+          expectedRands = expectedRands / 100; // legacy Expected_fill stored in cents
+        }
+        const qtyAbs = Math.abs(Number(h.quantity) || 0);
+        const gainCents = Math.max(0, Math.round((expectedRands - avgRands) * qtyAbs * 100));
+        mintGainByHolding.set(hid, gainCents);
       });
       const securityIds = [...new Set([
         ...holdings.map((row) => row.security_id).filter(Boolean),
@@ -5373,6 +5431,38 @@
         }
       }
 
+      /* Execution-reserve (8% buffer) ledger â€” per-holding slippage the reserve
+         absorbed (slippage_drawdown) vs. what spilled past it (shortfall = MINT's
+         out-of-pocket loss). Folded into the MINT PnL column so admins see true
+         execution economics without an extra column. Same reconciled rows the CRM
+         investors tab reads. */
+      if (holdingIds.length) {
+        const ddChunk = 150;
+        for (let i = 0; i < holdingIds.length; i += ddChunk) {
+          const chunk = holdingIds.slice(i, i + ddChunk);
+          parallelQueries.push(
+            supabaseClient
+              .from('buffer_drawdowns_c')
+              .select('holding_id, event_type, delta_cents')
+              .in('holding_id', chunk)
+              .in('event_type', ['slippage_drawdown', 'shortfall'])
+              .then(({ data, error }) => {
+                if (error) { console.error('Buffer drawdowns load error:', error); return; }
+                (data || []).forEach((d) => {
+                  if (!d.holding_id) return;
+                  const id = String(d.holding_id);
+                  const cents = Math.max(0, Math.round(Number(d.delta_cents) || 0));
+                  if (d.event_type === 'shortfall') {
+                    mintShortfallByHolding.set(id, (mintShortfallByHolding.get(id) || 0) + cents);
+                  } else {
+                    mintBufferUsedByHolding.set(id, (mintBufferUsedByHolding.get(id) || 0) + cents);
+                  }
+                });
+              })
+          );
+        }
+      }
+
       await Promise.all(parallelQueries);
 
       const archivedSourceIds = getArchivedSourceIds();
@@ -5436,9 +5526,15 @@
         const computedMarketValueNumber = (isQuantityNumeric && hasExpectedFillPrice)
           ? (Math.abs(quantityValue) * expectedFillPrice)
           : 0;
-        // Initial PnL = qty Ã— (lastPrice âˆ’ avgFill). Only meaningful when both prices are known.
-        const computedInitialPnlNumber = (isQuantityNumeric && hasAvgFill && hasLastPrice)
-          ? (Math.abs(quantityValue) * (lastPrice - avgFillValue))
+        /* Client PnL = qty Ã— (lastPrice âˆ’ Expected_fill). Expected_fill (actualFillValue,
+           already in rands with the legacy-cents guard above) is the price the client SAW
+           when they tapped Buy â€” their true cost basis. avg_fill carries MINT's execution
+           spread and must NOT be used here (matches the MINT client app + the buffer ledger).
+           Falls back to avg_fill only for legacy rows with no Expected_fill. */
+        const clientCostBasis = hasActualFill ? actualFillValue : (hasAvgFill ? avgFillValue : NaN);
+        const hasClientCostBasis = Number.isFinite(clientCostBasis);
+        const computedInitialPnlNumber = (isQuantityNumeric && hasClientCostBasis && hasLastPrice)
+          ? (Math.abs(quantityValue) * (lastPrice - clientCostBasis))
           : 0;
         const normalizedUnrealizedPnlNumber = computedInitialPnlNumber;
         const explicitSide = String(row.trade_side || '').trim().toUpperCase();
@@ -5460,7 +5556,7 @@
         const marketValue = (isQuantityNumeric && hasExpectedFillPrice)
           ? `R ${computedMarketValueNumber.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
           : '-';
-        const unrealizedPnl = (isQuantityNumeric && hasAvgFill && hasLastPrice)
+        const unrealizedPnl = (isQuantityNumeric && hasClientCostBasis && hasLastPrice)
           ? computedInitialPnlNumber.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
           : '-';
 

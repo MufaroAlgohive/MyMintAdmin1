@@ -4930,6 +4930,21 @@
     const securitiesByIdMap = {};
     const strategiesByIdMap = {};
     const familyRoleFlagsByUserId = {};
+
+    /* Client cost basis for a holding row, in RANDS. avg_fill is normalized to
+       rands at ingestion (see holdingsRows.forEach), and Expected_fill is already
+       rands. Prefers Expected_fill — the price the client saw at buy time — over
+       avg_fill, which carries MINT's execution spread. Guards legacy Expected_fill
+       rows that were stored in cents (>5× avg_fill); falls back to avg_fill when no
+       quote was recorded. Mirrors the MINT client app + orderbook/investors. */
+    const clientCostBasisRands = (row) => {
+      const avgRands = Number(row.avg_fill) || 0;          // normalized to rands at ingestion
+      const expectedRands = Number(row.expected_fill) || 0; // already rands
+      if (expectedRands > 0) {
+        return (avgRands > 0 && expectedRands > avgRands * 5) ? expectedRands / 100 : expectedRands;
+      }
+      return avgRands;
+    };
     let allFamilyMembers = [];
     let allFamilyTransactions = [];
     const PACK_SECTIONS_PAGE_SIZE = 4;
@@ -5515,8 +5530,9 @@
         const currentPrice = security.last_price ? Number(security.last_price) : 0;
         const qty = Number(row.quantity) || 0;
         const avgFillRands = row.avg_fill ? Number(row.avg_fill) : 0;
+        const costBasis = clientCostBasisRands(row); // Expected_fill-based client cost basis (rands)
         const mv = currentPrice ? qty * currentPrice : (Number(row.market_value) || 0);
-        const pnl = avgFillRands > 0 && currentPrice ? (currentPrice - avgFillRands) * qty : (Number(row.unrealized_pnl) || 0);
+        const pnl = costBasis > 0 && currentPrice ? (currentPrice - costBasis) * qty : (Number(row.unrealized_pnl) || 0);
         return `
           <tr>
             <td>${escapeHtml(label)}</td>
@@ -5564,6 +5580,7 @@
             unrealized_pnl: 0,
             status: row.status || row.Status || null,
             avg_fill: row.avg_fill,
+            expected_fill: row.expected_fill,
             fill_date: row.fill_date || row.Fill_date || null,
             as_of_date: row.as_of_date || row.Fill_date || row.fill_date || null,
             updated_at: row.updated_at || row.created_at || row.as_of_date || null,
@@ -5678,8 +5695,9 @@
         const currentPrice = security.last_price ? Number(security.last_price) : 0;
         const qty = Number(row.quantity) || 0;
         const avgFill = row.avg_fill ? Number(row.avg_fill) : 0;
+        const costBasis = clientCostBasisRands(row); // Expected_fill-based client cost basis (rands)
         const mv = currentPrice ? qty * currentPrice : (Number(row.market_value) || 0);
-        const pnl = avgFill > 0 && currentPrice ? (currentPrice - avgFill) * qty : (Number(row.unrealized_pnl) || 0);
+        const pnl = costBasis > 0 && currentPrice ? (currentPrice - costBasis) * qty : (Number(row.unrealized_pnl) || 0);
         return `
           <tr>
             <td>${escapeHtml(label)}</td>
@@ -8227,6 +8245,7 @@
 
       const currentPrice = security.last_price ? Number(security.last_price) : 0;
       const avgFill = row.avg_fill ? Number(row.avg_fill) : 0;
+      const costBasis = clientCostBasisRands(row); // Expected_fill-based client cost basis (rands)
 
       let liveMarketValue = qty * currentPrice;
       if (!currentPrice && row.market_value) liveMarketValue = Number(row.market_value);
@@ -8235,8 +8254,8 @@
       let bottomValue;
       if (row.unrealized_pnl !== null && row.unrealized_pnl !== undefined && Number(row.unrealized_pnl) !== 0) {
         bottomValue = Number(row.unrealized_pnl);
-      } else if (avgFill > 0 && qty > 0) {
-        bottomValue = avgFill * qty;
+      } else if (costBasis > 0 && qty > 0) {
+        bottomValue = costBasis * qty;
       } else {
         bottomValue = liveMarketValue;
       }
@@ -8308,13 +8327,14 @@
         const currentPrice = security.last_price ? Number(security.last_price) : 0;
         const qty = Number(row.quantity) || 0;
         const avgFill = row.avg_fill ? Number(row.avg_fill) : 0;
+        const costBasis = clientCostBasisRands(row); // Expected_fill-based client cost basis (rands)
         if (isPending) {
-          // No fill price yet — use current market price as theoretical fill
-          const pendingFillPrice = (avgFill > 0) ? (avgFill) : currentPrice;
+          // No fill price yet — use the client's quoted cost basis, else market price
+          const pendingFillPrice = (costBasis > 0) ? (costBasis) : currentPrice;
           pendingUserHoldings += pendingFillPrice * qty;
           pendingMarketHoldings += currentPrice * qty;
         } else {
-          totalUserHoldings += (avgFill) * qty;
+          totalUserHoldings += (costBasis) * qty;
           totalMarketHoldings += currentPrice * qty;
         }
         const mv = currentPrice ? qty * currentPrice : (Number(row.market_value) || 0);
@@ -8322,8 +8342,8 @@
         let rowBottom;
         if (row.unrealized_pnl !== null && row.unrealized_pnl !== undefined && Number(row.unrealized_pnl) !== 0) {
           rowBottom = Number(row.unrealized_pnl);
-        } else if (avgFill > 0 && qty > 0) {
-          rowBottom = avgFill * qty;
+        } else if (costBasis > 0 && qty > 0) {
+          rowBottom = costBasis * qty;
         } else {
           rowBottom = mv;
         }
@@ -8522,7 +8542,7 @@
             supabaseClient.from('user_onboarding').select('*').in('user_id', userIds),
             supabaseClient.from('user_onboarding_pack_details').select('*').in('user_id', userIds),
             supabaseClient.from('allocations').select('user_id, asset_class, weight, value, return_1d, return_1w, return_1m, return_ytd, return_1y, as_of_date, security_id, created_at, updated_at').in('user_id', userIds).order('updated_at', { ascending: false }),
-            supabaseClient.from('stock_holdings_c').select('user_id, security_id, quantity, avg_fill, market_value, unrealized_pnl, status:"Status", fill_date:"Fill_date", exit_date:"Exit_date", as_of_date, strategy_id, strategy_name_snapshot, trade_side, is_active, created_at, updated_at').eq('is_active', true).eq('trade_side', 'BUY').in('user_id', userIds).order('updated_at', { ascending: false })
+            supabaseClient.from('stock_holdings_c').select('user_id, security_id, quantity, avg_fill, expected_fill:"Expected_fill", market_value, unrealized_pnl, status:"Status", fill_date:"Fill_date", exit_date:"Exit_date", as_of_date, strategy_id, strategy_name_snapshot, trade_side, is_active, created_at, updated_at').eq('is_active', true).eq('trade_side', 'BUY').in('user_id', userIds).order('updated_at', { ascending: false })
           ]);
 
           // Fetch ALL family_members + transactions (not filtered by userIds) — RLS policy controls access
@@ -8604,7 +8624,15 @@
           const holdingsRows = (!holdingsRes.error && holdingsRes.data) ? holdingsRes.data : [];
           const allocationsRows = (!allocationsRes.error && allocationsRes.data) ? allocationsRes.data : [];
 
+          /* Normalize cents → rands ONCE at ingestion so every holdings render
+             below works in rands. avg_fill, market_value and unrealized_pnl are
+             stored in cents (confirmed against the MINT app); Expected_fill is
+             already in rands, so it's left alone. This fixes the page-wide ×100
+             over-display in the holdings inspector. */
           holdingsRows.forEach((row) => {
+            if (row.avg_fill != null)       row.avg_fill       = Number(row.avg_fill) / 100;
+            if (row.market_value != null)   row.market_value   = Number(row.market_value) / 100;
+            if (row.unrealized_pnl != null) row.unrealized_pnl = Number(row.unrealized_pnl) / 100;
             if (!holdingsByUserMap[row.user_id]) holdingsByUserMap[row.user_id] = [];
             holdingsByUserMap[row.user_id].push(row);
           });
@@ -8626,6 +8654,9 @@
 
             if (!securitiesError && securityRows) {
               securityRows.forEach((security) => {
+                /* last_price is stored in cents — convert to rands once so the
+                   holdings inspector's market values/PnL display correctly. */
+                if (security.last_price != null) security.last_price = Number(security.last_price) / 100;
                 securitiesByIdMap[security.id] = security;
               });
             }

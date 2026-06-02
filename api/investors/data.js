@@ -30,9 +30,25 @@ module.exports = async (req, res) => {
       fetch(`${supabaseUrl}/rest/v1/${path}`, { headers: sbH }).then((r) => r.json());
 
     const [holdings, strategies] = await Promise.all([
-      sbGet('stock_holdings_c?select=user_id,family_member_id,security_id,strategy_id,quantity,avg_fill,market_value,created_at&is_active=eq.true&trade_side=eq.BUY'),
+      sbGet('stock_holdings_c?select=user_id,family_member_id,security_id,strategy_id,quantity,avg_fill,expected_fill:%22Expected_fill%22,market_value,created_at&is_active=eq.true&trade_side=eq.BUY'),
       sbGet('strategies_c?select=id,name,short_name,description,risk_level,sector'),
     ]);
+
+    /* Client cost basis per share, in CENTS, preferring Expected_fill (the price
+       the client saw at buy time, in rands) over avg_fill (broker fill in cents,
+       which carries MINT's spread). Guards legacy Expected_fill rows that were
+       stored in cents (>5Ã— avg_fill/100). Mirrors the MINT app's
+       costBasisRandsPerShare so the CRM and the client app agree to the cent. */
+    const costBasisCentsPerShare = (h) => {
+      const avgCents = Number(h.avg_fill) || 0;
+      const expectedRaw = Number(h.expected_fill) || 0;
+      if (expectedRaw > 0) {
+        const avgRands = avgCents > 0 ? avgCents / 100 : 0;
+        const expectedRands = (avgRands > 0 && expectedRaw > avgRands * 5) ? expectedRaw / 100 : expectedRaw;
+        return Math.round(expectedRands * 100);
+      }
+      return avgCents > 0 ? avgCents : 0;
+    };
 
     const userIds  = [...new Set((holdings || []).map((r) => r.user_id).filter(Boolean))];
     const secIds   = [...new Set((holdings || []).map((r) => r.security_id).filter(Boolean))];
@@ -50,13 +66,14 @@ module.exports = async (req, res) => {
       : [];
     const stratHist = stratHistArrays.flat();
 
-    /* Recalculate inception_pnl and inception_pct using avg_fill only (matches
-       the orderbook's Client PnL formula). avg_fill is cents, so multiplying
-       by quantity gives cents directly — basket_value is also cents. */
+    /* Recalculate inception_pnl and inception_pct using the client cost basis
+       (Expected_fill, the price the client saw), NOT avg_fill — avg_fill carries
+       MINT's spread. costBasisCentsPerShare returns cents, so Ã— quantity gives
+       cents directly, matching basket_value (also cents). */
     const investedByUser = {};
     (holdings || []).forEach(h => {
       const uid = h.user_id;
-      const cost = Number(h.avg_fill) * Number(h.quantity);
+      const cost = costBasisCentsPerShare(h) * Number(h.quantity);
       if (uid && cost > 0) investedByUser[uid] = (investedByUser[uid] || 0) + cost;
     });
     const latestRowByUser = {};

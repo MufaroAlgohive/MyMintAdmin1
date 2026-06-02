@@ -560,7 +560,7 @@
 
       async function loadClientInspectorData(client, reqId) {
         const [hr, tr] = await Promise.all([
-          supabaseClient.from('stock_holdings_c').select('id,security_id,quantity,avg_fill,strategy_id,Status,trade_side,is_active').eq('user_id',client.id).eq('Status','active').eq('is_active',true).eq('trade_side','BUY'),
+          supabaseClient.from('stock_holdings_c').select('id,security_id,quantity,avg_fill,expected_fill:"Expected_fill",strategy_id,Status,trade_side,is_active').eq('user_id',client.id).eq('Status','active').eq('is_active',true).eq('trade_side','BUY'),
           supabaseClient.from('transactions').select('id,name,description,amount,direction,status,transaction_date,created_at').eq('user_id',client.id).order('created_at',{ascending:false}).limit(6),
         ]);
         if (reqId !== inspectorRequestId) return;
@@ -586,7 +586,16 @@
         const fh = holdings.filter(h=>secMap[h.security_id]).map(h => {
           const sec = secMap[h.security_id];
           const qty = Number(h.quantity || 0);
-          const cost = (Number(h.avg_fill) || 0) / 100;
+          /* Client cost basis = Expected_fill (the price the client saw at buy
+             time, rands), NOT avg_fill — avg_fill carries MINT's spread. Legacy
+             Expected_fill-in-cents guarded; falls back to avg_fill. Mirrors the
+             MINT client app, orderbook and investors page. */
+          const avgRands = (Number(h.avg_fill) || 0) / 100;
+          const expectedRaw = Number(h.expected_fill) || 0;
+          let cost = avgRands;
+          if (expectedRaw > 0) {
+            cost = (avgRands > 0 && expectedRaw > avgRands * 5) ? expectedRaw / 100 : expectedRaw;
+          }
           const intraLp = intradayMap[h.security_id];
           const lastLp = Number(sec.last_price);
           const livePrice = Number.isFinite(intraLp) ? intraLp
@@ -596,7 +605,8 @@
           const costTotal   = cost * qty;
           const pnlRands    = marketValue - costTotal;
           const pnlPct      = costTotal > 0 ? (pnlRands / costTotal) * 100 : 0;
-          const isPending   = !cost;
+          /* "Pending" still means the broker fill (avg_fill) hasn't landed yet. */
+          const isPending   = !(Number(h.avg_fill) > 0);
           portfolioValue += marketValue;
           totalCost      += costTotal;
           totalPnL       += pnlRands;

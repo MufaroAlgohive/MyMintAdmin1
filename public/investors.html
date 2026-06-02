@@ -434,10 +434,19 @@
         } else if (fill * qty > 10 * mv && mv > 0) {
           fill /= 100;
         }
-        /* Match the orderbook's Client PnL: cost basis = avg_fill / 100 only
-           (no higher-of with Expected_fill), so PnL = qty × (live − avg_fill). */
+        /* Broker fill in rands — shown in the Avg Fill display column only. */
         const avgFillR = fill / 100;
-        const investedR = avgFillR * qty;
+        /* Client cost basis = Expected_fill (the price the client saw at buy time,
+           in rands), NOT avg_fill — avg_fill carries MINT's execution spread.
+           Guards legacy Expected_fill rows stored in cents (>5× avgFillR); falls
+           back to avg_fill when no quote was recorded. Mirrors the MINT client app,
+           api/investors/data.js and the orderbook so every surface agrees. */
+        let costBasisR = avgFillR;
+        const expectedRaw = Number(row.expected_fill) || 0;
+        if (expectedRaw > 0) {
+          costBasisR = (avgFillR > 0 && expectedRaw > avgFillR * 5) ? expectedRaw / 100 : expectedRaw;
+        }
+        const investedR = costBasisR * qty;
         const currentR  = live ? live.priceR * qty : (mv / 100);
         byUser[key].holdings.push({
           securityId: row.security_id,

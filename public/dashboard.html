@@ -5722,7 +5722,7 @@
         window.__dbgBreadcrumb('ovSelect:fetch-investors');
         const { data: investorRows } = await supabaseClient
           .from('stock_holdings_c')
-          .select('user_id, family_member_id, quantity, avg_fill, market_value, strategy_id, trade_side, is_active, created_at, security_id')
+          .select('user_id, family_member_id, quantity, avg_fill, expected_fill:"Expected_fill", market_value, strategy_id, trade_side, is_active, created_at, security_id')
           .eq('is_active', true)
           .eq('trade_side', 'BUY')
           .eq('strategy_id', strat.id);
@@ -6434,8 +6434,17 @@
           }
           const u = byBatch[key];
           const qty = Number(r.quantity) || 0;
-          /* Cost basis: avg_fill is in ZAc cents → divide by 100 to get rands */
-          const fill = (Number(r.avg_fill) || 0) / 100;
+          /* Client cost basis = Expected_fill (the price the client saw at buy
+             time, in rands), NOT avg_fill — avg_fill (cents) carries MINT's
+             execution spread. Guards legacy Expected_fill rows stored in cents
+             (>5× avg_fill/100); falls back to avg_fill when no quote was recorded.
+             Mirrors the MINT client app, investors page and orderbook. */
+          const avgRands = (Number(r.avg_fill) || 0) / 100;
+          const expectedRaw = Number(r.expected_fill) || 0;
+          let fill = avgRands;
+          if (expectedRaw > 0) {
+            fill = (avgRands > 0 && expectedRaw > avgRands * 5) ? expectedRaw / 100 : expectedRaw;
+          }
           u.costBasis += (fill * qty);
           /* Live current value: qty × last_price (cents → rands) */
           const lp = secPriceMap[r.security_id] || 0;
@@ -8699,6 +8708,7 @@
             lots: Math.floor(r.quantity / isin.unitsPerLot),
             quantity: Number(r.quantity) || 0,
             avgFillR: (Number(r.avgFillCents) || 0) / 100,
+            costBasisR: (Number(r.costBasisCents) || 0) / 100,
           }))
           .filter(r => r.lots > 0);
       }
@@ -8887,7 +8897,7 @@
             if (secIds.length) {
               let holdingsQuery = supabaseClient
                 .from("stock_holdings_c")
-                .select("security_id, user_id, family_member_id, quantity, avg_fill, strategy_id")
+                .select("security_id, user_id, family_member_id, quantity, avg_fill, expected_fill:\"Expected_fill\", strategy_id")
                 .eq("is_active", true)
                 .eq("trade_side", "BUY")
                 .in("security_id", secIds);
@@ -9010,11 +9020,25 @@
                 const qty = Number(r.quantity) || 0;
                 /* avg_fill stored in cents (consistent with orderbook PnL convention) */
                 const fillCents = Number(r.avg_fill) || 0;
+                /* Client cost basis in cents = Expected_fill (the price the client
+                   saw, rands) preferred over avg_fill (carries MINT's spread);
+                   legacy-cents guarded. Used ONLY for the P/L column below, never
+                   for rebalance execution/valuation (which stays on avgFillCents). */
+                const avgRandsForCb = fillCents > 0 ? fillCents / 100 : 0;
+                const expectedRaw = Number(r.expected_fill) || 0;
+                let cbCents = fillCents;
+                if (expectedRaw > 0) {
+                  const expectedRands = (avgRandsForCb > 0 && expectedRaw > avgRandsForCb * 5) ? expectedRaw / 100 : expectedRaw;
+                  cbCents = Math.round(expectedRands * 100);
+                }
                 const existing = rebRawHoldings[code].find(x => x.userId === uid && (x.familyMemberId || null) === fmId);
                 if (existing) {
                   const totalQty = existing.quantity + qty;
                   existing.avgFillCents = totalQty > 0
                     ? ((existing.avgFillCents * existing.quantity) + (fillCents * qty)) / totalQty
+                    : 0;
+                  existing.costBasisCents = totalQty > 0
+                    ? (((existing.costBasisCents || 0) * existing.quantity) + (cbCents * qty)) / totalQty
                     : 0;
                   existing.quantity = totalQty;
                 } else {
@@ -9024,6 +9048,7 @@
                     name: nameById[uid] || uid,
                     quantity: qty,
                     avgFillCents: fillCents,
+                    costBasisCents: cbCents,
                   });
                 }
               });
@@ -9258,11 +9283,14 @@
           `;
         };
 
-        /* PnL per client per ISIN: quantity × (currentPriceR - avgFillR) */
+        /* PnL per client per ISIN: quantity × (currentPriceR − cost basis).
+           Cost basis = Expected_fill (the price the client saw), NOT avg_fill —
+           matches the orderbook/investors Client PnL. Falls back to avg_fill via
+           costBasisCents when no quote was recorded. */
         const rebPnlForIsinClient = (isin, client) => {
           if (!isin || !client) return null;
           const price = Number(isin.currentPrice) || 0;
-          const fill = Number(client.avgFillR) || 0;
+          const fill = Number(client.costBasisR) || Number(client.avgFillR) || 0;
           const qty = Number(client.quantity) || 0;
           if (price <= 0 || fill <= 0 || qty <= 0) return null;
           return qty * (price - fill);
@@ -9338,7 +9366,8 @@
             const isin = isinByCode[code];
             if (!isin || !(Number(isin.currentPrice) > 0)) return;
             (rows || []).forEach((r) => {
-              const fillR = (Number(r.avgFillCents) || 0) / 100;
+              /* Cost basis = Expected_fill (client cost basis), not avg_fill. */
+              const fillR = (Number(r.costBasisCents) || Number(r.avgFillCents) || 0) / 100;
               const qty = Number(r.quantity) || 0;
               if (fillR <= 0 || qty <= 0) return;
               const pnl = qty * (Number(isin.currentPrice) - fillR);
