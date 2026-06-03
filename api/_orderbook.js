@@ -205,15 +205,6 @@ const handleSendTradeConfirmation = async (req, res, token) => {
   }
 
   try {
-    const existingConfirms = await fetchSupabaseJson(
-      `/rest/v1/investor_trade_confirmations?holding_id=eq.${encodeURIComponent(holdingId)}&select=id,sent_at,status`,
-      token
-    );
-    const alreadySent = existingConfirms && existingConfirms.some((r) => r.sent_at && r.status === 'sent');
-    if (alreadySent && !forceResend) {
-      return sendJson(res, 400, { error: 'Email already sent for this holding.' });
-    }
-
     const holdingsData = await fetchSupabaseJson(`/rest/v1/stock_holdings_c?id=eq.${encodeURIComponent(holdingId)}`, token);
     const holding = holdingsData && holdingsData[0];
     if (!holding) {
@@ -221,6 +212,31 @@ const handleSendTradeConfirmation = async (req, res, token) => {
     }
 
     const isBatch = !!holding.rebalance_batch_id;
+
+    // --- DEDUPLICATION ---
+    // For strategy (batch) purchases: if ANY holding in this batch already has a sent
+    // confirmation, skip — the grouped email was already sent by the first holding.
+    if (isBatch && !forceResend) {
+      const batchConfirms = await fetchSupabaseJson(
+        `/rest/v1/investor_trade_confirmations?rebalance_batch_id=eq.${encodeURIComponent(holding.rebalance_batch_id)}&status=eq.sent&select=id&limit=1`,
+        token
+      );
+      if (batchConfirms && batchConfirms.length > 0) {
+        return sendJson(res, 200, { ok: true, skipped: true, reason: 'Batch email already sent.' });
+      }
+    }
+
+    // For single holdings: check if this specific holding already has a sent confirmation.
+    if (!isBatch && !forceResend) {
+      const existingConfirms = await fetchSupabaseJson(
+        `/rest/v1/investor_trade_confirmations?holding_id=eq.${encodeURIComponent(holdingId)}&select=id,sent_at,status`,
+        token
+      );
+      const alreadySent = existingConfirms && existingConfirms.some((r) => r.sent_at && r.status === 'sent');
+      if (alreadySent) {
+        return sendJson(res, 400, { error: 'Email already sent for this holding.' });
+      }
+    }
 
     let profile = {};
     if (holding.user_id) {
@@ -408,13 +424,50 @@ const handleSendTradeConfirmation = async (req, res, token) => {
       const totalAmountStr = `R ${totalAmountValue.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
       if (isStrategy) {
+        // Fetch ALL holdings for this strategy + user to group into one email
+        let strategyHoldings = [];
+        try {
+          const stratHoldingsData = await fetchSupabaseJson(
+            `/rest/v1/stock_holdings_c?strategy_id=eq.${encodeURIComponent(holding.strategy_id)}&user_id=eq.${encodeURIComponent(holding.user_id)}&order=fill_date.desc&limit=50`,
+            token
+          );
+          // Filter to same fill_date (same day) to only include this batch
+          const fillDay = holding.fill_date ? holding.fill_date.substring(0, 10) : null;
+          strategyHoldings = (stratHoldingsData || []).filter(h =>
+            !fillDay || (h.fill_date && h.fill_date.substring(0, 10) === fillDay)
+          );
+        } catch (e) {
+          strategyHoldings = [holding]; // fallback to just this one
+        }
+
+        let tableRowsHtml = '';
+        for (const sHolding of strategyHoldings) {
+          let sSecurity = {};
+          if (sHolding.security_id) {
+            const secData = await fetchSupabaseJson(`/rest/v1/securities_c?id=eq.${encodeURIComponent(sHolding.security_id)}`, token);
+            if (secData && secData.length) sSecurity = secData[0];
+          }
+          const sTicker = sSecurity.symbol || '-';
+          const sSide = sHolding.trade_side || (sHolding.quantity < 0 ? 'SELL' : 'BUY');
+          const sQty = Math.abs(sHolding.quantity);
+          const sQtyDisplay = Number(sQty).toLocaleString('en-ZA', { minimumFractionDigits: 0, maximumFractionDigits: 4 });
+          const sTotalVal = (sQty * (sHolding.avg_fill || 0)) / 100;
+          const sTotalStr = `R ${sTotalVal.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+          const sRef = `BND-${sHolding.id.substring(0, 8).toUpperCase()}`;
+          if (tableRowsHtml !== '') {
+            tableRowsHtml += `<tr><td colspan="2" style="height:20px;border-bottom:1px solid #e2e8f0;background:#f8fafc;"></td></tr>`;
+          }
+          tableRowsHtml += buildTradeRow({ side: sSide, assetName: sSecurity.name || sTicker, quantityDisplay: sQtyDisplay, totalAmountStr: sTotalStr, ref: sRef });
+        }
+
+        subject = 'Basket Purchased — MINT';
         htmlContent = buildEmailHtml({
           firstName,
           mintRef: ref,
           orderDate: execDate,
-          tableRowsHtml: buildTradeRow({ side, assetName: security.name || ticker, quantityDisplay, totalAmountStr, ref }),
+          tableRowsHtml,
           subjectHeading: 'Basket Purchased.',
-          subjectIntro: `You have successfully purchased the <strong>${strategyName}</strong> basket. Your trade for <strong>${security.name || ticker}</strong> has been filled as part of this allocation.`
+          subjectIntro: `You have successfully purchased the <strong>${strategyName}</strong> basket. The following trades were executed to build your portfolio:`
         });
       } else {
         htmlContent = buildEmailHtml({
