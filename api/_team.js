@@ -211,7 +211,7 @@ const recoverPasswordViaSupabase = async (email, redirectTo) => {
 const updateAuthUserEmail = async (userId, newEmail) => {
   const { supabaseUrl, serviceRoleKey } = getSupabaseCreds();
   const res = await fetch(`${supabaseUrl}/auth/v1/admin/users/${userId}`, {
-    method: 'PATCH',
+    method: 'PUT',
     headers: {
       'apikey': serviceRoleKey,
       'Authorization': `Bearer ${serviceRoleKey}`,
