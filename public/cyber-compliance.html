@@ -196,6 +196,57 @@
   </div>
 
   <div class="page">
+    <!-- Migration Setup Banner (hidden once all tables exist) -->
+    <div id="migrationBanner" style="display:none;background:#fff8e1;border:1.5px solid #f59e0b;border-radius:14px;padding:18px 22px;margin-bottom:22px;">
+      <div style="display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:220px;">
+          <div style="font-size:14px;font-weight:700;color:#92400e;margin-bottom:6px;">⚠️ Database Setup Required</div>
+          <div style="font-size:13px;color:#78350f;margin-bottom:10px;">Some Cyber Compliance tables are missing in Supabase. The monitoring feature needs these tables to store health check and audit data.</div>
+          <div id="migrationTableStatus" style="font-size:12px;color:#78350f;margin-bottom:12px;display:flex;flex-wrap:wrap;gap:6px;"></div>
+          <div style="font-size:12px;color:#92400e;font-weight:600;margin-bottom:8px;">To set up: open Supabase SQL Editor → run the two SQL scripts below (in order).</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <a href="https://supabase.com/dashboard/project/mfxnghmuccevsxwcetej/sql/new" target="_blank"
+             style="display:inline-flex;align-items:center;gap:6px;background:#f59e0b;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;">
+            Open SQL Editor ↗
+          </a>
+          <button onclick="showMigrationSQL()" style="background:#fff;color:#92400e;border:1.5px solid #f59e0b;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;">
+            View SQL Scripts
+          </button>
+          <button onclick="checkMigration(true)" style="background:transparent;color:#92400e;border:none;font-size:12px;cursor:pointer;padding:4px;">
+            ↻ Re-check tables
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Migration SQL Modal -->
+    <div id="migrationSqlModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center;">
+      <div style="background:#fff;border-radius:16px;padding:28px;max-width:640px;width:95%;max-height:85vh;overflow-y:auto;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+          <div style="font-size:16px;font-weight:700;color:#1c1c1e;">Database Migration SQL</div>
+          <button onclick="document.getElementById('migrationSqlModal').style.display='none'" style="background:none;border:none;font-size:20px;cursor:pointer;color:#8e8e93;">×</button>
+        </div>
+        <div style="font-size:13px;color:#3c3c43;margin-bottom:14px;">Run <strong>Step 1</strong> first, then <strong>Step 2</strong>. Each can be pasted directly into the <a href="https://supabase.com/dashboard/project/mfxnghmuccevsxwcetej/sql/new" target="_blank" style="color:#7c3aed;">Supabase SQL Editor</a>.</div>
+
+        <div style="margin-bottom:14px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+            <div style="font-size:13px;font-weight:600;color:#1c1c1e;">Step 1 — Create Tables (cyber_compliance.sql)</div>
+            <button onclick="copySql('sql1')" style="background:#7c3aed;color:#fff;border:none;border-radius:7px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;">Copy</button>
+          </div>
+          <textarea id="sql1" readonly style="width:100%;height:160px;font-family:monospace;font-size:11px;padding:10px;border:1px solid #e5e5ea;border-radius:8px;resize:vertical;color:#1c1c1e;background:#f9f9fb;"></textarea>
+        </div>
+
+        <div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+            <div style="font-size:13px;font-weight:600;color:#1c1c1e;">Step 2 — Audit Triggers (audit_triggers.sql)</div>
+            <button onclick="copySql('sql2')" style="background:#7c3aed;color:#fff;border:none;border-radius:7px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;">Copy</button>
+          </div>
+          <textarea id="sql2" readonly style="width:100%;height:160px;font-family:monospace;font-size:11px;padding:10px;border:1px solid #e5e5ea;border-radius:8px;resize:vertical;color:#1c1c1e;background:#f9f9fb;"></textarea>
+        </div>
+      </div>
+    </div>
+
     <!-- Stats Strip -->
     <div class="stats-row" id="statsStrip">
       <div class="stat-card"><div class="stat-label">Services Up</div><div class="stat-value up" id="statServicesUp">—</div></div>
@@ -417,6 +468,198 @@ const showToast = (msg, color = '#1c1c1e') => {
 const escHtml = s => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const fmtDate = iso => iso ? new Date(iso).toLocaleString('en-ZA', {dateStyle:'short',timeStyle:'short'}) : '—';
 const fmtMs  = ms  => ms != null ? `${ms}ms` : '—';
+
+// ── Migration / DB Setup check ───────────────────────────────────────────────
+const SQL_TABLES = `-- Step 1: Create Cyber Compliance tables
+-- Run this in Supabase SQL Editor (once)
+
+CREATE TABLE IF NOT EXISTS cc_incidents (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title            TEXT NOT NULL,
+  description      TEXT,
+  priority         TEXT NOT NULL DEFAULT 'medium'
+                     CHECK (priority IN ('low', 'medium', 'high', 'critical')),
+  status           TEXT NOT NULL DEFAULT 'open'
+                     CHECK (status IN ('open', 'in_progress', 'resolved', 'closed')),
+  category         TEXT NOT NULL DEFAULT 'other'
+                     CHECK (category IN ('hardware', 'software', 'network', 'security', 'access', 'uptime', 'api', 'policy', 'other')),
+  environment      TEXT NOT NULL DEFAULT 'live'
+                     CHECK (environment IN ('live', 'dev', 'crm', 'supabase', 'email', 'general')),
+  assigned_to      TEXT,
+  reported_by      TEXT,
+  notes            TEXT,
+  auto_generated   BOOLEAN NOT NULL DEFAULT FALSE,
+  pending_resolve  BOOLEAN NOT NULL DEFAULT FALSE,
+  service_key      TEXT,
+  resolved_at      TIMESTAMPTZ,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS cc_incidents_status_idx      ON cc_incidents (status);
+CREATE INDEX IF NOT EXISTS cc_incidents_priority_idx    ON cc_incidents (priority);
+CREATE INDEX IF NOT EXISTS cc_incidents_created_idx     ON cc_incidents (created_at DESC);
+CREATE INDEX IF NOT EXISTS cc_incidents_service_key_idx ON cc_incidents (service_key);
+ALTER TABLE cc_incidents DISABLE ROW LEVEL SECURITY;
+
+CREATE TABLE IF NOT EXISTS cc_uptime_log (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  service_name    TEXT NOT NULL,
+  service_key     TEXT NOT NULL,
+  environment     TEXT NOT NULL DEFAULT 'live'
+                    CHECK (environment IN ('live', 'dev', 'crm', 'supabase', 'email', 'other')),
+  url             TEXT,
+  is_up           BOOLEAN NOT NULL,
+  status_code     INTEGER,
+  response_ms     INTEGER,
+  error_message   TEXT,
+  checked_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS cc_uptime_log_service_key_idx ON cc_uptime_log (service_key, checked_at DESC);
+CREATE INDEX IF NOT EXISTS cc_uptime_log_checked_at_idx  ON cc_uptime_log (checked_at DESC);
+ALTER TABLE cc_uptime_log DISABLE ROW LEVEL SECURITY;
+
+CREATE TABLE IF NOT EXISTS cc_api_health (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  environment      TEXT NOT NULL DEFAULT 'crm'
+                     CHECK (environment IN ('live', 'dev', 'crm')),
+  endpoint         TEXT NOT NULL,
+  label            TEXT NOT NULL,
+  method           TEXT NOT NULL DEFAULT 'GET',
+  expected_status  INTEGER NOT NULL DEFAULT 200,
+  actual_status    INTEGER,
+  response_ms      INTEGER,
+  passed           BOOLEAN NOT NULL,
+  error_message    TEXT,
+  checked_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS cc_api_health_env_idx        ON cc_api_health (environment, checked_at DESC);
+CREATE INDEX IF NOT EXISTS cc_api_health_checked_at_idx ON cc_api_health (checked_at DESC);
+ALTER TABLE cc_api_health DISABLE ROW LEVEL SECURITY;
+
+CREATE TABLE IF NOT EXISTS cc_policy_checks (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  policy_name   TEXT NOT NULL,
+  category      TEXT NOT NULL,
+  passed        BOOLEAN NOT NULL,
+  severity      TEXT NOT NULL DEFAULT 'medium'
+                  CHECK (severity IN ('low', 'medium', 'high', 'critical')),
+  detail        TEXT,
+  recommendation TEXT,
+  checked_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS cc_policy_checks_checked_at_idx ON cc_policy_checks (checked_at DESC);
+CREATE INDEX IF NOT EXISTS cc_policy_checks_passed_idx     ON cc_policy_checks (passed, checked_at DESC);
+ALTER TABLE cc_policy_checks DISABLE ROW LEVEL SECURITY;
+
+CREATE TABLE IF NOT EXISTS cc_audit_log (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  table_name   TEXT NOT NULL,
+  operation    TEXT NOT NULL CHECK (operation IN ('INSERT', 'UPDATE', 'DELETE')),
+  old_row      JSONB,
+  new_row      JSONB,
+  changed_by   TEXT,
+  changed_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS cc_audit_log_table_idx      ON cc_audit_log (table_name, changed_at DESC);
+CREATE INDEX IF NOT EXISTS cc_audit_log_changed_at_idx ON cc_audit_log (changed_at DESC);
+CREATE INDEX IF NOT EXISTS cc_audit_log_operation_idx  ON cc_audit_log (operation, changed_at DESC);
+ALTER TABLE cc_audit_log DISABLE ROW LEVEL SECURITY;`;
+
+const SQL_TRIGGERS = `-- Step 2: Audit Triggers
+-- Run AFTER Step 1 (cc_audit_log must exist first)
+
+CREATE OR REPLACE FUNCTION cc_audit_trigger_fn()
+RETURNS TRIGGER AS $$
+DECLARE
+  _old_row  JSONB := NULL;
+  _new_row  JSONB := NULL;
+  _actor    TEXT  := 'system';
+BEGIN
+  BEGIN
+    _actor := coalesce(auth.uid()::TEXT, 'system');
+  EXCEPTION WHEN OTHERS THEN
+    _actor := 'system';
+  END;
+  IF TG_OP = 'DELETE' THEN
+    _old_row := to_jsonb(OLD);
+  ELSIF TG_OP = 'INSERT' THEN
+    _new_row := to_jsonb(NEW);
+  ELSE
+    _old_row := to_jsonb(OLD);
+    _new_row := to_jsonb(NEW);
+  END IF;
+  INSERT INTO cc_audit_log (table_name, operation, old_row, new_row, changed_by, changed_at)
+  VALUES (TG_TABLE_NAME, TG_OP, _old_row, _new_row, _actor, now());
+  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS cc_audit_profiles ON profiles;
+CREATE TRIGGER cc_audit_profiles
+  AFTER INSERT OR UPDATE OR DELETE ON profiles
+  FOR EACH ROW EXECUTE FUNCTION cc_audit_trigger_fn();
+
+DROP TRIGGER IF EXISTS cc_audit_stock_holdings_c ON stock_holdings_c;
+CREATE TRIGGER cc_audit_stock_holdings_c
+  AFTER INSERT OR UPDATE OR DELETE ON stock_holdings_c
+  FOR EACH ROW EXECUTE FUNCTION cc_audit_trigger_fn();
+
+DROP TRIGGER IF EXISTS cc_audit_strategies_c ON strategies_c;
+CREATE TRIGGER cc_audit_strategies_c
+  AFTER INSERT OR UPDATE OR DELETE ON strategies_c
+  FOR EACH ROW EXECUTE FUNCTION cc_audit_trigger_fn();
+
+DROP TRIGGER IF EXISTS cc_audit_securities_c ON securities_c;
+CREATE TRIGGER cc_audit_securities_c
+  AFTER INSERT OR UPDATE OR DELETE ON securities_c
+  FOR EACH ROW EXECUTE FUNCTION cc_audit_trigger_fn();
+
+DROP TRIGGER IF EXISTS cc_audit_user_onboarding ON user_onboarding;
+CREATE TRIGGER cc_audit_user_onboarding
+  AFTER INSERT OR UPDATE OR DELETE ON user_onboarding
+  FOR EACH ROW EXECUTE FUNCTION cc_audit_trigger_fn();
+
+DROP TRIGGER IF EXISTS cc_audit_cc_incidents ON cc_incidents;
+CREATE TRIGGER cc_audit_cc_incidents
+  AFTER INSERT OR UPDATE OR DELETE ON cc_incidents
+  FOR EACH ROW EXECUTE FUNCTION cc_audit_trigger_fn();`;
+
+const checkMigration = async (showToastOnOk = false) => {
+  try {
+    const r = await fetch('/api/cyber-compliance?action=check-migration', { headers: authH() });
+    const d = await r.json();
+    const banner = document.getElementById('migrationBanner');
+    if (d.allExist) {
+      banner.style.display = 'none';
+      if (showToastOnOk) showToast('All database tables are present ✓', '#34c759');
+    } else {
+      banner.style.display = 'block';
+      const missing = d.tables.filter(t => !t.exists);
+      const statusEl = document.getElementById('migrationTableStatus');
+      statusEl.innerHTML = d.tables.map(t =>
+        `<span style="background:${t.exists?'#d1fae5':'#fee2e2'};color:${t.exists?'#065f46':'#991b1b'};padding:2px 8px;border-radius:6px;font-weight:600;">
+          ${t.exists ? '✓' : '✗'} ${t.table}
+        </span>`
+      ).join('');
+    }
+  } catch (e) {
+    console.warn('[migration check]', e.message);
+  }
+};
+
+const showMigrationSQL = () => {
+  document.getElementById('sql1').value = SQL_TABLES;
+  document.getElementById('sql2').value = SQL_TRIGGERS;
+  document.getElementById('migrationSqlModal').style.display = 'flex';
+};
+
+const copySql = (id) => {
+  const el = document.getElementById(id);
+  navigator.clipboard.writeText(el.value).then(() => showToast('SQL copied to clipboard ✓', '#7c3aed')).catch(() => {
+    el.select(); document.execCommand('copy'); showToast('SQL copied ✓', '#7c3aed');
+  });
+};
 
 const priorityBadge = p => {
   const m = {critical:'p-critical',high:'p-high',medium:'p-medium',low:'p-low'};
@@ -818,6 +1061,7 @@ const startAutoRefresh = () => {
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
+  checkMigration();
   loadLiveStatus();
   loadIncidents();
   loadPolicyChecks();

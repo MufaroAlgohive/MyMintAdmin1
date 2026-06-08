@@ -360,6 +360,23 @@ module.exports = async (req, res) => {
       }
     }
 
+    if (action === 'check-migration') {
+      const tables = ['cc_incidents', 'cc_uptime_log', 'cc_api_health', 'cc_policy_checks', 'cc_audit_log'];
+      const { supabaseUrl, serviceRoleKey } = getSupabaseCreds();
+      const results = await Promise.all(tables.map(async (tbl) => {
+        try {
+          const r = await fetch(`${supabaseUrl}/rest/v1/${tbl}?limit=0`, {
+            headers: { 'apikey': serviceRoleKey, 'Authorization': `Bearer ${serviceRoleKey}` }
+          });
+          return { table: tbl, exists: r.ok || r.status === 416 };
+        } catch {
+          return { table: tbl, exists: false };
+        }
+      }));
+      const allExist = results.every(r => r.exists);
+      return sendJson(res, 200, { ok: true, tables: results, allExist });
+    }
+
     return sendJson(res, 400, { error: `Unknown action: ${action}` });
 
   } catch (err) {
