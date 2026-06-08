@@ -488,7 +488,7 @@
       const secIds     = [...new Set(holdings.map(r => r.security_id).filter(Boolean))];
 
       /* Fetch profiles, transactions, and live security prices in parallel */
-      const [{ data: profiles }, { data: txnRows }, { data: secPrices }] = await Promise.all([
+      const [{ data: profiles }, { data: txnRows }, { data: secPrices }, { data: residualRows }, { data: closedRows }] = await Promise.all([
         supabaseClient.from('profiles').select('id, first_name, last_name, email').in('id', userIds),
         supabaseClient
           .from('transactions')
@@ -500,8 +500,32 @@
         supabaseClient
           .from('securities_c')
           .select('id, last_price, AsOfTime')
-          .in('id', secIds)
+          .in('id', secIds),
+        /* Residual cash from rebalances — counts toward current value (same as the app) */
+        supabaseClient
+          .from('strategy_rebalance_residuals')
+          .select('user_id, balance_cents')
+          .in('user_id', userIds),
+        /* Closed positions carry realised P&L: (avg_exit − avg_fill) × qty (same basis as app + returns job) */
+        supabaseClient
+          .from('stock_holdings_c')
+          .select('user_id, quantity, avg_fill, avg_exit')
+          .eq('is_active', false)
+          .in('user_id', userIds)
       ]);
+
+      /* Residual cash + accumulated realised P&L per user (rands) */
+      const residualByUser = {};
+      (residualRows || []).forEach(r => {
+        if (!r.user_id) return;
+        residualByUser[r.user_id] = (residualByUser[r.user_id] || 0) + Number(r.balance_cents || 0) / 100;
+      });
+      const realizedByUser = {};
+      (closedRows || []).forEach(r => {
+        const f = Number(r.avg_fill) || 0, e = Number(r.avg_exit) || 0, q = Number(r.quantity) || 0;
+        if (!f || !e || !q) return;
+        realizedByUser[r.user_id] = (realizedByUser[r.user_id] || 0) + ((e - f) / 100) * q;
+      });
 
       const profMap = {};
       (profiles || []).forEach(p => { profMap[p.id] = p; });
@@ -574,13 +598,20 @@
           || (u.inceptionDate ? u.inceptionDate.split('T')[0] : null);
         const days = inceptionDate ? Math.floor((Date.now() - new Date(inceptionDate)) / 86400000) : 0;
 
-        /* ── Live price-based P&L (matches Mint app real-time data) ── */
-        const currentVal = u.current;
-        const base       = u.costBasis > 0 ? u.costBasis : (txnInvested[u.userId] || 0);
-        const pnl        = +(currentVal - base).toFixed(2);
-        const returnPct  = base > 0 ? +((pnl / base) * 100).toFixed(2) : 0;
+        /* ── Stable money-in → money-out P&L (matches the Mint app) ──
+           invested is anchored to the investor's actual deposits, NOT recomputed
+           from the cost of only the shares still held (which silently drops sold
+           shares on every rebalance and makes the % drift). Current value includes
+           rebalance residual cash so a rebalance doesn't look like a loss. */
+        const residualVal = residualByUser[u.userId] || 0;
+        const currentVal  = u.current + residualVal;
+        const invested    = (txnInvested[u.userId] > 0 ? txnInvested[u.userId] : u.costBasis);
+        const pnl         = +(currentVal - invested).toFixed(2);
+        const returnPct   = invested > 0 ? +((pnl / invested) * 100).toFixed(2) : 0;
 
-        const invested = u.costBasis;   /* cost basis = investor's principal in NAV model */
+        /* Split into realised (locked in from sells) + unrealised (open positions) */
+        const realized   = +((realizedByUser[u.userId] || 0).toFixed(2));
+        const unrealized = +((pnl - realized).toFixed(2));
 
         /* Geometric annualisation: ((1 + r)^(365/days) − 1) × 100 */
         const annualised = days > 30
@@ -599,7 +630,10 @@
           valueFull: currentVal,
           invested,
           current: currentVal,
+          residualCash: residualVal,
           pnl,
+          realized,
+          unrealized,
           returnPct,
           days,
           annualised,
@@ -616,6 +650,8 @@
       const aum  = investors.reduce((s, i) => s + (i.current || 0), 0);
       const inv  = investors.reduce((s, i) => s + (i.invested || 0), 0);
       const pnl  = aum - inv;
+      const realised   = investors.reduce((s, i) => s + (i.realized || 0), 0);
+      const unrealised = investors.reduce((s, i) => s + (i.unrealized || 0), 0);
       const avg  = investors.length ? investors.reduce((s, i) => s + i.returnPct, 0) / investors.length : 0;
       const sorted = [...investors].sort((a, b) => b.returnPct - a.returnPct);
       const best = sorted[0];
@@ -624,6 +660,8 @@
         { l: 'TOTAL AUM',       v: fmtR(aum),    c: '#0f172a' },
         { l: 'TOTAL INVESTED',  v: fmtR(inv),     c: '#64748b' },
         { l: 'TOTAL P&L',       v: (pnl >= 0 ? '+' : '') + fmtR(pnl), c: pnl >= 0 ? '#059669' : '#dc2626' },
+        { l: 'REALISED P&L',    v: (realised >= 0 ? '+' : '') + fmtR(realised), c: realised >= 0 ? '#059669' : '#dc2626' },
+        { l: 'UNREALISED P&L',  v: (unrealised >= 0 ? '+' : '') + fmtR(unrealised), c: unrealised >= 0 ? '#059669' : '#dc2626' },
         { l: 'AVG RETURN',      v: fmtPct(avg),   c: avg >= 0 ? '#059669' : '#dc2626' },
         { l: 'BEST PERFORMER',  v: best  ? `${best.name.split(' ')[0]} ${fmtPct(best.returnPct)}`  : '—', c: '#059669' },
         { l: 'WORST PERFORMER', v: worst ? `${worst.name.split(' ')[0]} ${fmtPct(worst.returnPct)}` : '—', c: '#dc2626' }
@@ -930,6 +968,8 @@
               { l: 'INVESTED',   v: fmtR(inv.invested),                                                   s: neutral,   note: null         },
               { l: 'VALUE',      v: fmtR(inv.current),                                                    s: neutral,   note: liveTimeStr  },
               { l: 'P&L',        v: (pnlPos ? '+' : '') + fmtR(inv.pnl),                                  s: fc(pnlPos),note: null         },
+              { l: 'REALISED',   v: ((inv.realized ?? 0) >= 0 ? '+' : '') + fmtR(inv.realized ?? 0),      s: fc((inv.realized ?? 0) >= 0),   note: null },
+              { l: 'UNREALISED', v: ((inv.unrealized ?? 0) >= 0 ? '+' : '') + fmtR(inv.unrealized ?? 0),  s: fc((inv.unrealized ?? 0) >= 0), note: null },
               { l: 'DAYS',       v: inv.days ?? '—',                                                      s: neutral,   note: null         },
               { l: 'ANNUALISED', v: fmtPct(inv.annualised),                                               s: fc(annPos),note: null         },
               { l: 'MAX DD',     v: maxDDStr,                                                              s: ddVal != null ? fc(ddVal >= 0) : neutral, note: null }
