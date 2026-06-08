@@ -318,6 +318,7 @@ module.exports = async (req, res) => {
       const hsts = h['strict-transport-security'];
       const xpb  = h['x-powered-by'] || '';
       const srv  = h['server'] || '';
+      const ref  = h['referrer-policy'] || '';
       const noLeak = !xpb && (!srv || !srv.match(/\d+\.\d+/) ||
         ['cloudflare','vercel'].some(s => srv.toLowerCase().includes(s)));
 
@@ -332,6 +333,9 @@ module.exports = async (req, res) => {
         mk('Response Time', 'Performance', httpResult.ok && httpResult.response_ms <= 5000, 'medium',
           httpResult.ok ? `${httpResult.response_ms}ms (threshold: 5000ms)` : 'No response',
           'Response time should be under 5 seconds'),
+        mk('Content Security Policy', 'Security Headers', Boolean(csp), 'high',
+          csp ? `CSP present (${csp.length > 80 ? csp.slice(0, 80) + '…' : csp})` : 'Content-Security-Policy header missing',
+          'Set a Content-Security-Policy header to control allowed resource origins'),
         mk('X-Content-Type-Options', 'Security Headers', xcto === 'nosniff', 'medium',
           xcto ? `Header present: ${xcto}` : 'Header missing from response',
           'Set X-Content-Type-Options: nosniff to prevent MIME-type sniffing'),
@@ -342,6 +346,9 @@ module.exports = async (req, res) => {
         mk('HSTS Configured', 'Transport Security', Boolean(hsts), 'high',
           hsts ? `Strict-Transport-Security: ${hsts}` : 'HSTS header not present',
           'Configure Strict-Transport-Security to enforce HTTPS for repeat visitors'),
+        mk('Referrer Policy', 'Security Headers', Boolean(ref), 'low',
+          ref ? `Referrer-Policy: ${ref}` : 'Referrer-Policy header missing',
+          'Set Referrer-Policy (e.g. strict-origin-when-cross-origin) to limit referrer leakage'),
         mk('No Server Version Disclosure', 'Information Security', noLeak, 'low',
           [xpb && `X-Powered-By: ${xpb}`, srv && `Server: ${srv}`].filter(Boolean).join(' | ') || 'No version info leaked',
           'Remove or sanitise X-Powered-By and Server headers')
@@ -382,10 +389,10 @@ module.exports = async (req, res) => {
             pass: chk(process.env.SUMSUB_APP_TOKEN),
             det:  chk(process.env.SUMSUB_APP_TOKEN) ? 'SUMSUB_APP_TOKEN configured' : 'SUMSUB_APP_TOKEN missing — KYC will fail',
             rec:  'Set SUMSUB_APP_TOKEN in Vercel environment variables' },
-          { name: 'SumSub Secret Key',           cat: 'KYC / Identity',    sev: 'high',
-            pass: chk(process.env.SUMSUB_SECRET_KEY),
-            det:  chk(process.env.SUMSUB_SECRET_KEY) ? 'SUMSUB_SECRET_KEY configured' : 'SUMSUB_SECRET_KEY missing',
-            rec:  'Set SUMSUB_SECRET_KEY in Vercel environment variables' },
+          { name: 'SumSub App Secret',            cat: 'KYC / Identity',    sev: 'high',
+            pass: chk(process.env.SUMSUB_APP_SECRET),
+            det:  chk(process.env.SUMSUB_APP_SECRET) ? 'SUMSUB_APP_SECRET configured' : 'SUMSUB_APP_SECRET missing — KYC HMAC signing will fail',
+            rec:  'Set SUMSUB_APP_SECRET in Vercel environment variables' },
           { name: 'SumSub Base URL',             cat: 'KYC / Identity',    sev: 'medium',
             pass: chk(process.env.SUMSUB_BASE_URL),
             det:  chk(process.env.SUMSUB_BASE_URL) ? `SUMSUB_BASE_URL: ${process.env.SUMSUB_BASE_URL}` : 'SUMSUB_BASE_URL missing',
@@ -412,6 +419,11 @@ module.exports = async (req, res) => {
             pass: chk(process.env.MINT_APP_URL_DEV),
             det:  chk(process.env.MINT_APP_URL_DEV) ? `MINT_APP_URL_DEV: ${process.env.MINT_APP_URL_DEV}` : 'MINT_APP_URL_DEV missing',
             rec:  'Set MINT_APP_URL_DEV in Vercel environment variables' },
+          // ── Session / Admin auth ─────────────────────────────────────────────
+          { name: 'Session Secret Configured',   cat: 'Authentication',    sev: 'critical',
+            pass: chk(process.env.SESSION_SECRET),
+            det:  chk(process.env.SESSION_SECRET) ? 'SESSION_SECRET configured' : 'SESSION_SECRET missing — admin sessions are insecure',
+            rec:  'Set SESSION_SECRET to a long random string in Vercel environment variables' },
           // ── Security posture ─────────────────────────────────────────────────
           { name: 'Secrets in Environment Only', cat: 'Secret Management', sev: 'critical',
             pass: true,
