@@ -12,7 +12,7 @@
  *   list-api-health     GET  — api health checks with optional env filter
  *   list-policy-checks  GET  — latest policy check results
  *   list-audit-log      GET  — db audit log with table/operation/date filters
- *   list-user-activity  GET  — live feed of user actions from key tables
+ *   list-active-users   GET  — active/logged-in users from auth.users + profiles (new vs existing badge)
  *   badge-count         GET  — count of open incidents + failed checks (for red dot)
  *   health-summary      GET  — aggregated last check time, uptime %, API pass rate, policy pass rate
  *   run-migration       POST — admin only: runs cyber_compliance.sql + audit_triggers.sql via pg direct connection
@@ -286,72 +286,91 @@ module.exports = async (req, res) => {
       return sendJson(res, 200, { ok: true, logs: Array.isArray(rows) ? rows : [] });
     }
 
-    // ── LIST USER ACTIVITY ────────────────────────────────────────────────────
-    if (action === 'list-user-activity') {
+    // ── LIST ACTIVE USERS ─────────────────────────────────────────────────────
+    // Shows who is currently logged in / recently active, with new vs existing badge.
+    // Presence thresholds: online = last sign-in < 30 min, recent = < 24 h.
+    // New user badge: account created within the last 30 days.
+    if (action === 'list-user-activity' || action === 'list-active-users') {
       if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
-      const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '50', 10)));
+      const { supabaseUrl, serviceRoleKey } = getSupabaseCreds();
+      const authHeaders = {
+        'apikey': serviceRoleKey,
+        'Authorization': `Bearer ${serviceRoleKey}`,
+        'Accept': 'application/json'
+      };
 
-      const [recentHoldings, recentWallet, recentKyc, recentProfiles] = await Promise.all([
-        sbGet(`/rest/v1/stock_holdings_c?select=id,user_id,security_id,trade_side,quantity,avg_fill,created_at,closed_reason,is_active&order=created_at.desc&limit=${Math.ceil(limit / 4)}`).catch(() => []),
-        sbGet(`/rest/v1/wallet_transactions?select=id,user_id,amount,type,description,created_at&order=created_at.desc&limit=${Math.ceil(limit / 4)}`).catch(() => []),
-        sbGet(`/rest/v1/user_onboarding?select=id,user_id,status,kyc_status,updated_at&order=updated_at.desc&limit=${Math.ceil(limit / 4)}`).catch(() => []),
-        sbGet(`/rest/v1/profiles?select=id,first_name,last_name,email,created_at&order=created_at.desc&limit=${Math.ceil(limit / 4)}`).catch(() => [])
-      ]);
+      // Fetch all auth users (paginated; cap at 1000 for performance)
+      let authUsers = [];
+      try {
+        const r = await fetch(`${supabaseUrl}/auth/v1/admin/users?page=1&per_page=1000`, { headers: authHeaders });
+        if (r.ok) {
+          const body = await r.json();
+          authUsers = Array.isArray(body) ? body : (body.users || []);
+        }
+      } catch { /* silently skip */ }
 
-      const activities = [];
+      // Fetch profiles for display names
+      let profileMap = {};
+      try {
+        const rows = await sbGet('/rest/v1/profiles?select=id,first_name,last_name,email,created_at');
+        if (Array.isArray(rows)) {
+          rows.forEach(p => { profileMap[p.id] = p; });
+        }
+      } catch { /* silently skip */ }
 
-      (Array.isArray(recentHoldings) ? recentHoldings : []).forEach(r => {
-        activities.push({
-          type:       'trade',
-          icon:       r.trade_side === 'SELL' ? 'sell' : 'buy',
-          label:      `${r.trade_side || 'Trade'} — ${r.quantity} units`,
-          user_id:    r.user_id,
-          detail:     r.is_active ? 'Active position' : `Closed: ${r.closed_reason || 'n/a'}`,
-          timestamp:  r.created_at,
-          has_error:  false
-        });
+      const now = Date.now();
+      const MS_30_MIN  = 30 * 60 * 1000;
+      const MS_24_H    = 24 * 60 * 60 * 1000;
+      const MS_30_DAYS = 30 * 24 * 60 * 60 * 1000;
+
+      const users = authUsers.map(u => {
+        const profile  = profileMap[u.id] || {};
+        const lastSeen = u.last_sign_in_at ? new Date(u.last_sign_in_at).getTime() : null;
+        const ageMs    = now - new Date(u.created_at).getTime();
+        const sinceMs  = lastSeen ? now - lastSeen : null;
+
+        let presence = 'never';
+        if (sinceMs !== null) {
+          if (sinceMs < MS_30_MIN)  presence = 'online';
+          else if (sinceMs < MS_24_H) presence = 'recent';
+          else                        presence = 'inactive';
+        }
+
+        const displayName = [profile.first_name, profile.last_name].filter(Boolean).join(' ')
+          || u.email?.split('@')[0]
+          || u.id.slice(0, 8);
+
+        return {
+          id:           u.id,
+          email:        u.email || profile.email || '',
+          display_name: displayName,
+          initials:     displayName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || '?',
+          is_new:       ageMs < MS_30_DAYS,
+          presence,
+          last_sign_in: u.last_sign_in_at || null,
+          created_at:   u.created_at,
+          confirmed:    !!u.email_confirmed_at
+        };
       });
 
-      (Array.isArray(recentWallet) ? recentWallet : []).forEach(r => {
-        activities.push({
-          type:      'wallet',
-          icon:      'wallet',
-          label:     `Wallet ${r.type || 'transaction'} — R${Number(r.amount || 0).toFixed(2)}`,
-          user_id:   r.user_id,
-          detail:    r.description || '',
-          timestamp: r.created_at,
-          has_error: false
-        });
+      // Sort: online first, then recent, then inactive/never — then by last sign-in desc
+      const presenceOrder = { online: 0, recent: 1, inactive: 2, never: 3 };
+      users.sort((a, b) => {
+        const po = presenceOrder[a.presence] - presenceOrder[b.presence];
+        if (po !== 0) return po;
+        return new Date(b.last_sign_in || 0) - new Date(a.last_sign_in || 0);
       });
 
-      (Array.isArray(recentKyc) ? recentKyc : []).forEach(r => {
-        const kycFailed = r.kyc_status && !['approved', 'completed'].includes(String(r.kyc_status).toLowerCase());
-        activities.push({
-          type:      'kyc',
-          icon:      kycFailed ? 'error' : 'kyc',
-          label:     `KYC ${r.kyc_status || r.status || 'update'}`,
-          user_id:   r.user_id,
-          detail:    `Status: ${r.status || '—'} / KYC: ${r.kyc_status || '—'}`,
-          timestamp: r.updated_at,
-          has_error: kycFailed
-        });
-      });
+      const counts = {
+        online:   users.filter(u => u.presence === 'online').length,
+        recent:   users.filter(u => u.presence === 'recent').length,
+        inactive: users.filter(u => u.presence === 'inactive').length,
+        never:    users.filter(u => u.presence === 'never').length,
+        total:    users.length,
+        new_users: users.filter(u => u.is_new).length
+      };
 
-      (Array.isArray(recentProfiles) ? recentProfiles : []).forEach(r => {
-        activities.push({
-          type:      'signup',
-          icon:      'user',
-          label:     `New user: ${[r.first_name, r.last_name].filter(Boolean).join(' ') || r.email || r.id}`,
-          user_id:   r.id,
-          detail:    r.email || '',
-          timestamp: r.created_at,
-          has_error: false
-        });
-      });
-
-      activities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-
-      return sendJson(res, 200, { ok: true, activities: activities.slice(0, limit) });
+      return sendJson(res, 200, { ok: true, users, counts });
     }
 
     // ── HEALTH SUMMARY ────────────────────────────────────────────────────────

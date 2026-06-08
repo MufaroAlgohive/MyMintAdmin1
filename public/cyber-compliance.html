@@ -421,14 +421,50 @@
 
     <!-- ── User Activity Tab ───────────────────────────────────────────── -->
     <div class="tab-pane" id="tab-activity">
-      <div class="card">
-        <div class="card-header"><span class="card-title">Live User Activity Feed</span>
-          <div style="font-size:12px;color:#8e8e93;">Recent trades, wallet events, KYC updates, new signups</div>
+      <!-- Presence summary strip -->
+      <div style="display:flex;gap:12px;margin-bottom:18px;flex-wrap:wrap;" id="presenceSummaryStrip">
+        <div style="background:#fff;border-radius:12px;border:1px solid #e5e5ea;padding:12px 18px;display:flex;align-items:center;gap:10px;min-width:130px;">
+          <span style="width:10px;height:10px;border-radius:50%;background:#34c759;display:inline-block;box-shadow:0 0 0 3px rgba(52,199,89,.2);flex-shrink:0;"></span>
+          <div><div style="font-size:20px;font-weight:700;color:#1c1c1e;" id="psOnline">—</div><div style="font-size:11px;color:#8e8e93;font-weight:500;margin-top:1px;">Online now</div></div>
         </div>
-        <table>
-          <thead><tr><th>Type</th><th>Event</th><th>User ID</th><th>Detail</th><th>Timestamp</th></tr></thead>
-          <tbody id="activityTableBody"><tr><td colspan="5" class="empty-state">Loading…</td></tr></tbody>
-        </table>
+        <div style="background:#fff;border-radius:12px;border:1px solid #e5e5ea;padding:12px 18px;display:flex;align-items:center;gap:10px;min-width:130px;">
+          <span style="width:10px;height:10px;border-radius:50%;background:#ff9500;display:inline-block;flex-shrink:0;"></span>
+          <div><div style="font-size:20px;font-weight:700;color:#1c1c1e;" id="psRecent">—</div><div style="font-size:11px;color:#8e8e93;font-weight:500;margin-top:1px;">Active last 24h</div></div>
+        </div>
+        <div style="background:#fff;border-radius:12px;border:1px solid #e5e5ea;padding:12px 18px;display:flex;align-items:center;gap:10px;min-width:130px;">
+          <span style="width:10px;height:10px;border-radius:50%;background:#34c759;display:inline-block;flex-shrink:0;opacity:.35;"></span>
+          <div><div style="font-size:20px;font-weight:700;color:#1c1c1e;" id="psNew">—</div><div style="font-size:11px;color:#8e8e93;font-weight:500;margin-top:1px;">New (last 30 days)</div></div>
+        </div>
+        <div style="background:#fff;border-radius:12px;border:1px solid #e5e5ea;padding:12px 18px;display:flex;align-items:center;gap:10px;min-width:130px;">
+          <span style="width:10px;height:10px;border-radius:50%;background:#8e8e93;display:inline-block;flex-shrink:0;"></span>
+          <div><div style="font-size:20px;font-weight:700;color:#1c1c1e;" id="psTotal">—</div><div style="font-size:11px;color:#8e8e93;font-weight:500;margin-top:1px;">Total registered</div></div>
+        </div>
+        <div style="margin-left:auto;display:flex;align-items:center;">
+          <span style="font-size:11px;color:#8e8e93;" id="activityRefreshLabel">—</span>
+        </div>
+      </div>
+
+      <!-- User presence grid -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Registered Users</span>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <input type="text" id="userSearchInput" placeholder="Search name or email…"
+              style="border:1px solid #e5e5ea;border-radius:8px;padding:5px 10px;font-size:12px;outline:none;width:180px;"
+              oninput="filterUsers()">
+            <select id="userPresenceFilter" onchange="filterUsers()"
+              style="border:1px solid #e5e5ea;border-radius:8px;padding:5px 8px;font-size:12px;outline:none;color:#3c3c43;">
+              <option value="">All</option>
+              <option value="online">Online now</option>
+              <option value="recent">Last 24h</option>
+              <option value="inactive">Inactive</option>
+              <option value="never">Never signed in</option>
+            </select>
+          </div>
+        </div>
+        <div id="userGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;padding:16px;">
+          <div style="color:#8e8e93;font-size:13px;padding:20px;grid-column:1/-1;">Loading users…</div>
+        </div>
       </div>
     </div>
 
@@ -1010,28 +1046,96 @@ const loadPolicyChecks = async () => {
   } catch { document.getElementById('policyTableBody').innerHTML = '<tr><td colspan="7" class="empty-state">Failed to load</td></tr>'; }
 };
 
-// ── User Activity ───────────────────────────────────────────────────────────
-const ACTIVITY_ICONS = {
-  buy:'💹', sell:'📉', wallet:'💰', kyc:'🪪', signup:'👤', error:'🔴', default:'📌'
+// ── Active Users (presence view) ─────────────────────────────────────────────
+let _allUsers = [];
+
+const PRESENCE_CFG = {
+  online:   { dot: '#34c759', label: 'Online now',   shadow: '0 0 0 3px rgba(52,199,89,.25)' },
+  recent:   { dot: '#ff9500', label: 'Active today',  shadow: 'none' },
+  inactive: { dot: '#c7c7cc', label: 'Inactive',      shadow: 'none' },
+  never:    { dot: '#e5e5ea', label: 'Never signed in', shadow: 'none' }
 };
+
+const fmtRelative = iso => {
+  if (!iso) return 'Never';
+  const diff = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1)  return 'Just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  return `${d}d ago`;
+};
+
+const avatarColors = ['#7c3aed','#0ea5e9','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#84cc16'];
+const avatarColor = (id) => avatarColors[id.charCodeAt(0) % avatarColors.length];
+
+const renderUserCard = (u) => {
+  const pc = PRESENCE_CFG[u.presence] || PRESENCE_CFG.inactive;
+  const color = avatarColor(u.id);
+  const newBadge = u.is_new
+    ? `<span style="background:#d1fae5;color:#065f46;font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;letter-spacing:.04em;">NEW</span>`
+    : `<span style="background:#f2f2f7;color:#8e8e93;font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;letter-spacing:.04em;">EXISTING</span>`;
+  const unconfirmed = !u.confirmed
+    ? `<span style="background:#fff3cd;color:#92400e;font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;">UNVERIFIED</span>`
+    : '';
+
+  return `<div style="background:#fff;border:1px solid #e5e5ea;border-radius:14px;padding:14px 16px;display:flex;align-items:flex-start;gap:12px;position:relative;overflow:hidden;">
+    <div style="position:relative;flex-shrink:0;">
+      <div style="width:42px;height:42px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;color:#fff;letter-spacing:.03em;">${escHtml(u.initials)}</div>
+      <span style="position:absolute;bottom:0;right:0;width:12px;height:12px;border-radius:50%;background:${pc.dot};border:2px solid #fff;box-shadow:${pc.shadow};"></span>
+    </div>
+    <div style="min-width:0;flex:1;">
+      <div style="font-size:13px;font-weight:600;color:#1c1c1e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${escHtml(u.display_name)}">${escHtml(u.display_name)}</div>
+      <div style="font-size:11px;color:#8e8e93;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;" title="${escHtml(u.email)}">${escHtml(u.email)}</div>
+      <div style="display:flex;align-items:center;gap:5px;margin-top:7px;flex-wrap:wrap;">
+        ${newBadge}${unconfirmed}
+      </div>
+    </div>
+    <div style="text-align:right;flex-shrink:0;font-size:11px;color:#8e8e93;margin-left:4px;">
+      <div style="color:${pc.dot === '#e5e5ea' ? '#8e8e93' : pc.dot};font-weight:600;font-size:11px;">${pc.label}</div>
+      <div style="margin-top:2px;">${fmtRelative(u.last_sign_in)}</div>
+    </div>
+  </div>`;
+};
+
+const filterUsers = () => {
+  const q     = (document.getElementById('userSearchInput')?.value || '').toLowerCase();
+  const pf    = document.getElementById('userPresenceFilter')?.value || '';
+  const grid  = document.getElementById('userGrid');
+  if (!grid) return;
+  const visible = _allUsers.filter(u => {
+    if (pf && u.presence !== pf) return false;
+    if (q && !u.display_name.toLowerCase().includes(q) && !u.email.toLowerCase().includes(q)) return false;
+    return true;
+  });
+  if (!visible.length) {
+    grid.innerHTML = `<div style="color:#8e8e93;font-size:13px;padding:20px;grid-column:1/-1;">No users match the filter.</div>`;
+  } else {
+    grid.innerHTML = visible.map(renderUserCard).join('');
+  }
+};
+
 const loadUserActivity = async () => {
+  const grid = document.getElementById('userGrid');
+  if (grid) grid.innerHTML = `<div style="color:#8e8e93;font-size:13px;padding:20px;grid-column:1/-1;">Loading users…</div>`;
   try {
-    const r = await fetch('/api/cyber-compliance?action=list-user-activity&limit=60', { headers: authH() });
+    const r = await fetch('/api/cyber-compliance?action=list-active-users', { headers: authH() });
     const d = await r.json();
-    const activities = d.activities || [];
-    const tbody = document.getElementById('activityTableBody');
-    if (!activities.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No activity data</td></tr>'; return; }
-    tbody.innerHTML = activities.map(a => {
-      const icon = ACTIVITY_ICONS[a.icon] || ACTIVITY_ICONS.default;
-      return `<tr style="${a.has_error ? 'background:#fff5f5;' : ''}">
-        <td><span style="font-size:16px;">${icon}</span> <span style="font-size:12px;text-transform:capitalize;color:#636366;">${a.type}</span></td>
-        <td style="font-weight:500;">${escHtml(a.label)}</td>
-        <td class="ts" style="font-family:monospace;">${a.user_id ? escHtml(String(a.user_id).slice(0,8))+'…' : '—'}</td>
-        <td class="ts">${escHtml(a.detail||'—')}</td>
-        <td class="ts">${fmtDate(a.timestamp)}</td>
-      </tr>`;
-    }).join('');
-  } catch { document.getElementById('activityTableBody').innerHTML = '<tr><td colspan="5" class="empty-state">Failed to load</td></tr>'; }
+    _allUsers = d.users || [];
+    const c   = d.counts || {};
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v ?? '—'; };
+    set('psOnline',  c.online  ?? '—');
+    set('psRecent',  c.recent  ?? '—');
+    set('psNew',     c.new_users ?? '—');
+    set('psTotal',   c.total   ?? '—');
+    const lbl = document.getElementById('activityRefreshLabel');
+    if (lbl) lbl.textContent = `Updated ${fmtRelative(new Date().toISOString())}`;
+    filterUsers();
+  } catch (e) {
+    if (grid) grid.innerHTML = `<div style="color:#ff3b30;font-size:13px;padding:20px;grid-column:1/-1;">Failed to load users</div>`;
+  }
 };
 
 // ── Incident CRUD ───────────────────────────────────────────────────────────
