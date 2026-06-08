@@ -347,8 +347,9 @@ module.exports = async (req, res) => {
           'Remove or sanitise X-Powered-By and Server headers')
       ];
 
-      // CRM only: add env-var / config checks and persist all results to DB
-      if (env === 'crm') {
+      // All envs: add config/secret checks (same shared secrets across CRM, Live, Dev)
+      // Also persist results to DB for historical tracking
+      {
         const chk = (val) => Boolean(val && val.trim());
         const envChecks = [
           // ── Supabase / Database ──────────────────────────────────────────────
