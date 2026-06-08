@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Cyber Compliance — Admin</title>
+  <script>window.PAGE_ACCESS_KEY = 'cyber-compliance';</script>
+  <script src="/js/access-guard.js" defer></script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background:#f2f2f7;color:#1c1c1e;display:flex;min-height:100vh;}
+    .sidebar{position:fixed;left:0;top:0;width:220px;height:100vh;background:#fff;border-right:1px solid #e5e5ea;display:flex;flex-direction:column;z-index:1000;}
+    .sidebar-header{display:flex;align-items:center;gap:10px;padding:20px 20px 16px;border-bottom:1px solid #f2f2f7;}
+    .sidebar-logo{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+    .sidebar-brand-name{font-size:14px;font-weight:700;color:#1c1c1e;line-height:1.2;}
+    .sidebar-brand-sub{font-size:10px;color:#8e8e93;font-weight:500;letter-spacing:.04em;text-transform:uppercase;}
+    .sidebar-nav{flex:1;display:flex;flex-direction:column;gap:2px;padding:14px 12px;overflow-y:auto;}
+    .sidebar-section-label{font-size:10px;font-weight:600;color:#8e8e93;letter-spacing:.07em;text-transform:uppercase;padding:8px 8px 4px;margin-top:6px;}
+    .nav-icon{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;text-decoration:none;color:#3c3c43;font-size:13px;font-weight:500;}
+    .nav-icon svg{width:18px;height:18px;fill:#8e8e93;}
+    .nav-icon:hover{background:#f2f2f7;color:#1c1c1e;}
+    .nav-icon:hover svg{fill:#3c3c43;}
+    .nav-icon.active{background:#e8e0fd;color:#5e35b1;}
+    .nav-icon.active svg{fill:#7c3aed;}
+    .sidebar-footer{border-top:1px solid #f2f2f7;padding:12px;}
+    .sidebar-user{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;margin-bottom:4px;}
+    .sidebar-avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#a855f7);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;}
+    .sidebar-user-name{font-size:12px;font-weight:600;color:#1c1c1e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .sidebar-user-role{font-size:10px;color:#8e8e93;font-weight:500;}
+    .sidebar-signout{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;cursor:pointer;color:#ff3b30;font-size:13px;font-weight:500;border:none;background:none;width:100%;text-align:left;}
+    .sidebar-signout svg{width:18px;height:18px;fill:#ff3b30;}
+    .sidebar-signout:hover{background:#fff1f0;}
+    .main{margin-left:220px;flex:1;display:flex;flex-direction:column;min-height:100vh;}
+    .top-bar{display:flex;align-items:center;gap:12px;padding:16px 28px;background:#fff;border-bottom:1px solid #e5e5ea;position:sticky;top:0;z-index:100;}
+    .top-bar svg{width:20px;height:20px;fill:#7c3aed;flex-shrink:0;}
+    .top-bar h1{font-size:17px;font-weight:700;color:#1c1c1e;flex:1;}
+    .top-bar-actions{display:flex;align-items:center;gap:10px;}
+    .last-checked{font-size:11px;color:#8e8e93;}
+    .page{padding:24px 28px;flex:1;}
+    /* Tabs */
+    .tab-bar{display:flex;gap:2px;background:#f2f2f7;border-radius:12px;padding:3px;margin-bottom:22px;overflow-x:auto;}
+    .tab-btn{flex:none;padding:7px 16px;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer;border:none;background:transparent;color:#636366;white-space:nowrap;transition:all .15s;}
+    .tab-btn.active{background:#fff;color:#1c1c1e;box-shadow:0 1px 3px rgba(0,0,0,.1);}
+    .tab-btn:hover:not(.active){color:#1c1c1e;}
+    .tab-pane{display:none;}
+    .tab-pane.active{display:block;}
+    /* Stats strip */
+    .stats-row{display:flex;gap:14px;margin-bottom:22px;flex-wrap:wrap;}
+    .stat-card{background:#fff;border-radius:14px;padding:14px 18px;flex:1;min-width:110px;border:1px solid #e5e5ea;}
+    .stat-label{font-size:11px;font-weight:600;color:#8e8e93;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;}
+    .stat-value{font-size:24px;font-weight:700;color:#1c1c1e;}
+    .stat-value.up{color:#34c759;}
+    .stat-value.down{color:#ff3b30;}
+    .stat-value.warn{color:#ff9500;}
+    /* Service cards */
+    .service-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;margin-bottom:22px;}
+    .service-card{background:#fff;border-radius:14px;border:1px solid #e5e5ea;padding:18px 20px;}
+    .service-card.up{border-left:4px solid #34c759;}
+    .service-card.down{border-left:4px solid #ff3b30;}
+    .service-card.unknown{border-left:4px solid #c7c7cc;}
+    .sc-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+    .sc-name{font-size:14px;font-weight:700;color:#1c1c1e;}
+    .sc-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;}
+    .sc-badge.up{background:#e8f8ef;color:#1a7d3a;}
+    .sc-badge.down{background:#ffe5e5;color:#c0392b;}
+    .sc-badge.unknown{background:#f2f2f7;color:#636366;}
+    .sc-url{font-size:11px;color:#8e8e93;margin-bottom:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .sc-meta{display:flex;gap:16px;}
+    .sc-meta-item{font-size:11px;color:#636366;}
+    .sc-meta-item span{font-weight:600;color:#1c1c1e;}
+    /* Common card */
+    .card{background:#fff;border-radius:14px;border:1px solid #e5e5ea;overflow:hidden;margin-bottom:16px;}
+    .card-header{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid #f2f2f7;flex-wrap:wrap;gap:10px;}
+    .card-title{font-size:14px;font-weight:700;color:#1c1c1e;}
+    .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;border:none;transition:opacity .15s;font-family:inherit;}
+    .btn:hover{opacity:.85;}
+    .btn-primary{background:#7c3aed;color:#fff;}
+    .btn-sm{padding:5px 12px;font-size:12px;border-radius:8px;}
+    .btn-ghost{background:#f2f2f7;color:#3c3c43;}
+    .btn-danger{background:#fff0ef;color:#ff3b30;}
+    .btn-success{background:#e8f8ef;color:#1a7d3a;}
+    .btn-warn{background:#fff3e0;color:#b45309;}
+    /* Filter row */
+    .filter-row{display:flex;flex-wrap:wrap;gap:10px;padding:12px 20px;border-bottom:1px solid #f2f2f7;align-items:flex-end;}
+    .filter-field{display:flex;flex-direction:column;gap:4px;min-width:130px;}
+    .filter-field label{font-size:11px;font-weight:600;color:#8e8e93;text-transform:uppercase;letter-spacing:.05em;}
+    .filter-field select,.filter-field input{padding:7px 10px;font-size:13px;border:1px solid #d1d1d6;border-radius:8px;color:#1c1c1e;outline:none;background:#fff;font-family:inherit;}
+    .filter-field select:focus,.filter-field input:focus{border-color:#7c3aed;}
+    /* Table */
+    table{width:100%;border-collapse:collapse;}
+    th{font-size:11px;font-weight:600;color:#8e8e93;text-transform:uppercase;letter-spacing:.06em;padding:10px 16px;text-align:left;border-bottom:1px solid #f2f2f7;}
+    td{font-size:13px;padding:11px 16px;border-bottom:1px solid #f7f7f8;color:#1c1c1e;vertical-align:middle;}
+    tr:last-child td{border-bottom:none;}
+    tr:hover td{background:#fafafa;}
+    .empty-state{padding:40px;text-align:center;color:#8e8e93;font-size:14px;}
+    .ts{font-size:11px;color:#8e8e93;}
+    .td-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+    /* Badges */
+    .badge{display:inline-flex;align-items:center;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap;}
+    .p-critical{background:#ffe5e5;color:#c0392b;}
+    .p-high{background:#fff3e0;color:#e65100;}
+    .p-medium{background:#fff8e1;color:#c47f00;}
+    .p-low{background:#e8f5e9;color:#2e7d32;}
+    .s-open{background:#e8f4fd;color:#0071e3;}
+    .s-in_progress{background:#fef3e2;color:#b45309;}
+    .s-resolved{background:#e8f8ef;color:#28a745;}
+    .s-closed{background:#f2f2f7;color:#636366;}
+    .s-pending{background:#fde8ff;color:#6d2d9b;}
+    .pass{background:#e8f8ef;color:#1a7d3a;}
+    .fail{background:#ffe5e5;color:#c0392b;}
+    /* Activity icons */
+    .activity-icon{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:14px;}
+    .ai-trade{background:#e8f4fd;}
+    .ai-wallet{background:#e8f8ef;}
+    .ai-kyc{background:#fff8e1;}
+    .ai-signup{background:#f3e8fd;}
+    .ai-error{background:#ffe5e5;}
+    /* Incident title */
+    .inc-title{font-weight:600;color:#1c1c1e;}
+    .inc-desc{font-size:12px;color:#636366;margin-top:2px;max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    /* Auto badge */
+    .auto-tag{display:inline-block;background:#f0f0ff;color:#7c3aed;font-size:10px;font-weight:700;padding:1px 6px;border-radius:4px;margin-left:6px;vertical-align:middle;}
+    /* Audit diff */
+    .diff-old{color:#c0392b;background:#fff5f5;padding:2px 6px;border-radius:4px;font-size:11px;font-family:monospace;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;}
+    .diff-new{color:#1a7d3a;background:#f0fff4;padding:2px 6px;border-radius:4px;font-size:11px;font-family:monospace;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;}
+    /* Policy severity */
+    .sev-critical{background:#ffe5e5;color:#c0392b;}
+    .sev-high{background:#fff3e0;color:#e65100;}
+    .sev-medium{background:#fff8e1;color:#c47f00;}
+    .sev-low{background:#e8f5e9;color:#2e7d32;}
+    /* Modal */
+    .overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:2000;align-items:center;justify-content:center;}
+    .overlay.open{display:flex;}
+    .modal{background:#fff;border-radius:18px;padding:28px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.18);}
+    .modal-title{font-size:17px;font-weight:700;margin-bottom:20px;color:#1c1c1e;}
+    .form-group{margin-bottom:14px;}
+    .form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;}
+    label{display:block;font-size:12px;font-weight:600;color:#3c3c43;margin-bottom:5px;}
+    input[type=text],textarea,select.full{width:100%;padding:10px 12px;border:1px solid #d1d1d6;border-radius:10px;font-size:14px;color:#1c1c1e;outline:none;transition:border-color .15s;font-family:inherit;}
+    input:focus,textarea:focus,select.full:focus{border-color:#7c3aed;}
+    textarea{resize:vertical;min-height:80px;}
+    .modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:22px;}
+    .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1c1c1e;color:#fff;padding:10px 20px;border-radius:12px;font-size:13px;font-weight:500;z-index:9999;opacity:0;transition:opacity .2s;pointer-events:none;}
+    .toast.show{opacity:1;}
+    /* Pending resolve banner */
+    .pending-banner{background:#fde8ff;border:1px solid #d8b4fe;border-radius:10px;padding:10px 16px;font-size:13px;color:#6d2d9b;display:flex;align-items:center;justify-content:space-between;gap:10px;}
+  </style>
+</head>
+<body>
+<aside class="sidebar">
+  <div class="sidebar-header">
+    <a class="sidebar-logo" href="/index.html"><img src="/icon.png" alt="Mint" style="width:36px;height:36px;border-radius:10px;"></a>
+    <div><div class="sidebar-brand-name">Mint</div><div class="sidebar-brand-sub">Admin Panel</div></div>
+  </div>
+  <nav class="sidebar-nav">
+    <span class="sidebar-section-label">Main</span>
+    <a class="nav-icon" href="/index.html"><svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>Clients</a>
+    <a class="nav-icon" href="/studio.html"><svg viewBox="0 0 24 24"><path d="M17 1.01L7 1c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-1.99-2-1.99zM17 19H7V5h10v14z"/></svg>Client View Studio</a>
+    <span class="sidebar-section-label">Investments</span>
+    <a class="nav-icon" href="/dashboard.html"><svg viewBox="0 0 24 24"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>Dashboard</a>
+    <a class="nav-icon" href="/strategies.html"><svg viewBox="0 0 24 24"><path d="M3 3h7v7H3zm0 11h7v7H3zm11-11h7v7h-7zm0 11h7v7h-7z"/></svg>Strategies</a>
+    <a class="nav-icon" href="/factsheets.html"><svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>Factsheets</a>
+    <a class="nav-icon" href="/investors.html"><svg viewBox="0 0 24 24"><path d="M3.5 18.49l6-6.01 4 4L22 6.92l-1.41-1.41-7.09 7.97-4-4L2 16.99z"/></svg>Investors</a>
+    <a class="nav-icon" href="/orderbook.html"><svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 3c1.93 0 3.5 1.57 3.5 3.5S13.93 13 12 13s-3.5-1.57-3.5-3.5S10.07 6 12 6zm7 13H5v-.23c0-.62.28-1.2.76-1.58C7.47 15.82 9.64 15 12 15s4.53.82 6.24 2.19c.48.38.76.97.76 1.58V19z"/></svg>Order Book</a>
+    <span class="sidebar-section-label">Banking</span>
+    <a class="nav-icon" href="/eft.html"><svg viewBox="0 0 24 24"><path d="M20 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/></svg>EFT Payments</a>
+    <span class="sidebar-section-label">Communications</span>
+    <a class="nav-icon" href="/mint-mornings.html"><svg viewBox="0 0 24 24"><path d="M6.76 4.84l-1.8-1.79-1.41 1.41 1.79 1.79 1.42-1.41zM4 10.5H1v2h3v-2zm9-9.95h-2V3.5h2V.55zm7.45 3.91l-1.41-1.41-1.79 1.79 1.41 1.41 1.79-1.79zm-3.21 13.7l1.79 1.8 1.41-1.41-1.8-1.79-1.4 1.4zM20 10.5v2h3v-2h-3zm-8-5c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6zm-1 16.95h2V19.5h-2v2.95zm-7.45-3.91l1.41 1.41 1.79-1.8-1.41-1.41-1.79 1.8z"/></svg>Mint Mornings</a>
+    <a class="nav-icon" href="/emailers.html"><svg viewBox="0 0 24 24"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4V8l8 5 8-5v10zm-8-7L4 6h16l-8 5z"/></svg>Emailers &amp; Triggers</a>
+    <span class="sidebar-section-label">System</span>
+    <a class="nav-icon" href="/settings.html"><svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.62l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.62l2.03 1.58c-.05.32-.07.64-.07.94s.02.62.07.94l-2.03 1.58c-.18.14-.23.41-.12.62l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.62l-2.01-1.58z"/></svg>Settings</a>
+    <a class="nav-icon" id="teamNavLink" href="/team.html" style="display:none">
+      <svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
+      Team
+    </a>
+    <a class="nav-icon active" href="/cyber-compliance.html" id="ccNavLink" style="position:relative;"><svg viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 4l5 2.18V11c0 3.5-2.33 6.79-5 7.93-2.67-1.14-5-4.43-5-7.93V7.18L12 5z"/></svg>Cyber Compliance</a>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="sidebar-user">
+      <div class="sidebar-avatar" id="sidebarAvatarInitials">A</div>
+      <div><div class="sidebar-user-name" id="sidebarUserEmail">Admin</div><div class="sidebar-user-role" id="sidebarUserRole">Administrator</div></div>
+    </div>
+    <button class="sidebar-signout" id="signOutBtn"><svg viewBox="0 0 24 24"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5-5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>Sign out</button>
+  </div>
+</aside>
+
+<main class="main">
+  <div class="top-bar">
+    <svg viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 4l5 2.18V11c0 3.5-2.33 6.79-5 7.93-2.67-1.14-5-4.43-5-7.93V7.18L12 5z"/></svg>
+    <h1>Cyber Compliance &amp; Monitoring</h1>
+    <div class="top-bar-actions">
+      <span class="last-checked" id="lastCheckedLabel">Last check: —</span>
+      <button class="btn btn-ghost btn-sm" onclick="refreshAll()">↻ Refresh</button>
+      <button class="btn btn-primary btn-sm" onclick="openCreateIncident()">+ New Incident</button>
+    </div>
+  </div>
+
+  <div class="page">
+    <!-- Stats Strip -->
+    <div class="stats-row" id="statsStrip">
+      <div class="stat-card"><div class="stat-label">Services Up</div><div class="stat-value up" id="statServicesUp">—</div></div>
+      <div class="stat-card"><div class="stat-label">Open Incidents</div><div class="stat-value" id="statOpenInc">—</div></div>
+      <div class="stat-card"><div class="stat-label">Critical</div><div class="stat-value down" id="statCritical">—</div></div>
+      <div class="stat-card"><div class="stat-label">API Health</div><div class="stat-value" id="statApiHealth">—</div></div>
+      <div class="stat-card"><div class="stat-label">Policy Pass Rate</div><div class="stat-value" id="statPolicyPass">—</div></div>
+      <div class="stat-card"><div class="stat-label">Audit Entries</div><div class="stat-value" id="statAuditEntries">—</div></div>
+    </div>
+
+    <!-- Tab bar -->
+    <div class="tab-bar">
+      <button class="tab-btn active" onclick="switchTab('live')">🟢 Live Status</button>
+      <button class="tab-btn" onclick="switchTab('dev')">🔵 Dev Status</button>
+      <button class="tab-btn" onclick="switchTab('api')">⚡ API Health</button>
+      <button class="tab-btn" onclick="switchTab('incidents')">🚨 Incidents</button>
+      <button class="tab-btn" onclick="switchTab('audit')">📋 Audit Log</button>
+      <button class="tab-btn" onclick="switchTab('policy')">🛡️ Policy Checks</button>
+      <button class="tab-btn" onclick="switchTab('activity')">👤 User Activity</button>
+    </div>
+
+    <!-- ── Live Status Tab ─────────────────────────────────────────────── -->
+    <div class="tab-pane active" id="tab-live">
+      <div class="service-grid" id="liveServiceGrid">
+        <div style="color:#8e8e93;font-size:13px;padding:20px;">Loading live service status…</div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">Recent Uptime Log — Live Services</span></div>
+        <table><thead><tr><th>Service</th><th>Status</th><th>Response</th><th>Status Code</th><th>Checked</th></tr></thead>
+        <tbody id="liveUptimeTable"><tr><td colspan="5" class="empty-state">Loading…</td></tr></tbody></table>
+      </div>
+    </div>
+
+    <!-- ── Dev Status Tab ──────────────────────────────────────────────── -->
+    <div class="tab-pane" id="tab-dev">
+      <div class="service-grid" id="devServiceGrid">
+        <div style="color:#8e8e93;font-size:13px;padding:20px;">Loading dev service status…</div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">Recent Uptime Log — Dev Services</span></div>
+        <table><thead><tr><th>Service</th><th>Status</th><th>Response</th><th>Status Code</th><th>Checked</th></tr></thead>
+        <tbody id="devUptimeTable"><tr><td colspan="5" class="empty-state">Loading…</td></tr></tbody></table>
+      </div>
+    </div>
+
+    <!-- ── API Health Tab ──────────────────────────────────────────────── -->
+    <div class="tab-pane" id="tab-api">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">API Endpoint Health Checks — CRM</span>
+          <div style="font-size:12px;color:#8e8e93;">Pass = endpoint responded (401 counts as pass — endpoint alive)</div>
+        </div>
+        <table><thead><tr><th>Endpoint</th><th>Method</th><th>Result</th><th>Status Code</th><th>Response Time</th><th>Checked</th></tr></thead>
+        <tbody id="apiHealthTable"><tr><td colspan="6" class="empty-state">Loading…</td></tr></tbody></table>
+      </div>
+    </div>
+
+    <!-- ── Incidents Tab ───────────────────────────────────────────────── -->
+    <div class="tab-pane" id="tab-incidents">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Incidents</span>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input type="text" id="incSearch" placeholder="Search…" style="padding:7px 12px;border:1px solid #d1d1d6;border-radius:8px;font-size:13px;outline:none;width:170px;font-family:inherit;" oninput="debouncedLoadIncidents()">
+            <button class="btn btn-ghost btn-sm" onclick="loadIncidents()">↻</button>
+          </div>
+        </div>
+        <div class="filter-row">
+          <div class="filter-field"><label>Status</label>
+            <select id="incFilterStatus" onchange="loadIncidents()">
+              <option value="">All</option><option value="open">Open</option><option value="in_progress">In Progress</option><option value="resolved">Resolved</option><option value="closed">Closed</option>
+            </select></div>
+          <div class="filter-field"><label>Priority</label>
+            <select id="incFilterPriority" onchange="loadIncidents()">
+              <option value="">All</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
+            </select></div>
+          <div class="filter-field"><label>Environment</label>
+            <select id="incFilterEnv" onchange="loadIncidents()">
+              <option value="">All</option><option value="live">Live</option><option value="dev">Dev</option><option value="crm">CRM</option><option value="supabase">Supabase</option><option value="general">General</option>
+            </select></div>
+          <div class="filter-field"><label>Source</label>
+            <select id="incFilterAuto" onchange="loadIncidents()">
+              <option value="">All</option><option value="true">Auto-generated</option><option value="false">Manual</option>
+            </select></div>
+        </div>
+        <table>
+          <thead><tr><th>Incident</th><th>Env</th><th>Priority</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead>
+          <tbody id="incidentTableBody"><tr><td colspan="6" class="empty-state">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── Audit Log Tab ───────────────────────────────────────────────── -->
+    <div class="tab-pane" id="tab-audit">
+      <div class="card">
+        <div class="card-header"><span class="card-title">Database Audit Log</span>
+          <div style="font-size:12px;color:#8e8e93;">All inserts, updates and deletes on monitored tables</div>
+        </div>
+        <div class="filter-row">
+          <div class="filter-field"><label>Table</label>
+            <select id="auditFilterTable" onchange="loadAuditLog()">
+              <option value="">All tables</option>
+              <option>profiles</option><option>stock_holdings_c</option><option>wallet_transactions</option>
+              <option>strategies_c</option><option>securities_c</option><option>user_onboarding</option><option>cc_incidents</option>
+            </select></div>
+          <div class="filter-field"><label>Operation</label>
+            <select id="auditFilterOp" onchange="loadAuditLog()">
+              <option value="">All</option><option>INSERT</option><option>UPDATE</option><option>DELETE</option>
+            </select></div>
+        </div>
+        <table>
+          <thead><tr><th>Table</th><th>Operation</th><th>Changed By</th><th>Changed At</th><th>Details</th></tr></thead>
+          <tbody id="auditTableBody"><tr><td colspan="5" class="empty-state">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── Policy Checks Tab ───────────────────────────────────────────── -->
+    <div class="tab-pane" id="tab-policy">
+      <div class="card">
+        <div class="card-header"><span class="card-title">Cybersecurity Policy Checks</span>
+          <div style="font-size:12px;color:#8e8e93;">Automated compliance scan — runs every 15 minutes</div>
+        </div>
+        <table>
+          <thead><tr><th>Policy</th><th>Category</th><th>Severity</th><th>Result</th><th>Detail</th><th>Recommendation</th><th>Checked</th></tr></thead>
+          <tbody id="policyTableBody"><tr><td colspan="7" class="empty-state">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── User Activity Tab ───────────────────────────────────────────── -->
+    <div class="tab-pane" id="tab-activity">
+      <div class="card">
+        <div class="card-header"><span class="card-title">Live User Activity Feed</span>
+          <div style="font-size:12px;color:#8e8e93;">Recent trades, wallet events, KYC updates, new signups</div>
+        </div>
+        <table>
+          <thead><tr><th>Type</th><th>Event</th><th>User ID</th><th>Detail</th><th>Timestamp</th></tr></thead>
+          <tbody id="activityTableBody"><tr><td colspan="5" class="empty-state">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /page -->
+</main>
+
+<!-- Create / Edit Incident Modal -->
+<div class="overlay" id="incidentOverlay">
+  <div class="modal">
+    <div class="modal-title" id="modalTitle">New Incident</div>
+    <input type="hidden" id="modalId">
+    <div class="form-group">
+      <label>Title *</label>
+      <input type="text" id="modalTitleInput" class="full" placeholder="Brief description">
+    </div>
+    <div class="form-group">
+      <label>Description</label>
+      <textarea id="modalDesc" class="full" placeholder="Full details, impact…"></textarea>
+    </div>
+    <div class="form-row">
+      <div><label>Priority</label>
+        <select id="modalPriority" class="full">
+          <option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option><option value="critical">Critical</option>
+        </select></div>
+      <div><label>Category</label>
+        <select id="modalCategory" class="full">
+          <option value="hardware">Hardware</option><option value="software">Software</option><option value="network">Network</option>
+          <option value="security">Security</option><option value="access">Access</option><option value="uptime">Uptime</option>
+          <option value="api">API</option><option value="policy">Policy</option><option value="other" selected>Other</option>
+        </select></div>
+    </div>
+    <div class="form-row">
+      <div><label>Status</label>
+        <select id="modalStatus" class="full">
+          <option value="open" selected>Open</option><option value="in_progress">In Progress</option><option value="resolved">Resolved</option><option value="closed">Closed</option>
+        </select></div>
+      <div><label>Environment</label>
+        <select id="modalEnv" class="full">
+          <option value="live">Live</option><option value="dev">Dev</option><option value="crm">CRM</option>
+          <option value="supabase">Supabase</option><option value="email">Email</option><option value="general" selected>General</option>
+        </select></div>
+    </div>
+    <div class="form-row">
+      <div><label>Assigned To</label><input type="text" id="modalAssigned" class="full" placeholder="Name or email"></div>
+      <div><label>Reported By</label><input type="text" id="modalReported" class="full" placeholder="Name or email"></div>
+    </div>
+    <div class="form-group">
+      <label>Notes</label>
+      <textarea id="modalNotes" class="full" placeholder="Internal notes, actions taken…" style="min-height:60px;"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="modalSaveBtn" onclick="saveIncident()">Save Incident</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const getToken = () => {
+  try {
+    const k = Object.keys(localStorage).find(k => k.startsWith('sb-') && k.endsWith('-auth-token'));
+    if (!k) return null;
+    return JSON.parse(localStorage.getItem(k))?.access_token || null;
+  } catch { return null; }
+};
+
+const authH = () => ({ 'Authorization': 'Bearer ' + getToken(), 'Content-Type': 'application/json' });
+
+const showToast = (msg, color = '#1c1c1e') => {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.background = color;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2800);
+};
+
+const escHtml = s => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const fmtDate = iso => iso ? new Date(iso).toLocaleString('en-ZA', {dateStyle:'short',timeStyle:'short'}) : '—';
+const fmtMs  = ms  => ms != null ? `${ms}ms` : '—';
+
+const priorityBadge = p => {
+  const m = {critical:'p-critical',high:'p-high',medium:'p-medium',low:'p-low'};
+  return `<span class="badge ${m[p]||'p-medium'}">${(p||'?')[0].toUpperCase()+(p||'?').slice(1)}</span>`;
+};
+const statusBadge = s => {
+  const lbl = {open:'Open',in_progress:'In Progress',resolved:'Resolved',closed:'Closed'};
+  return `<span class="badge s-${(s||'open').replace('_','-')}">${lbl[s]||s}</span>`;
+};
+
+// ── Tab switching ───────────────────────────────────────────────────────────
+let _activeTab = 'live';
+const switchTab = (tab) => {
+  _activeTab = tab;
+  document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    if (b.getAttribute('onclick') === `switchTab('${tab}')`) b.classList.add('active');
+  });
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.getElementById(`tab-${tab}`).classList.add('active');
+
+  const loaders = {
+    live: loadLiveStatus, dev: loadDevStatus, api: loadApiHealth,
+    incidents: loadIncidents, audit: loadAuditLog, policy: loadPolicyChecks, activity: loadUserActivity
+  };
+  if (loaders[tab]) loaders[tab]();
+};
+
+// ── Uptime helpers ──────────────────────────────────────────────────────────
+let _uptimeLogs = [];
+
+const renderServiceGrid = (logs, gridId, envFilter) => {
+  const byKey = {};
+  (logs.filter(l => !envFilter || l.environment === envFilter)).forEach(l => {
+    if (!byKey[l.service_key] || new Date(l.checked_at) > new Date(byKey[l.service_key].checked_at)) {
+      byKey[l.service_key] = l;
+    }
+  });
+  const cards = Object.values(byKey);
+  if (!cards.length) {
+    document.getElementById(gridId).innerHTML = '<div style="color:#8e8e93;font-size:13px;padding:20px;">No data yet — first check runs 30s after server start.</div>';
+    return;
+  }
+  document.getElementById(gridId).innerHTML = cards.map(c => `
+    <div class="service-card ${c.is_up ? 'up' : 'down'}">
+      <div class="sc-header">
+        <span class="sc-name">${escHtml(c.service_name)}</span>
+        <span class="sc-badge ${c.is_up ? 'up' : 'down'}">${c.is_up ? '● UP' : '● DOWN'}</span>
+      </div>
+      <div class="sc-url">${escHtml(c.url || '')}</div>
+      <div class="sc-meta">
+        <div class="sc-meta-item">Response: <span>${fmtMs(c.response_ms)}</span></div>
+        <div class="sc-meta-item">Code: <span>${c.status_code || '—'}</span></div>
+        <div class="sc-meta-item">Checked: <span>${fmtDate(c.checked_at)}</span></div>
+      </div>
+      ${c.error_message ? `<div style="margin-top:8px;font-size:11px;color:#ff3b30;">${escHtml(c.error_message)}</div>` : ''}
+    </div>`).join('');
+};
+
+const renderUptimeTable = (logs, tbodyId, envFilter) => {
+  const filtered = logs.filter(l => !envFilter || l.environment === envFilter).slice(0, 80);
+  const tbody = document.getElementById(tbodyId);
+  if (!filtered.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No uptime data yet</td></tr>'; return; }
+  tbody.innerHTML = filtered.map(l => `
+    <tr>
+      <td>${escHtml(l.service_name)}</td>
+      <td><span class="badge ${l.is_up ? 'pass' : 'fail'}">${l.is_up ? 'UP' : 'DOWN'}</span></td>
+      <td class="ts">${fmtMs(l.response_ms)}</td>
+      <td class="ts">${l.status_code || '—'}</td>
+      <td class="ts">${fmtDate(l.checked_at)}</td>
+    </tr>`).join('');
+};
+
+const loadLiveStatus = async () => {
+  try {
+    const r = await fetch('/api/cyber-compliance?action=list-uptime&limit=200', { headers: authH() });
+    const d = await r.json();
+    _uptimeLogs = d.logs || [];
+    renderServiceGrid(_uptimeLogs, 'liveServiceGrid', null);
+    renderUptimeTable(_uptimeLogs, 'liveUptimeTable', null);
+    document.getElementById('lastCheckedLabel').textContent = 'Last check: ' + ((_uptimeLogs[0]?.checked_at) ? fmtDate(_uptimeLogs[0].checked_at) : 'never');
+    // Update stats
+    const recent = Object.values(_uptimeLogs.reduce((m, l) => {
+      if (!m[l.service_key] || new Date(l.checked_at) > new Date(m[l.service_key].checked_at)) m[l.service_key] = l;
+      return m;
+    }, {}));
+    const upCount = recent.filter(l => l.is_up).length;
+    document.getElementById('statServicesUp').textContent = `${upCount}/${recent.length}`;
+    document.getElementById('statServicesUp').className = `stat-value ${upCount === recent.length ? 'up' : 'down'}`;
+  } catch { document.getElementById('liveServiceGrid').innerHTML = '<div style="color:#ff3b30;padding:20px;">Failed to load uptime data</div>'; }
+};
+
+const loadDevStatus = async () => {
+  if (!_uptimeLogs.length) {
+    const r = await fetch('/api/cyber-compliance?action=list-uptime&service_key=mint-dev&limit=50', { headers: authH() });
+    const d = await r.json();
+    renderServiceGrid(d.logs || [], 'devServiceGrid', null);
+    renderUptimeTable(d.logs || [], 'devUptimeTable', null);
+  } else {
+    renderServiceGrid(_uptimeLogs.filter(l => l.service_key === 'mint-dev'), 'devServiceGrid', null);
+    renderUptimeTable(_uptimeLogs.filter(l => l.service_key === 'mint-dev'), 'devUptimeTable', null);
+  }
+};
+
+// ── API Health ──────────────────────────────────────────────────────────────
+const loadApiHealth = async () => {
+  try {
+    const r = await fetch('/api/cyber-compliance?action=list-api-health&limit=200', { headers: authH() });
+    const d = await r.json();
+    const checks = d.checks || [];
+    const tbody = document.getElementById('apiHealthTable');
+    if (!checks.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No API health data yet — runs 30s after server start</td></tr>'; return; }
+    tbody.innerHTML = checks.slice(0, 60).map(c => `
+      <tr>
+        <td><span style="font-family:monospace;font-size:12px;">${escHtml(c.endpoint)}</span><br><span style="font-size:11px;color:#636366;">${escHtml(c.label)}</span></td>
+        <td class="ts">${c.method}</td>
+        <td><span class="badge ${c.passed ? 'pass' : 'fail'}">${c.passed ? 'PASS' : 'FAIL'}</span></td>
+        <td class="ts">${c.actual_status || '—'}</td>
+        <td class="ts">${fmtMs(c.response_ms)}</td>
+        <td class="ts">${fmtDate(c.checked_at)}</td>
+      </tr>`).join('');
+    const passed = checks.filter(c => c.passed).length;
+    document.getElementById('statApiHealth').textContent = `${passed}/${checks.length}`;
+    document.getElementById('statApiHealth').className = `stat-value ${passed === checks.length ? 'up' : (passed / checks.length > 0.7 ? 'warn' : 'down')}`;
+  } catch { document.getElementById('apiHealthTable').innerHTML = '<tr><td colspan="6" class="empty-state">Failed to load</td></tr>'; }
+};
+
+// ── Incidents ───────────────────────────────────────────────────────────────
+let _incidents = [];
+const loadIncidents = async () => {
+  const status   = document.getElementById('incFilterStatus').value;
+  const priority = document.getElementById('incFilterPriority').value;
+  const env      = document.getElementById('incFilterEnv').value;
+  const auto     = document.getElementById('incFilterAuto').value;
+  const search   = document.getElementById('incSearch').value.trim();
+  let qs = '/api/cyber-compliance?action=list-incidents';
+  if (status)   qs += '&status='   + encodeURIComponent(status);
+  if (priority) qs += '&priority=' + encodeURIComponent(priority);
+  if (env)      qs += '&env='      + encodeURIComponent(env);
+  if (auto)     qs += '&auto='     + encodeURIComponent(auto);
+  if (search)   qs += '&search='   + encodeURIComponent(search);
+  try {
+    const r = await fetch(qs, { headers: authH() });
+    const d = await r.json();
+    _incidents = d.incidents || [];
+    const tbody = document.getElementById('incidentTableBody');
+    if (!_incidents.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No incidents found</td></tr>'; return; }
+    tbody.innerHTML = _incidents.map(inc => `
+      <tr>
+        <td>
+          <div class="inc-title">${escHtml(inc.title)}${inc.auto_generated ? '<span class="auto-tag">AUTO</span>' : ''}${inc.pending_resolve ? '<span class="auto-tag" style="background:#fde8ff;color:#6d2d9b;">PENDING RESOLVE</span>' : ''}</div>
+          ${inc.description ? `<div class="inc-desc">${escHtml(inc.description)}</div>` : ''}
+        </td>
+        <td><span class="ts" style="text-transform:capitalize;">${escHtml(inc.environment||'—')}</span></td>
+        <td>${priorityBadge(inc.priority)}</td>
+        <td>${statusBadge(inc.status)}</td>
+        <td class="ts">${fmtDate(inc.created_at)}</td>
+        <td>
+          <div class="td-actions">
+            <button class="btn btn-ghost btn-sm" onclick="openEditIncident('${escHtml(inc.id)}')">Edit</button>
+            ${inc.pending_resolve ? `<button class="btn btn-success btn-sm" onclick="confirmResolve('${escHtml(inc.id)}')">✓ Confirm Resolve</button>` : ''}
+            <button class="btn btn-danger btn-sm" onclick="deleteIncident('${escHtml(inc.id)}','${escHtml(inc.title)}')">Delete</button>
+          </div>
+        </td>
+      </tr>`).join('');
+    const open = _incidents.filter(i => ['open','in_progress'].includes(i.status)).length;
+    const crit = _incidents.filter(i => i.priority === 'critical').length;
+    document.getElementById('statOpenInc').textContent = open;
+    document.getElementById('statCritical').textContent = crit;
+    document.getElementById('statCritical').className = `stat-value ${crit > 0 ? 'down' : 'up'}`;
+  } catch (e) { document.getElementById('incidentTableBody').innerHTML = '<tr><td colspan="6" class="empty-state">Failed to load</td></tr>'; }
+};
+
+let _incDebounce;
+const debouncedLoadIncidents = () => { clearTimeout(_incDebounce); _incDebounce = setTimeout(loadIncidents, 350); };
+
+// ── Audit Log ───────────────────────────────────────────────────────────────
+const loadAuditLog = async () => {
+  const table = document.getElementById('auditFilterTable').value;
+  const op    = document.getElementById('auditFilterOp').value;
+  let qs = '/api/cyber-compliance?action=list-audit-log&limit=100';
+  if (table) qs += '&table=' + encodeURIComponent(table);
+  if (op)    qs += '&operation=' + encodeURIComponent(op);
+  try {
+    const r = await fetch(qs, { headers: authH() });
+    const d = await r.json();
+    const logs = d.logs || [];
+    const tbody = document.getElementById('auditTableBody');
+    if (!logs.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No audit entries yet — run the SQL triggers from sql/audit_triggers.sql in Supabase to enable audit logging</td></tr>';
+      document.getElementById('statAuditEntries').textContent = '0';
+      return;
+    }
+    document.getElementById('statAuditEntries').textContent = logs.length;
+    tbody.innerHTML = logs.map(l => {
+      const oldKeys = l.old_row ? Object.keys(l.old_row).filter(k => k !== 'updated_at') : [];
+      const changed = oldKeys.filter(k => JSON.stringify(l.old_row[k]) !== JSON.stringify(l.new_row?.[k]));
+      const diffHtml = changed.slice(0,3).map(k =>
+        `<div style="margin-bottom:2px;"><span style="font-size:10px;color:#636366;">${escHtml(k)}:</span> ` +
+        (l.old_row?.[k] != null ? `<span class="diff-old">${escHtml(String(l.old_row[k]).slice(0,40))}</span>` : '') +
+        (l.new_row?.[k] != null ? ` → <span class="diff-new">${escHtml(String(l.new_row[k]).slice(0,40))}</span>` : '') +
+        `</div>`).join('');
+      return `<tr>
+        <td style="font-family:monospace;font-size:12px;">${escHtml(l.table_name)}</td>
+        <td><span class="badge ${l.operation==='INSERT'?'pass':l.operation==='DELETE'?'fail':'p-medium'}">${l.operation}</span></td>
+        <td class="ts">${escHtml(l.changed_by||'system')}</td>
+        <td class="ts">${fmtDate(l.changed_at)}</td>
+        <td>${diffHtml || '<span style="font-size:11px;color:#8e8e93;">—</span>'}</td>
+      </tr>`;
+    }).join('');
+  } catch { document.getElementById('auditTableBody').innerHTML = '<tr><td colspan="5" class="empty-state">Failed to load audit log</td></tr>'; }
+};
+
+// ── Policy Checks ───────────────────────────────────────────────────────────
+const loadPolicyChecks = async () => {
+  try {
+    const r = await fetch('/api/cyber-compliance?action=list-policy-checks&limit=100', { headers: authH() });
+    const d = await r.json();
+    const checks = d.checks || [];
+    const tbody = document.getElementById('policyTableBody');
+    if (!checks.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No policy checks yet — runs 30s after server start</td></tr>';
+      document.getElementById('statPolicyPass').textContent = '—';
+      return;
+    }
+    // Show only most recent per policy_name
+    const byName = {};
+    checks.forEach(c => { if (!byName[c.policy_name]) byName[c.policy_name] = c; });
+    const latest = Object.values(byName);
+    const passed = latest.filter(c => c.passed).length;
+    document.getElementById('statPolicyPass').textContent = `${passed}/${latest.length}`;
+    document.getElementById('statPolicyPass').className = `stat-value ${passed === latest.length ? 'up' : (passed / latest.length > 0.7 ? 'warn' : 'down')}`;
+    tbody.innerHTML = latest.map(c => `
+      <tr>
+        <td style="font-weight:600;">${escHtml(c.policy_name)}</td>
+        <td class="ts">${escHtml(c.category)}</td>
+        <td><span class="badge sev-${c.severity}">${c.severity}</span></td>
+        <td><span class="badge ${c.passed ? 'pass' : 'fail'}">${c.passed ? '✓ PASS' : '✗ FAIL'}</span></td>
+        <td style="font-size:12px;max-width:220px;">${escHtml(c.detail||'—')}</td>
+        <td style="font-size:12px;max-width:200px;color:${c.passed?'#8e8e93':'#c0392b'};">${c.passed ? '—' : escHtml(c.recommendation||'—')}</td>
+        <td class="ts">${fmtDate(c.checked_at)}</td>
+      </tr>`).join('');
+  } catch { document.getElementById('policyTableBody').innerHTML = '<tr><td colspan="7" class="empty-state">Failed to load</td></tr>'; }
+};
+
+// ── User Activity ───────────────────────────────────────────────────────────
+const ACTIVITY_ICONS = {
+  buy:'💹', sell:'📉', wallet:'💰', kyc:'🪪', signup:'👤', error:'🔴', default:'📌'
+};
+const loadUserActivity = async () => {
+  try {
+    const r = await fetch('/api/cyber-compliance?action=list-user-activity&limit=60', { headers: authH() });
+    const d = await r.json();
+    const activities = d.activities || [];
+    const tbody = document.getElementById('activityTableBody');
+    if (!activities.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No activity data</td></tr>'; return; }
+    tbody.innerHTML = activities.map(a => {
+      const icon = ACTIVITY_ICONS[a.icon] || ACTIVITY_ICONS.default;
+      return `<tr style="${a.has_error ? 'background:#fff5f5;' : ''}">
+        <td><span style="font-size:16px;">${icon}</span> <span style="font-size:12px;text-transform:capitalize;color:#636366;">${a.type}</span></td>
+        <td style="font-weight:500;">${escHtml(a.label)}</td>
+        <td class="ts" style="font-family:monospace;">${a.user_id ? escHtml(String(a.user_id).slice(0,8))+'…' : '—'}</td>
+        <td class="ts">${escHtml(a.detail||'—')}</td>
+        <td class="ts">${fmtDate(a.timestamp)}</td>
+      </tr>`;
+    }).join('');
+  } catch { document.getElementById('activityTableBody').innerHTML = '<tr><td colspan="5" class="empty-state">Failed to load</td></tr>'; }
+};
+
+// ── Incident CRUD ───────────────────────────────────────────────────────────
+const openCreateIncident = () => {
+  document.getElementById('modalId').value = '';
+  document.getElementById('modalTitle').textContent = 'New Incident';
+  document.getElementById('modalTitleInput').value = '';
+  document.getElementById('modalDesc').value = '';
+  document.getElementById('modalPriority').value = 'medium';
+  document.getElementById('modalCategory').value = 'other';
+  document.getElementById('modalStatus').value = 'open';
+  document.getElementById('modalEnv').value = 'general';
+  document.getElementById('modalAssigned').value = '';
+  document.getElementById('modalReported').value = '';
+  document.getElementById('modalNotes').value = '';
+  document.getElementById('modalSaveBtn').textContent = 'Save Incident';
+  document.getElementById('incidentOverlay').classList.add('open');
+  document.getElementById('modalTitleInput').focus();
+};
+
+const openEditIncident = (id) => {
+  const inc = _incidents.find(i => i.id === id);
+  if (!inc) return;
+  document.getElementById('modalId').value = id;
+  document.getElementById('modalTitle').textContent = 'Edit Incident';
+  document.getElementById('modalTitleInput').value = inc.title || '';
+  document.getElementById('modalDesc').value = inc.description || '';
+  document.getElementById('modalPriority').value = inc.priority || 'medium';
+  document.getElementById('modalCategory').value = inc.category || 'other';
+  document.getElementById('modalStatus').value = inc.status || 'open';
+  document.getElementById('modalEnv').value = inc.environment || 'general';
+  document.getElementById('modalAssigned').value = inc.assigned_to || '';
+  document.getElementById('modalReported').value = inc.reported_by || '';
+  document.getElementById('modalNotes').value = inc.notes || '';
+  document.getElementById('modalSaveBtn').textContent = 'Update Incident';
+  document.getElementById('incidentOverlay').classList.add('open');
+};
+
+const closeModal = () => document.getElementById('incidentOverlay').classList.remove('open');
+
+const saveIncident = async () => {
+  const id    = document.getElementById('modalId').value.trim();
+  const title = document.getElementById('modalTitleInput').value.trim();
+  if (!title) { showToast('Title is required', '#ff3b30'); return; }
+  const body = {
+    title,
+    description: document.getElementById('modalDesc').value.trim(),
+    priority:    document.getElementById('modalPriority').value,
+    category:    document.getElementById('modalCategory').value,
+    status:      document.getElementById('modalStatus').value,
+    environment: document.getElementById('modalEnv').value,
+    assigned_to: document.getElementById('modalAssigned').value.trim(),
+    reported_by: document.getElementById('modalReported').value.trim(),
+    notes:       document.getElementById('modalNotes').value.trim()
+  };
+  const btn = document.getElementById('modalSaveBtn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    const action = id ? 'update-incident' : 'create-incident';
+    if (id) body.id = id;
+    await fetch('/api/cyber-compliance?action=' + action, { method: 'POST', headers: authH(), body: JSON.stringify(body) });
+    closeModal();
+    showToast(id ? 'Incident updated' : 'Incident created');
+    loadIncidents();
+  } catch (e) {
+    showToast('Save failed: ' + e.message, '#ff3b30');
+  } finally { btn.disabled = false; btn.textContent = id ? 'Update Incident' : 'Save Incident'; }
+};
+
+const confirmResolve = async (id) => {
+  if (!confirm('Confirm this incident as fully resolved?')) return;
+  try {
+    await fetch('/api/cyber-compliance?action=confirm-resolve', { method: 'POST', headers: authH(), body: JSON.stringify({ id }) });
+    showToast('Incident resolved ✓', '#34c759');
+    loadIncidents();
+  } catch (e) { showToast('Failed: ' + e.message, '#ff3b30'); }
+};
+
+const deleteIncident = async (id, title) => {
+  if (!confirm(`Delete incident "${title}"? This cannot be undone.`)) return;
+  try {
+    await fetch('/api/cyber-compliance?action=delete-incident', { method: 'POST', headers: authH(), body: JSON.stringify({ id }) });
+    showToast('Incident deleted');
+    loadIncidents();
+  } catch (e) { showToast('Delete failed: ' + e.message, '#ff3b30'); }
+};
+
+// ── Refresh all ─────────────────────────────────────────────────────────────
+const refreshAll = () => {
+  loadLiveStatus();
+  loadIncidents();
+};
+
+// ── Badge polling (sidebar red dot) ─────────────────────────────────────────
+const pollBadge = async () => {
+  try {
+    const r = await fetch('/api/cyber-compliance?action=badge-count', { headers: authH() });
+    const d = await r.json();
+    // We're on the CC page itself so no sidebar badge needed, but keep count in title
+    if (d.count > 0) document.title = `(${d.count}) Cyber Compliance — Admin`;
+    else document.title = 'Cyber Compliance — Admin';
+  } catch {}
+};
+
+// ── Auth / sidebar init ──────────────────────────────────────────────────────
+window.addEventListener('access-guard:ready', (e) => {
+  const { email, role } = e.detail;
+  document.getElementById('sidebarUserEmail').textContent = email || 'Admin';
+  document.getElementById('sidebarAvatarInitials').textContent = (email || 'A')[0].toUpperCase();
+  document.getElementById('sidebarUserRole').textContent = role === 'admin' ? 'Administrator' : 'Staff';
+});
+document.getElementById('signOutBtn').addEventListener('click', async () => {
+  try {
+    const k = Object.keys(localStorage).find(k => k.startsWith('sb-') && k.endsWith('-auth-token'));
+    if (k) localStorage.removeItem(k);
+  } catch {}
+  window.location.href = '/signin.html';
+});
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  loadLiveStatus();
+  loadIncidents();
+  loadPolicyChecks();
+  setInterval(pollBadge, 60000);
+  pollBadge();
+});
+</script>
+</body>
+</html>

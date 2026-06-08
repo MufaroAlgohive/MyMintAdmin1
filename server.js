@@ -8,7 +8,8 @@ const sumsubArchiveHandler = require('./api/sumsub/archive');
 const teamHandler = require('./api/team');
 const mintMorningsHandler = require('./api/mint-mornings');
 const webhooksHandler = require('./api/webhooks');
-const incidentsHandler = require('./api/incidents');
+const cyberComplianceHandler = require('./api/cyber-compliance');
+const { runHealthCheck } = require('./api/monitor/health-check');
 
 const port = process.env.PORT || 3000;
 const publicDir = path.join(__dirname, 'public');
@@ -2051,8 +2052,8 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // IT Incident Register
-  if (req.url.startsWith('/api/incidents')) {
+  // Cyber Compliance & Monitoring Centre
+  if (req.url.startsWith('/api/cyber-compliance')) {
     const token = parseBearerToken(req.headers.authorization);
     if (!token) { sendJson(res, 401, { error: 'Missing Authorization bearer token' }); return; }
     (async () => {
@@ -2061,9 +2062,44 @@ const server = http.createServer((req, res) => {
         if (req.method !== 'GET') {
           req.body = await readJsonBody(req).catch(() => ({}));
         }
-        await incidentsHandler(req, res);
+        await cyberComplianceHandler(req, res);
       } catch (err) {
         if (!res.headersSent) sendJson(res, err.status || 500, { error: err.message });
+      }
+    })();
+    return;
+  }
+
+  // Client error reporting endpoint (no auth — public, rate-limited by IP)
+  if (req.url.startsWith('/api/monitor/client-error')) {
+    if (req.method !== 'POST') { sendJson(res, 405, { error: 'Method not allowed' }); return; }
+    (async () => {
+      try {
+        const body = await readJsonBody(req).catch(() => ({}));
+        const severity = String(body.severity || 'low');
+        const title    = String(body.title || 'Client error').slice(0, 200).trim();
+        if (!title) { sendJson(res, 400, { error: 'title required' }); return; }
+
+        if (['high', 'critical'].includes(severity) && supabaseUrl && supabaseServiceRoleKey) {
+          const incident = {
+            title,
+            description:    [body.description, body.page ? `Page: ${body.page}` : null, body.error_stack ? `Stack: ${String(body.error_stack).slice(0, 500)}` : null].filter(Boolean).join('\n') || null,
+            priority:       severity === 'critical' ? 'critical' : 'high',
+            status:         'open',
+            category:       ['auth','kyc','trade','wallet','ui','network'].includes(body.category) ? body.category : 'other',
+            environment:    body.source === 'mint-platform' ? 'live' : 'general',
+            auto_generated: true,
+            pending_resolve: false,
+            reported_by:    'Mint Platform (auto)',
+            service_key:    `client:${String(body.category || 'other')}`,
+            created_at:     new Date().toISOString(),
+            updated_at:     new Date().toISOString()
+          };
+          await mutateSupabaseJson('/rest/v1/cc_incidents', incident, null, 'POST');
+        }
+        sendJson(res, 200, { ok: true });
+      } catch (err) {
+        sendJson(res, 500, { error: err.message });
       }
     })();
     return;
@@ -2141,6 +2177,18 @@ process.on('unhandledRejection', (reason) => {
   console.error('[Process] Unhandled promise rejection:', reason?.message || reason);
 });
 
+// ── Health check scheduler (every 15 minutes) ────────────────────────────────
+const startHealthCheckScheduler = () => {
+  const INTERVAL_MS = 15 * 60 * 1000;
+  setTimeout(() => {
+    runHealthCheck().catch(err => console.error('[HealthCheck] Startup run error:', err?.message || err));
+  }, 30000);
+  setInterval(() => {
+    runHealthCheck().catch(err => console.error('[HealthCheck] Scheduled run error:', err?.message || err));
+  }, INTERVAL_MS);
+  console.log('[HealthCheck] Scheduler started — running every 15 minutes');
+};
+
 const startServer = (portToUse) => {
   server.listen(portToUse, () => {
     console.log(`Server running at http://localhost:${portToUse}`);
@@ -2149,6 +2197,7 @@ const startServer = (portToUse) => {
     }
     startMarketDataScheduler();
     startMintMorningsScheduler();
+    startHealthCheckScheduler();
   });
 };
 

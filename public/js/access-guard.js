@@ -20,8 +20,8 @@
     '/eft.html':        'eft',
     '/orderbook.html':  'orderbook',
     '/settings.html':    'settings',
-    '/it-register.html': 'it-register',
-    '/team.html':        '__admin_only__'
+    '/cyber-compliance.html': 'cyber-compliance',
+    '/team.html':             '__admin_only__'
   };
 
   const getStoredToken = () => {
