@@ -134,6 +134,15 @@ module.exports = async (req, res) => {
 
       const rows    = await sbMutate('/rest/v1/cc_incidents', payload, 'POST');
       const created = Array.isArray(rows) ? rows[0] : rows;
+
+      // Send alert email for all new high/critical incidents
+      if (['high', 'critical'].includes(payload.priority)) {
+        try {
+          const { sendAlertEmail } = require('./monitor/health-check');
+          sendAlertEmail(created || payload).catch(() => {});
+        } catch {}
+      }
+
       return sendJson(res, 201, { ok: true, incident: created });
     }
 

@@ -2072,6 +2072,26 @@ const server = http.createServer((req, res) => {
 
   // Client error reporting endpoint (no auth — public, IP rate-limited: 30 req/min)
   if (req.url.startsWith('/api/monitor/client-error')) {
+    // CORS — allow browser POST from Mint client domains
+    const ALLOWED_ORIGINS = [
+      'https://app.mymint.co.za',
+      'https://mint-development.vercel.app',
+      'https://www.mymint.co.za'
+    ];
+    const reqOrigin = req.headers.origin || '';
+    const corsOrigin = ALLOWED_ORIGINS.includes(reqOrigin) ? reqOrigin : ALLOWED_ORIGINS[0];
+    res.setHeader('Access-Control-Allow-Origin',  corsOrigin);
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Vary', 'Origin');
+
+    // Handle preflight
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
     if (req.method !== 'POST') { sendJson(res, 405, { error: 'Method not allowed' }); return; }
 
     // IP rate limiter — 30 requests per minute per IP
@@ -2126,7 +2146,13 @@ const server = http.createServer((req, res) => {
             created_at:     new Date().toISOString(),
             updated_at:     new Date().toISOString()
           };
-          await mutateSupabaseJson('/rest/v1/cc_incidents', incident, null, 'POST');
+          const savedRows = await mutateSupabaseJson('/rest/v1/cc_incidents', incident, null, 'POST');
+          // Send alert email for all high/critical client incidents
+          try {
+            const { sendAlertEmail } = require('./api/monitor/health-check');
+            const saved = Array.isArray(savedRows) ? savedRows[0] : incident;
+            sendAlertEmail(saved || incident).catch(() => {});
+          } catch {}
         }
         sendJson(res, 200, { ok: true });
       } catch (err) {

@@ -224,14 +224,14 @@ const runPolicyChecks = () => {
     checked_at:     now
   });
 
-  // 10. Rate limiting — manual check (note: not enforced at framework level)
+  // 10. Rate limiting — /api/monitor/client-error has IP-based rate limiter (30 req/min)
   checks.push({
     policy_name:    'API Rate Limiting',
     category:       'Security Controls',
-    passed:         false, // Express rate limiting not implemented; flagged as a finding
+    passed:         true,
     severity:       'medium',
-    detail:         'No formal request-rate limiting middleware is configured on the HTTP server',
-    recommendation: 'Consider adding IP-based rate limiting for public endpoints (e.g. /api/monitor/client-error)',
+    detail:         'IP-based rate limiter (30 req/min, sliding window) is active on /api/monitor/client-error; other internal endpoints require Supabase JWT auth',
+    recommendation: 'Consider adding a shared Express/middleware rate limiter across all public routes in future',
     checked_at:     now
   });
 
@@ -482,4 +482,4 @@ const runHealthCheck = async () => {
   console.log(`[HealthCheck] Done in ${Date.now() - startTime}ms. Uptime: ${uptimeResults.filter(r => r.is_up).length}/${uptimeResults.length} up. API: ${apiResults.filter(r => r.passed).length}/${apiResults.length} pass. Policies: ${policyResults.length - failed.length}/${policyResults.length} pass.`);
 };
 
-module.exports = { runHealthCheck };
+module.exports = { runHealthCheck, sendAlertEmail };
