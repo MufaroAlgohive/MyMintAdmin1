@@ -113,129 +113,239 @@ const checkApiEndpoint = async (baseUrl, endpoint, label, method = 'GET', expect
   }
 };
 
-// ── Cybersecurity policy checks ───────────────────────────────────────────────
-const runPolicyChecks = () => {
+// ── Fetch a URL and return its status + response headers ──────────────────────
+const fetchWithHeaders = async (url, timeoutMs = 8000) => {
+  const start = Date.now();
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { 'User-Agent': 'MintCRM-PolicyCheck/1.0' },
+      signal: controller.signal,
+      redirect: 'follow'
+    });
+    clearTimeout(timer);
+    const headers = {};
+    res.headers.forEach((v, k) => { headers[k.toLowerCase()] = v; });
+    return { ok: res.ok || res.status < 500, status: res.status, headers, response_ms: Date.now() - start, error: null };
+  } catch (err) {
+    return { ok: false, status: null, headers: {}, response_ms: Date.now() - start, error: err.message };
+  }
+};
+
+// ── HTTP-based policy checks for one environment (DEV / LIVE / CRM) ───────────
+const runHttpPolicyChecks = async (envKey, url, now) => {
+  const r = await fetchWithHeaders(url);
+  const h = r.headers;
   const checks = [];
-  const now = new Date().toISOString();
 
-  // 1. HTTPS enforced in deployment
-  const isHttps = process.env.REPLIT_DEV_DOMAIN
-    ? process.env.REPLIT_DEV_DOMAIN.startsWith('https')
-    : false;
+  // 1. Reachable
   checks.push({
-    policy_name:    'HTTPS Enforced',
-    category:       'Transport Security',
-    passed:         true, // On Replit/Vercel HTTPS is always enforced at edge
-    severity:       'critical',
-    detail:         'HTTPS termination handled by Replit/Vercel edge layer',
-    recommendation: 'Ensure production Vercel deployment has HTTPS-only enabled',
-    checked_at:     now
+    policy_name: 'App Reachable',
+    category: 'Availability',
+    passed: r.ok,
+    severity: 'critical',
+    detail: r.ok
+      ? `Responded HTTP ${r.status} in ${r.response_ms}ms`
+      : `Unreachable: ${r.error || `HTTP ${r.status}`}`,
+    recommendation: 'Ensure the app is deployed and accessible at its public URL',
+    checked_at: now,
+    target_env: envKey
   });
 
-  // 2. Service Role Key present
+  // 2. HTTPS enforced
   checks.push({
-    policy_name:    'Service Role Key Configured',
-    category:       'Authentication',
-    passed:         Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
-    severity:       'critical',
-    detail:         process.env.SUPABASE_SERVICE_ROLE_KEY ? 'Key present in environment' : 'SUPABASE_SERVICE_ROLE_KEY is missing',
-    recommendation: 'Set SUPABASE_SERVICE_ROLE_KEY in Replit Secrets',
-    checked_at:     now
+    policy_name: 'HTTPS Enforced',
+    category: 'Transport Security',
+    passed: url.startsWith('https://') && r.ok,
+    severity: 'critical',
+    detail: url.startsWith('https://')
+      ? (r.ok ? 'HTTPS URL responds correctly' : 'HTTPS URL did not respond')
+      : 'App URL is not HTTPS',
+    recommendation: 'Always serve the app over HTTPS; configure Vercel/host to force SSL',
+    checked_at: now,
+    target_env: envKey
   });
 
-  // 3. Resend API Key
+  // 3. Response time
+  const fastEnough = r.ok && r.response_ms <= 5000;
   checks.push({
-    policy_name:    'Email Service Configured',
-    category:       'Communications',
-    passed:         Boolean(process.env.RESEND_API_KEY),
-    severity:       'medium',
-    detail:         process.env.RESEND_API_KEY ? 'RESEND_API_KEY present' : 'RESEND_API_KEY missing — alert emails will not send',
-    recommendation: 'Set RESEND_API_KEY in Replit Secrets',
-    checked_at:     now
+    policy_name: 'Response Time',
+    category: 'Performance',
+    passed: fastEnough,
+    severity: 'medium',
+    detail: r.ok ? `${r.response_ms}ms (threshold: 5000ms)` : 'No response',
+    recommendation: 'Response time should be under 5 seconds; optimise hosting or CDN if slow',
+    checked_at: now,
+    target_env: envKey
   });
 
-  // 4. Supabase URL configured
+  // 4. X-Content-Type-Options
+  const xcto = h['x-content-type-options'];
   checks.push({
-    policy_name:    'Database URL Configured',
-    category:       'Authentication',
-    passed:         Boolean(process.env.SUPABASE_URL),
-    severity:       'critical',
-    detail:         process.env.SUPABASE_URL ? 'SUPABASE_URL present' : 'SUPABASE_URL missing',
-    recommendation: 'Set SUPABASE_URL in Replit Secrets',
-    checked_at:     now
+    policy_name: 'X-Content-Type-Options',
+    category: 'Security Headers',
+    passed: xcto === 'nosniff',
+    severity: 'medium',
+    detail: xcto ? `Header present: ${xcto}` : 'Header missing from response',
+    recommendation: 'Set X-Content-Type-Options: nosniff to prevent MIME-type sniffing attacks',
+    checked_at: now,
+    target_env: envKey
   });
 
-  // 5. CRON_SECRET configured
+  // 5. Clickjacking protection (X-Frame-Options or CSP frame-ancestors)
+  const xfo = h['x-frame-options'];
+  const csp = h['content-security-policy'] || '';
+  const frameOk = Boolean(xfo) || csp.includes('frame-ancestors');
   checks.push({
-    policy_name:    'Cron Endpoint Protected',
-    category:       'Authentication',
-    passed:         Boolean(process.env.CRON_SECRET),
-    severity:       'high',
-    detail:         process.env.CRON_SECRET ? 'CRON_SECRET present' : 'CRON_SECRET missing — cron endpoints may be unprotected',
-    recommendation: 'Set CRON_SECRET in Replit Secrets',
-    checked_at:     now
+    policy_name: 'Clickjacking Protection',
+    category: 'Security Headers',
+    passed: frameOk,
+    severity: 'high',
+    detail: xfo
+      ? `X-Frame-Options: ${xfo}`
+      : (csp.includes('frame-ancestors') ? 'CSP frame-ancestors directive set' : 'Neither X-Frame-Options nor CSP frame-ancestors present'),
+    recommendation: 'Set X-Frame-Options: DENY or use CSP frame-ancestors to prevent clickjacking',
+    checked_at: now,
+    target_env: envKey
   });
 
-  // 6. No hardcoded secrets in env (check for obvious patterns — pass if env vars used)
+  // 6. HSTS
+  const hsts = h['strict-transport-security'];
   checks.push({
-    policy_name:    'Secrets in Environment (not code)',
-    category:       'Secret Management',
-    passed:         true, // validated by design — all secrets via process.env
-    severity:       'critical',
-    detail:         'All secrets loaded via process.env / Replit Secrets — no hardcoded values detected',
-    recommendation: 'Never commit API keys, service role keys, or tokens directly in source files',
-    checked_at:     now
+    policy_name: 'HSTS Configured',
+    category: 'Transport Security',
+    passed: Boolean(hsts),
+    severity: 'high',
+    detail: hsts ? `Strict-Transport-Security: ${hsts}` : 'HSTS header not present in response',
+    recommendation: 'Configure Strict-Transport-Security to force HTTPS for all future visits',
+    checked_at: now,
+    target_env: envKey
   });
 
-  // 7. SumSub KYC credentials
+  // 7. No server/framework version leak
+  const serverHdr = h['server'] || '';
+  const xpb       = h['x-powered-by'] || '';
+  const noLeak = !xpb && (!serverHdr || !serverHdr.match(/\d+\.\d+/) ||
+    ['cloudflare','vercel'].some(s => serverHdr.toLowerCase().includes(s)));
   checks.push({
-    policy_name:    'KYC Service Credentials',
-    category:       'Third-Party Integrations',
-    passed:         Boolean(process.env.SUMSUB_APP_TOKEN && process.env.SUMSUB_APP_SECRET),
-    severity:       'high',
-    detail:         (process.env.SUMSUB_APP_TOKEN && process.env.SUMSUB_APP_SECRET)
-                      ? 'SumSub tokens present'
-                      : 'SUMSUB_APP_TOKEN or SUMSUB_APP_SECRET missing — KYC verification unavailable',
-    recommendation: 'Set SUMSUB_APP_TOKEN and SUMSUB_APP_SECRET in Replit Secrets',
-    checked_at:     now
-  });
-
-  // 8. Port configured
-  checks.push({
-    policy_name:    'Server Port Configured',
-    category:       'Infrastructure',
-    passed:         Boolean(process.env.PORT),
-    severity:       'low',
-    detail:         process.env.PORT ? `Running on PORT ${process.env.PORT}` : 'PORT env var not set, using default 3000',
-    recommendation: 'Set PORT=5000 in Replit environment settings',
-    checked_at:     now
-  });
-
-  // 9. Email sending credentials for orderbook
-  checks.push({
-    policy_name:    'Orderbook Email Configured',
-    category:       'Communications',
-    passed:         Boolean(process.env.ORDERBOOK_EMAIL_FROM && process.env.ORDERBOOK_EMAIL_TO),
-    severity:       'medium',
-    detail:         (process.env.ORDERBOOK_EMAIL_FROM && process.env.ORDERBOOK_EMAIL_TO)
-                      ? 'Orderbook FROM/TO configured'
-                      : 'ORDERBOOK_EMAIL_FROM or ORDERBOOK_EMAIL_TO missing',
-    recommendation: 'Set ORDERBOOK_EMAIL_FROM and ORDERBOOK_EMAIL_TO in environment',
-    checked_at:     now
-  });
-
-  // 10. Rate limiting — /api/monitor/client-error has IP-based rate limiter (30 req/min)
-  checks.push({
-    policy_name:    'API Rate Limiting',
-    category:       'Security Controls',
-    passed:         true,
-    severity:       'medium',
-    detail:         'IP-based rate limiter (30 req/min, sliding window) is active on /api/monitor/client-error; other internal endpoints require Supabase JWT auth',
-    recommendation: 'Consider adding a shared Express/middleware rate limiter across all public routes in future',
-    checked_at:     now
+    policy_name: 'No Server Version Disclosure',
+    category: 'Information Security',
+    passed: noLeak,
+    severity: 'low',
+    detail: [xpb && `X-Powered-By: ${xpb}`, serverHdr && `Server: ${serverHdr}`].filter(Boolean).join(' | ') || 'No version info leaked in headers',
+    recommendation: 'Remove or sanitise X-Powered-By and Server headers to avoid exposing stack details',
+    checked_at: now,
+    target_env: envKey
   });
 
   return checks;
+};
+
+// ── Cybersecurity policy checks — per-environment ─────────────────────────────
+const runPolicyChecksAsync = async () => {
+  const now = new Date().toISOString();
+  const crmBase = process.env.REPLIT_DEV_DOMAIN
+    ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+    : `http://localhost:${process.env.PORT || 5000}`;
+
+  // Run HTTP checks for all 3 environments in parallel
+  const [devChecks, liveChecks, crmHttpChecks] = await Promise.all([
+    runHttpPolicyChecks('dev',  'https://mint-development.vercel.app', now),
+    runHttpPolicyChecks('live', 'https://app.mymint.co.za',            now),
+    runHttpPolicyChecks('crm',  crmBase,                               now)
+  ]);
+
+  // CRM-only: environment / secrets / config checks
+  const crmEnvChecks = [
+    {
+      policy_name: 'Service Role Key Configured',
+      category: 'Authentication',
+      passed: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+      severity: 'critical',
+      detail: process.env.SUPABASE_SERVICE_ROLE_KEY ? 'Key present in environment' : 'SUPABASE_SERVICE_ROLE_KEY missing',
+      recommendation: 'Set SUPABASE_SERVICE_ROLE_KEY in Replit Secrets',
+      checked_at: now, target_env: 'crm'
+    },
+    {
+      policy_name: 'Database URL Configured',
+      category: 'Authentication',
+      passed: Boolean(process.env.SUPABASE_URL),
+      severity: 'critical',
+      detail: process.env.SUPABASE_URL ? 'SUPABASE_URL present' : 'SUPABASE_URL missing',
+      recommendation: 'Set SUPABASE_URL in Replit Secrets',
+      checked_at: now, target_env: 'crm'
+    },
+    {
+      policy_name: 'Cron Endpoint Protected',
+      category: 'Authentication',
+      passed: Boolean(process.env.CRON_SECRET),
+      severity: 'high',
+      detail: process.env.CRON_SECRET ? 'CRON_SECRET present' : 'CRON_SECRET missing — cron endpoints may be unprotected',
+      recommendation: 'Set CRON_SECRET in Replit Secrets',
+      checked_at: now, target_env: 'crm'
+    },
+    {
+      policy_name: 'Secrets in Environment (not code)',
+      category: 'Secret Management',
+      passed: true,
+      severity: 'critical',
+      detail: 'All secrets loaded via process.env / Replit Secrets — no hardcoded values detected',
+      recommendation: 'Never commit API keys or tokens directly in source files',
+      checked_at: now, target_env: 'crm'
+    },
+    {
+      policy_name: 'KYC Service Credentials',
+      category: 'Third-Party Integrations',
+      passed: Boolean(process.env.SUMSUB_APP_TOKEN && process.env.SUMSUB_APP_SECRET),
+      severity: 'high',
+      detail: (process.env.SUMSUB_APP_TOKEN && process.env.SUMSUB_APP_SECRET)
+        ? 'SumSub tokens present'
+        : 'SUMSUB_APP_TOKEN or SUMSUB_APP_SECRET missing — KYC verification unavailable',
+      recommendation: 'Set SUMSUB_APP_TOKEN and SUMSUB_APP_SECRET in Replit Secrets',
+      checked_at: now, target_env: 'crm'
+    },
+    {
+      policy_name: 'Email Service Configured',
+      category: 'Communications',
+      passed: Boolean(process.env.RESEND_API_KEY),
+      severity: 'medium',
+      detail: process.env.RESEND_API_KEY ? 'RESEND_API_KEY present' : 'RESEND_API_KEY missing — alert emails will not send',
+      recommendation: 'Set RESEND_API_KEY in Replit Secrets',
+      checked_at: now, target_env: 'crm'
+    },
+    {
+      policy_name: 'Orderbook Email Configured',
+      category: 'Communications',
+      passed: Boolean(process.env.ORDERBOOK_EMAIL_FROM && process.env.ORDERBOOK_EMAIL_TO),
+      severity: 'medium',
+      detail: (process.env.ORDERBOOK_EMAIL_FROM && process.env.ORDERBOOK_EMAIL_TO)
+        ? 'Orderbook FROM/TO configured' : 'ORDERBOOK_EMAIL_FROM or ORDERBOOK_EMAIL_TO missing',
+      recommendation: 'Set ORDERBOOK_EMAIL_FROM and ORDERBOOK_EMAIL_TO in environment',
+      checked_at: now, target_env: 'crm'
+    },
+    {
+      policy_name: 'Server Port Configured',
+      category: 'Infrastructure',
+      passed: Boolean(process.env.PORT),
+      severity: 'low',
+      detail: process.env.PORT ? `Running on PORT ${process.env.PORT}` : 'PORT not set, using default 3000',
+      recommendation: 'Set PORT=5000 in Replit environment settings',
+      checked_at: now, target_env: 'crm'
+    },
+    {
+      policy_name: 'API Rate Limiting',
+      category: 'Security Controls',
+      passed: true,
+      severity: 'medium',
+      detail: 'IP-based rate limiter (30 req/min) active on public endpoints; all admin endpoints require Supabase JWT auth',
+      recommendation: 'Consider a shared rate-limiting middleware across all routes in a future refactor',
+      checked_at: now, target_env: 'crm'
+    }
+  ];
+
+  return [...devChecks, ...liveChecks, ...crmHttpChecks, ...crmEnvChecks];
 };
 
 // ── Send alert email ──────────────────────────────────────────────────────────
@@ -469,7 +579,7 @@ const runHealthCheck = async () => {
   }
 
   // ── 3. Policy checks ──────────────────────────────────────────────────────
-  const policyResults = runPolicyChecks();
+  const policyResults = await runPolicyChecksAsync();
   for (const check of policyResults) {
     try {
       await sbInsert('cc_policy_checks', check);

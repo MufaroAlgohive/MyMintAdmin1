@@ -257,9 +257,19 @@ module.exports = async (req, res) => {
     if (action === 'list-policy-checks') {
       if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
       const limit = Math.min(200, Math.max(1, parseInt(url.searchParams.get('limit') || '100', 10)));
+      const env   = (url.searchParams.get('env') || '').replace(/[^a-z]/g, '');
+      const envFilter = env ? `&target_env=eq.${env}` : '';
 
-      const qs   = `/rest/v1/cc_policy_checks?select=*&order=checked_at.desc&limit=${limit}`;
-      const rows = await sbGet(qs);
+      let rows;
+      try {
+        rows = await sbGet(`/rest/v1/cc_policy_checks?select=*${envFilter}&order=checked_at.desc&limit=${limit}`);
+      } catch (e) {
+        // target_env column may not exist yet (pre-migration) — fall back to unfiltered, filter in JS
+        rows = await sbGet(`/rest/v1/cc_policy_checks?select=*&order=checked_at.desc&limit=${limit}`);
+        if (Array.isArray(rows) && env) {
+          rows = rows.filter(r => (r.target_env || 'crm') === env);
+        }
+      }
       return sendJson(res, 200, { ok: true, checks: Array.isArray(rows) ? rows : [] });
     }
 
