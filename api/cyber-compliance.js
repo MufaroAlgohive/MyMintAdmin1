@@ -14,6 +14,7 @@
  *   list-audit-log      GET  — db audit log with table/operation/date filters
  *   list-user-activity  GET  — live feed of user actions from key tables
  *   badge-count         GET  — count of open incidents + failed checks (for red dot)
+ *   health-summary      GET  — aggregated last check time, uptime %, API pass rate, policy pass rate
  *   run-migration       POST — admin only: runs cyber_compliance.sql + audit_triggers.sql via pg direct connection
  *   check-migration     GET  — checks which cc_ tables + triggers are installed
  */
@@ -351,6 +352,59 @@ module.exports = async (req, res) => {
       activities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
       return sendJson(res, 200, { ok: true, activities: activities.slice(0, limit) });
+    }
+
+    // ── HEALTH SUMMARY ────────────────────────────────────────────────────────
+    if (action === 'health-summary') {
+      if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+
+      const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+      const [uptimeRows, apiRows, policyRows] = await Promise.all([
+        sbGet(`/rest/v1/cc_uptime_log?select=is_up,checked_at&checked_at=gte.${since24h}&order=checked_at.desc&limit=2000`).catch(() => []),
+        sbGet(`/rest/v1/cc_api_health?select=endpoint_key,passed,checked_at&order=checked_at.desc&limit=500`).catch(() => []),
+        sbGet(`/rest/v1/cc_policy_checks?select=policy_name,passed,checked_at&order=checked_at.desc&limit=500`).catch(() => [])
+      ]);
+
+      const uptimeArr  = Array.isArray(uptimeRows)  ? uptimeRows  : [];
+      const apiArr     = Array.isArray(apiRows)     ? apiRows     : [];
+      const policyArr  = Array.isArray(policyRows)  ? policyRows  : [];
+
+      const uptimePct = uptimeArr.length
+        ? Math.round((uptimeArr.filter(r => r.is_up).length / uptimeArr.length) * 100)
+        : null;
+
+      const apiByKey = {};
+      apiArr.forEach(r => { if (!apiByKey[r.endpoint_key]) apiByKey[r.endpoint_key] = r; });
+      const apiLatest = Object.values(apiByKey);
+      const apiPassRate = apiLatest.length
+        ? Math.round((apiLatest.filter(r => r.passed).length / apiLatest.length) * 100)
+        : null;
+
+      const policyByName = {};
+      policyArr.forEach(r => { if (!policyByName[r.policy_name]) policyByName[r.policy_name] = r; });
+      const policyLatest = Object.values(policyByName);
+      const policyPassRate = policyLatest.length
+        ? Math.round((policyLatest.filter(r => r.passed).length / policyLatest.length) * 100)
+        : null;
+
+      const allTimes = [
+        ...uptimeArr.slice(0, 1).map(r => r.checked_at),
+        ...apiArr.slice(0, 1).map(r => r.checked_at),
+        ...policyArr.slice(0, 1).map(r => r.checked_at)
+      ].filter(Boolean).sort().reverse();
+      const lastChecked = allTimes[0] || null;
+
+      return sendJson(res, 200, {
+        ok: true,
+        lastChecked,
+        uptimePct,
+        apiPassRate,
+        policyPassRate,
+        uptimeCount:  uptimeArr.length,
+        apiCount:     apiLatest.length,
+        policyCount:  policyLatest.length
+      });
     }
 
     if (action === 'run-health-check') {

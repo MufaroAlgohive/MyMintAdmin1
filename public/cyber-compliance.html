@@ -144,6 +144,21 @@
     .toast.show{opacity:1;}
     /* Pending resolve banner */
     .pending-banner{background:#fde8ff;border:1px solid #d8b4fe;border-radius:10px;padding:10px 16px;font-size:13px;color:#6d2d9b;display:flex;align-items:center;justify-content:space-between;gap:10px;}
+    /* Health summary strip */
+    .hs-strip{display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap;}
+    .hs-card{flex:1;min-width:140px;background:#fff;border-radius:14px;border:1px solid #e5e5ea;padding:14px 18px;text-decoration:none;color:inherit;display:block;transition:box-shadow .15s,border-color .15s;cursor:pointer;}
+    .hs-card:hover{box-shadow:0 2px 12px rgba(124,58,237,.12);border-color:#c4b5fd;}
+    .hs-label{font-size:10px;font-weight:700;color:#8e8e93;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;display:flex;align-items:center;gap:5px;}
+    .hs-value{font-size:22px;font-weight:800;color:#1c1c1e;line-height:1.1;}
+    .hs-value.hs-up{color:#34c759;}
+    .hs-value.hs-warn{color:#ff9500;}
+    .hs-value.hs-down{color:#ff3b30;}
+    .hs-sub{font-size:11px;color:#8e8e93;margin-top:4px;}
+    .hs-dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0;}
+    .hs-dot.up{background:#34c759;}
+    .hs-dot.warn{background:#ff9500;}
+    .hs-dot.down{background:#ff3b30;}
+    .hs-dot.neutral{background:#c7c7cc;}
   </style>
 </head>
 <body>
@@ -248,6 +263,30 @@
           <textarea id="sql2" readonly style="width:100%;height:160px;font-family:monospace;font-size:11px;padding:10px;border:1px solid #e5e5ea;border-radius:8px;resize:vertical;color:#1c1c1e;background:#f9f9fb;"></textarea>
         </div>
       </div>
+    </div>
+
+    <!-- Health Summary Strip -->
+    <div class="hs-strip" id="healthSummaryStrip">
+      <a class="hs-card" onclick="switchTab('live');return false;" href="#">
+        <div class="hs-label"><span class="hs-dot neutral" id="hsLastDot"></span>Last Check</div>
+        <div class="hs-value" id="hsLastCheck" style="font-size:15px;font-weight:700;">—</div>
+        <div class="hs-sub">Click to view Live Status →</div>
+      </a>
+      <a class="hs-card" onclick="switchTab('live');return false;" href="#">
+        <div class="hs-label"><span class="hs-dot neutral" id="hsUptimeDot"></span>Uptime (24h)</div>
+        <div class="hs-value" id="hsUptimePct">—</div>
+        <div class="hs-sub" id="hsUptimeSub">Based on uptime log</div>
+      </a>
+      <a class="hs-card" onclick="switchTab('api');return false;" href="#">
+        <div class="hs-label"><span class="hs-dot neutral" id="hsApiDot"></span>API Pass Rate</div>
+        <div class="hs-value" id="hsApiPass">—</div>
+        <div class="hs-sub" id="hsApiSub">Click to view API Health →</div>
+      </a>
+      <a class="hs-card" onclick="switchTab('policy');return false;" href="#">
+        <div class="hs-label"><span class="hs-dot neutral" id="hsPolicyDot"></span>Policy Pass Rate</div>
+        <div class="hs-value" id="hsPolicyPass">—</div>
+        <div class="hs-sub" id="hsPolicySub">Click to view Policy Checks →</div>
+      </a>
     </div>
 
     <!-- Stats Strip -->
@@ -1080,8 +1119,87 @@ const deleteIncident = async (id, title) => {
   } catch (e) { showToast('Delete failed: ' + e.message, '#ff3b30'); }
 };
 
+// ── Health Summary Strip ─────────────────────────────────────────────────────
+const loadHealthSummary = async () => {
+  const pctColor = (pct) => pct === null ? '' : pct >= 90 ? 'hs-up' : pct >= 70 ? 'hs-warn' : 'hs-down';
+  const dotClass = (pct) => pct === null ? 'neutral' : pct >= 90 ? 'up' : pct >= 70 ? 'warn' : 'down';
+
+  try {
+    const r = await fetch('/api/cyber-compliance?action=health-summary', { headers: authH() });
+    const d = await r.json();
+    if (!d.ok) return;
+
+    // Last check time
+    const lastEl  = document.getElementById('hsLastCheck');
+    const lastDot = document.getElementById('hsLastDot');
+    if (d.lastChecked) {
+      const t = new Date(d.lastChecked);
+      const diffMin = Math.round((Date.now() - t.getTime()) / 60000);
+      lastEl.textContent = diffMin < 1 ? 'Just now'
+        : diffMin < 60 ? `${diffMin}m ago`
+        : diffMin < 1440 ? `${Math.floor(diffMin / 60)}h ago`
+        : fmtDate(d.lastChecked);
+      lastDot.className = `hs-dot ${diffMin <= 10 ? 'up' : diffMin <= 60 ? 'warn' : 'down'}`;
+    } else {
+      lastEl.textContent = 'No data yet';
+      lastDot.className = 'hs-dot neutral';
+    }
+
+    // Uptime %
+    const uptimeEl  = document.getElementById('hsUptimePct');
+    const uptimeDot = document.getElementById('hsUptimeDot');
+    const uptimeSub = document.getElementById('hsUptimeSub');
+    if (d.uptimePct !== null) {
+      uptimeEl.textContent = d.uptimePct + '%';
+      uptimeEl.className = `hs-value ${pctColor(d.uptimePct)}`;
+      uptimeDot.className = `hs-dot ${dotClass(d.uptimePct)}`;
+      uptimeSub.textContent = `${d.uptimeCount} checks in last 24h`;
+    } else {
+      uptimeEl.textContent = '—';
+      uptimeEl.className = 'hs-value';
+      uptimeDot.className = 'hs-dot neutral';
+      uptimeSub.textContent = 'No uptime data yet';
+    }
+
+    // API pass rate
+    const apiEl  = document.getElementById('hsApiPass');
+    const apiDot = document.getElementById('hsApiDot');
+    const apiSub = document.getElementById('hsApiSub');
+    if (d.apiPassRate !== null) {
+      apiEl.textContent = d.apiPassRate + '%';
+      apiEl.className = `hs-value ${pctColor(d.apiPassRate)}`;
+      apiDot.className = `hs-dot ${dotClass(d.apiPassRate)}`;
+      apiSub.textContent = `${d.apiCount} endpoint${d.apiCount !== 1 ? 's' : ''} monitored`;
+    } else {
+      apiEl.textContent = '—';
+      apiEl.className = 'hs-value';
+      apiDot.className = 'hs-dot neutral';
+      apiSub.textContent = 'No API health data yet';
+    }
+
+    // Policy pass rate
+    const polEl  = document.getElementById('hsPolicyPass');
+    const polDot = document.getElementById('hsPolicyDot');
+    const polSub = document.getElementById('hsPolicySub');
+    if (d.policyPassRate !== null) {
+      polEl.textContent = d.policyPassRate + '%';
+      polEl.className = `hs-value ${pctColor(d.policyPassRate)}`;
+      polDot.className = `hs-dot ${dotClass(d.policyPassRate)}`;
+      polSub.textContent = `${d.policyCount} polic${d.policyCount !== 1 ? 'ies' : 'y'} checked`;
+    } else {
+      polEl.textContent = '—';
+      polEl.className = 'hs-value';
+      polDot.className = 'hs-dot neutral';
+      polSub.textContent = 'No policy data yet';
+    }
+  } catch {
+    // Fail silently — strip stays at "—"
+  }
+};
+
 // ── Refresh all ─────────────────────────────────────────────────────────────
 const refreshAll = () => {
+  loadHealthSummary();
   loadLiveStatus();
   loadIncidents();
 };
@@ -1128,11 +1246,13 @@ const startAutoRefresh = () => {
 // ── Init ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   checkMigration();
+  loadHealthSummary();
   loadLiveStatus();
   loadIncidents();
   loadPolicyChecks();
   startAutoRefresh();
   setInterval(pollBadge, 60000);
+  setInterval(loadHealthSummary, 60000);
   pollBadge();
 });
 </script>
