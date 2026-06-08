@@ -362,19 +362,49 @@ module.exports = async (req, res) => {
 
     if (action === 'check-migration') {
       const tables = ['cc_incidents', 'cc_uptime_log', 'cc_api_health', 'cc_policy_checks', 'cc_audit_log'];
+      const expectedTriggers = [
+        'cc_audit_profiles', 'cc_audit_stock_holdings_c', 'cc_audit_wallet_transactions',
+        'cc_audit_strategies_c', 'cc_audit_securities_c', 'cc_audit_user_onboarding',
+        'cc_audit_cc_incidents'
+      ];
       const { supabaseUrl, serviceRoleKey } = getSupabaseCreds();
-      const results = await Promise.all(tables.map(async (tbl) => {
+      const headers = { 'apikey': serviceRoleKey, 'Authorization': `Bearer ${serviceRoleKey}`, 'Accept': 'application/json' };
+
+      const tableResults = await Promise.all(tables.map(async (tbl) => {
         try {
-          const r = await fetch(`${supabaseUrl}/rest/v1/${tbl}?limit=0`, {
-            headers: { 'apikey': serviceRoleKey, 'Authorization': `Bearer ${serviceRoleKey}` }
-          });
+          const r = await fetch(`${supabaseUrl}/rest/v1/${tbl}?limit=0`, { headers });
           return { table: tbl, exists: r.ok || r.status === 416 };
         } catch {
           return { table: tbl, exists: false };
         }
       }));
-      const allExist = results.every(r => r.exists);
-      return sendJson(res, 200, { ok: true, tables: results, allExist });
+
+      // Query the cc_trigger_status view (created in Step 1 SQL) for trigger presence.
+      // The view wraps information_schema.triggers in the public schema — readable via PostgREST.
+      let triggerResults = expectedTriggers.map(n => ({ trigger: n, installed: false }));
+      let triggerViewExists = false;
+      try {
+        const tr = await fetch(`${supabaseUrl}/rest/v1/cc_trigger_status?select=trigger_name`, { headers });
+        if (tr.ok) {
+          triggerViewExists = true;
+          const installed = (await tr.json()).map(r => r.trigger_name);
+          triggerResults = expectedTriggers.map(n => ({ trigger: n, installed: installed.includes(n) }));
+        }
+      } catch { /* view not yet created */ }
+
+      const allTablesExist = tableResults.every(r => r.exists);
+      const allTriggersInstalled = triggerResults.every(r => r.installed);
+      const allExist = allTablesExist && allTriggersInstalled;
+
+      return sendJson(res, 200, {
+        ok: true,
+        tables: tableResults,
+        triggers: triggerResults,
+        triggerViewExists,
+        allTablesExist,
+        allTriggersInstalled,
+        allExist
+      });
     }
 
     return sendJson(res, 400, { error: `Unknown action: ${action}` });

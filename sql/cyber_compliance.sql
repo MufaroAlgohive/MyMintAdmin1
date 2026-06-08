@@ -118,6 +118,28 @@ CREATE INDEX IF NOT EXISTS cc_audit_log_operation_idx  ON cc_audit_log (operatio
 
 ALTER TABLE cc_audit_log DISABLE ROW LEVEL SECURITY;
 
+-- ── 6. cc_trigger_status (view) ───────────────────────────────────────────────
+-- Exposes audit trigger presence in the public schema so the CRM migration
+-- checker can query trigger installation status via PostgREST.
+-- Run BEFORE audit_triggers.sql (the view will return empty rows until
+-- triggers are created; after audit_triggers.sql it will return all 7 rows).
+CREATE OR REPLACE VIEW cc_trigger_status AS
+SELECT
+  t.trigger_name,
+  t.event_object_table AS table_name,
+  TRUE AS installed
+FROM information_schema.triggers t
+WHERE t.trigger_schema = 'public'
+  AND t.trigger_name IN (
+    'cc_audit_profiles',
+    'cc_audit_stock_holdings_c',
+    'cc_audit_wallet_transactions',
+    'cc_audit_strategies_c',
+    'cc_audit_securities_c',
+    'cc_audit_user_onboarding',
+    'cc_audit_cc_incidents'
+  );
+
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Optional: migrate existing it_incidents data into cc_incidents
 -- Uncomment to run after creating the table if you have existing data:

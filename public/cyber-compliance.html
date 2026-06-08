@@ -563,7 +563,27 @@ CREATE TABLE IF NOT EXISTS cc_audit_log (
 CREATE INDEX IF NOT EXISTS cc_audit_log_table_idx      ON cc_audit_log (table_name, changed_at DESC);
 CREATE INDEX IF NOT EXISTS cc_audit_log_changed_at_idx ON cc_audit_log (changed_at DESC);
 CREATE INDEX IF NOT EXISTS cc_audit_log_operation_idx  ON cc_audit_log (operation, changed_at DESC);
-ALTER TABLE cc_audit_log DISABLE ROW LEVEL SECURITY;`;
+ALTER TABLE cc_audit_log DISABLE ROW LEVEL SECURITY;
+
+-- View: exposes audit trigger presence via PostgREST so the CRM can verify
+-- trigger installation without direct pg_catalog access.
+-- Returns one row per installed cc_audit_* trigger (7 rows when fully set up).
+CREATE OR REPLACE VIEW cc_trigger_status AS
+SELECT
+  t.trigger_name,
+  t.event_object_table AS table_name,
+  TRUE AS installed
+FROM information_schema.triggers t
+WHERE t.trigger_schema = 'public'
+  AND t.trigger_name IN (
+    'cc_audit_profiles',
+    'cc_audit_stock_holdings_c',
+    'cc_audit_wallet_transactions',
+    'cc_audit_strategies_c',
+    'cc_audit_securities_c',
+    'cc_audit_user_onboarding',
+    'cc_audit_cc_incidents'
+  );`;
 
 const SQL_TRIGGERS = `-- Step 2: Audit Triggers
 -- Run AFTER Step 1 (cc_audit_log must exist first)
@@ -605,6 +625,11 @@ CREATE TRIGGER cc_audit_stock_holdings_c
   AFTER INSERT OR UPDATE OR DELETE ON stock_holdings_c
   FOR EACH ROW EXECUTE FUNCTION cc_audit_trigger_fn();
 
+DROP TRIGGER IF EXISTS cc_audit_wallet_transactions ON wallet_transactions;
+CREATE TRIGGER cc_audit_wallet_transactions
+  AFTER INSERT OR UPDATE OR DELETE ON wallet_transactions
+  FOR EACH ROW EXECUTE FUNCTION cc_audit_trigger_fn();
+
 DROP TRIGGER IF EXISTS cc_audit_strategies_c ON strategies_c;
 CREATE TRIGGER cc_audit_strategies_c
   AFTER INSERT OR UPDATE OR DELETE ON strategies_c
@@ -632,16 +657,25 @@ const checkMigration = async (showToastOnOk = false) => {
     const banner = document.getElementById('migrationBanner');
     if (d.allExist) {
       banner.style.display = 'none';
-      if (showToastOnOk) showToast('All database tables are present ✓', '#34c759');
+      if (showToastOnOk) showToast('All tables and triggers are set up ✓', '#34c759');
     } else {
       banner.style.display = 'block';
-      const missing = d.tables.filter(t => !t.exists);
       const statusEl = document.getElementById('migrationTableStatus');
-      statusEl.innerHTML = d.tables.map(t =>
-        `<span style="background:${t.exists?'#d1fae5':'#fee2e2'};color:${t.exists?'#065f46':'#991b1b'};padding:2px 8px;border-radius:6px;font-weight:600;">
-          ${t.exists ? '✓' : '✗'} ${t.table}
-        </span>`
+      const tableChips = (d.tables || []).map(t =>
+        `<span style="background:${t.exists?'#d1fae5':'#fee2e2'};color:${t.exists?'#065f46':'#991b1b'};padding:2px 8px;border-radius:6px;font-weight:600;">${t.exists?'✓':'✗'} ${t.table}</span>`
       ).join('');
+      let triggerSection = '';
+      if (d.allTablesExist) {
+        if (!d.triggerViewExists) {
+          triggerSection = `<div style="margin-top:8px;font-size:12px;color:#92400e;">⚡ Triggers: run Step 1 SQL again to create the <code>cc_trigger_status</code> view, then re-check.</div>`;
+        } else if (!d.allTriggersInstalled) {
+          const tChips = (d.triggers || []).map(t =>
+            `<span style="background:${t.installed?'#d1fae5':'#fee2e2'};color:${t.installed?'#065f46':'#991b1b'};padding:2px 8px;border-radius:6px;font-weight:600;font-size:11px;">${t.installed?'✓':'✗'} ${t.trigger}</span>`
+          ).join('');
+          triggerSection = `<div style="margin-top:8px;"><div style="font-size:12px;font-weight:600;color:#92400e;margin-bottom:4px;">Audit Triggers (Step 2):</div><div style="display:flex;flex-wrap:wrap;gap:5px;">${tChips}</div></div>`;
+        }
+      }
+      statusEl.innerHTML = `<div style="width:100%"><div style="font-size:12px;font-weight:600;color:#92400e;margin-bottom:4px;">Tables (Step 1):</div><div style="display:flex;flex-wrap:wrap;gap:5px;">${tableChips}</div>${triggerSection}</div>`;
     }
   } catch (e) {
     console.warn('[migration check]', e.message);
