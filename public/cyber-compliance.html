@@ -1093,10 +1093,17 @@ const renderAuditTable = () => {
   const search = (document.getElementById('auditSearch')?.value || '').toLowerCase();
   const catTables = AUDIT_CATS[cat]?.tables || null;
 
+  const KYC_AUTO_FIELDS = new Set(['kyc_checked_at','kyc_last_checked','kyc_synced_at','kyc_poll_at']);
+
   let logs = _auditAllLogs.filter(l => {
     if (catTables && !catTables.includes(l.table_name)) return false;
     if (table && l.table_name !== table) return false;
     if (op    && l.operation  !== op)    return false;
+    // Suppress automated KYC-poll updates (only kyc_*_at fields changed by system)
+    if (l.operation === 'UPDATE' && l.old_row && l.new_row) {
+      const changed = Object.keys(l.new_row).filter(k => JSON.stringify(l.old_row[k]) !== JSON.stringify(l.new_row[k]));
+      if (changed.length > 0 && changed.every(k => KYC_AUTO_FIELDS.has(k))) return false;
+    }
     if (search) {
       const hay = [l.table_name, l.operation, l.changed_by || ''].join(' ').toLowerCase();
       const fields = [...Object.keys(l.old_row || {}), ...Object.keys(l.new_row || {})].join(' ').toLowerCase();
