@@ -1097,10 +1097,9 @@ const loadPolicyChecks = async () => {
     const checks = d.checks || [];
 
     if (!checks.length) {
-      if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No policy checks yet — next scan runs in &lt;15 min</td></tr>';
-      document.getElementById('statPolicyPass').textContent = '—';
-      document.getElementById('policyEnvSummary').innerHTML = '';
-      return;
+      // Nothing in DB yet — run a live check now automatically
+      if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No stored results yet — running live check…</td></tr>';
+      return doCheckNow();
     }
 
     // Most recent per policy_name
