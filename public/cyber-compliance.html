@@ -1100,9 +1100,10 @@ const renderAuditTable = () => {
     if (catTables && !catTables.includes(l.table_name)) return false;
     if (table && l.table_name !== table) return false;
     if (op    && l.operation  !== op)    return false;
-    // Suppress automated KYC-poll updates (only kyc_*_at fields changed by system)
+    // Suppress automated KYC-poll updates (only kyc auto fields changed, ignoring timestamps)
     if (l.operation === 'UPDATE' && l.old_row && l.new_row) {
-      const changed = Object.keys(l.new_row).filter(k => JSON.stringify(l.old_row[k]) !== JSON.stringify(l.new_row[k]));
+      const TS_FIELDS = new Set(['updated_at','created_at','__v']);
+      const changed = Object.keys(l.new_row).filter(k => !TS_FIELDS.has(k) && JSON.stringify(l.old_row[k]) !== JSON.stringify(l.new_row[k]));
       if (changed.length > 0 && changed.every(k => KYC_AUTO_FIELDS.has(k))) return false;
     }
     if (search) {
@@ -1165,7 +1166,7 @@ const renderAuditTable = () => {
         diffHtml = changed.slice(0, 6).map(k =>
           `<div style="margin-bottom:4px;font-size:11px;display:flex;align-items:flex-start;gap:6px;">` +
           `<span style="color:#636366;min-width:90px;flex-shrink:0;">${escHtml(k)}</span>` +
-          `<span style="color:#991b1b;text-decoration:line-through;font-family:monospace;">${fmtVal(l.old_row[k])}</span>` +
+          `<span style="color:#991b1b;font-family:monospace;">${fmtVal(l.old_row[k])}</span>` +
           `<span style="color:#636366;flex-shrink:0;">→</span>` +
           `<span style="color:#166534;font-family:monospace;">${fmtVal(l.new_row[k])}</span>` +
           `</div>`).join('');
