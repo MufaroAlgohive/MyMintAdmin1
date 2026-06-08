@@ -19,8 +19,9 @@
     '/investors.html':  'investors',
     '/eft.html':        'eft',
     '/orderbook.html':  'orderbook',
-    '/settings.html':   'settings',
-    '/team.html':       '__admin_only__'
+    '/settings.html':    'settings',
+    '/it-register.html': 'it-register',
+    '/team.html':        '__admin_only__'
   };
 
   const getStoredToken = () => {

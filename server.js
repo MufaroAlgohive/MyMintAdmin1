@@ -8,6 +8,7 @@ const sumsubArchiveHandler = require('./api/sumsub/archive');
 const teamHandler = require('./api/team');
 const mintMorningsHandler = require('./api/mint-mornings');
 const webhooksHandler = require('./api/webhooks');
+const incidentsHandler = require('./api/incidents');
 
 const port = process.env.PORT || 3000;
 const publicDir = path.join(__dirname, 'public');
@@ -2047,6 +2048,24 @@ const server = http.createServer((req, res) => {
       mintAppUrlDev:  (process.env.MINT_APP_URL_DEV  || '').trim().replace(/\/+$/, ''),
       mintAppUrlLive: (process.env.MINT_APP_URL_LIVE || '').trim().replace(/\/+$/, '')
     });
+    return;
+  }
+
+  // IT Incident Register
+  if (req.url.startsWith('/api/incidents')) {
+    const token = parseBearerToken(req.headers.authorization);
+    if (!token) { sendJson(res, 401, { error: 'Missing Authorization bearer token' }); return; }
+    (async () => {
+      try {
+        await fetchSupabaseJson('/auth/v1/user', token, false);
+        if (req.method !== 'GET') {
+          req.body = await readJsonBody(req).catch(() => ({}));
+        }
+        await incidentsHandler(req, res);
+      } catch (err) {
+        if (!res.headersSent) sendJson(res, err.status || 500, { error: err.message });
+      }
+    })();
     return;
   }
 
