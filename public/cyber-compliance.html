@@ -213,6 +213,9 @@
           <button onclick="showMigrationSQL()" style="background:#fff;color:#92400e;border:1.5px solid #f59e0b;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;">
             View SQL Scripts
           </button>
+          <button id="runMigrationBtn" onclick="runMigration()" style="background:#92400e;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;">
+            ▶ Run Migration
+          </button>
           <button onclick="checkMigration(true)" style="background:transparent;color:#92400e;border:none;font-size:12px;cursor:pointer;padding:4px;">
             ↻ Re-check tables
           </button>
@@ -693,6 +696,35 @@ const copySql = (id) => {
   navigator.clipboard.writeText(el.value).then(() => showToast('SQL copied to clipboard ✓', '#7c3aed')).catch(() => {
     el.select(); document.execCommand('copy'); showToast('SQL copied ✓', '#7c3aed');
   });
+};
+
+const runMigration = async () => {
+  const btn = document.getElementById('runMigrationBtn');
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ Running…';
+  try {
+    const r = await fetch('/api/cyber-compliance?action=run-migration', {
+      method: 'POST',
+      headers: authH()
+    });
+    const d = await r.json();
+    if (r.ok && d.ok) {
+      showToast('Migration complete ✓ — tables and triggers installed', '#34c759');
+      setTimeout(() => checkMigration(true), 1500);
+    } else if (r.status === 503) {
+      showToast('SUPABASE_DB_PASSWORD secret not set — see instructions below', '#f59e0b');
+      alert('To use one-click migration, add your Supabase database password as a secret:\n\n1. Go to Replit Secrets (lock icon in sidebar)\n2. Add key: SUPABASE_DB_PASSWORD\n3. Value: your Supabase DB password (Supabase dashboard → Project Settings → Database → Database password)\n4. Restart the server, then click Run Migration again.\n\nAlternatively, use the "Open SQL Editor" button to run the scripts manually.');
+    } else {
+      showToast('Migration failed — ' + (d.error || 'unknown error'), '#ff3b30');
+      console.error('[run-migration]', d);
+    }
+  } catch (e) {
+    showToast('Migration request failed — ' + e.message, '#ff3b30');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
 };
 
 const priorityBadge = p => {

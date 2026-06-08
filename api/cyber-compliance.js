@@ -14,7 +14,11 @@
  *   list-audit-log      GET  — db audit log with table/operation/date filters
  *   list-user-activity  GET  — live feed of user actions from key tables
  *   badge-count         GET  — count of open incidents + failed checks (for red dot)
+ *   run-migration       POST — admin only: runs cyber_compliance.sql + audit_triggers.sql via pg direct connection
+ *   check-migration     GET  — checks which cc_ tables + triggers are installed
  */
+
+const { requireAdmin } = require('./_team');
 
 const getSupabaseCreds = () => {
   const supabaseUrl = process.env.SUPABASE_URL;
@@ -357,6 +361,48 @@ module.exports = async (req, res) => {
         return sendJson(res, 200, { ok: true, message: 'Health check started — results available in 10–30s' });
       } catch (e) {
         return sendJson(res, 500, { error: e.message });
+      }
+    }
+
+    if (action === 'run-migration') {
+      if (req.method !== 'POST') return sendJson(res, 405, { error: 'POST required' });
+      const adminCheck = await requireAdmin(req, res);
+      if (!adminCheck) return;
+      const dbPassword = process.env.SUPABASE_DB_PASSWORD;
+      if (!dbPassword) {
+        return sendJson(res, 503, {
+          error: 'SUPABASE_DB_PASSWORD not configured',
+          hint: 'Add SUPABASE_DB_PASSWORD as a secret in Replit (your Supabase database password from Project Settings → Database). Then retry.'
+        });
+      }
+      const { supabaseUrl } = getSupabaseCreds();
+      const projectRef = supabaseUrl.replace('https://', '').replace('.supabase.co', '');
+      const { Client } = require('pg');
+      const fs = require('fs');
+      const path = require('path');
+
+      const sql1 = fs.readFileSync(path.join(__dirname, '../sql/cyber_compliance.sql'), 'utf8');
+      const sql2 = fs.readFileSync(path.join(__dirname, '../sql/audit_triggers.sql'), 'utf8');
+
+      const client = new Client({
+        host: `db.${projectRef}.supabase.co`,
+        port: 5432,
+        user: 'postgres',
+        password: dbPassword,
+        database: 'postgres',
+        ssl: { rejectUnauthorized: false },
+        connectionTimeoutMillis: 15000
+      });
+
+      try {
+        await client.connect();
+        await client.query(sql1);
+        await client.query(sql2);
+        await client.end();
+        return sendJson(res, 200, { ok: true, message: 'Migration complete — all 5 tables and audit triggers installed.' });
+      } catch (e) {
+        await client.end().catch(() => {});
+        return sendJson(res, 500, { error: `Migration failed: ${e.message}` });
       }
     }
 
