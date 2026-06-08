@@ -513,6 +513,27 @@ module.exports = async (req, res) => {
       return sendJson(res, 200, { ok: true, logs: Array.isArray(rows) ? rows : [] });
     }
 
+    // ── PURGE KYC AUDIT LOGS ──────────────────────────────────────────────────
+    if (action === 'purge-kyc-audit') {
+      if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+      // Delete system-generated KYC polling updates from user_onboarding
+      const { supabaseUrl, serviceRoleKey } = getSupabaseCreds();
+      const delRes = await fetch(
+        `${supabaseUrl}/rest/v1/cc_audit_log?operation=eq.UPDATE&changed_by=eq.system&table_name=eq.user_onboarding`,
+        {
+          method: 'DELETE',
+          headers: {
+            'apikey': serviceRoleKey,
+            'Authorization': `Bearer ${serviceRoleKey}`,
+            'Accept': 'application/json',
+            'Prefer': 'return=representation'
+          }
+        }
+      );
+      const deleted = await delRes.json().catch(() => []);
+      return sendJson(res, 200, { ok: true, deleted: Array.isArray(deleted) ? deleted.length : 0 });
+    }
+
     // ── LIST ACTIVE USERS ─────────────────────────────────────────────────────
     // Shows who is currently logged in / recently active, with new vs existing badge.
     // Presence thresholds: online = last sign-in < 30 min, recent = < 24 h.

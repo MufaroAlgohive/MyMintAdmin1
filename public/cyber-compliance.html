@@ -393,6 +393,7 @@
         </div>
         <div style="display:flex;align-items:center;gap:8px;">
           <span id="auditCount" style="font-size:12px;color:#636366;background:#f2f2f7;padding:4px 10px;border-radius:20px;"></span>
+          <button id="auditPurgeBtn" onclick="purgeKycAuditLogs()" style="padding:6px 14px;border-radius:8px;border:1.5px solid #dc2626;background:#fff;color:#dc2626;font-size:12px;font-weight:600;cursor:pointer;">🗑 Clear KYC logs</button>
           <button onclick="loadAuditLog()" style="padding:6px 14px;border-radius:8px;border:1.5px solid #7c3aed;background:#7c3aed;color:#fff;font-size:12px;font-weight:600;cursor:pointer;">↻ Refresh</button>
         </div>
       </div>
@@ -1191,6 +1192,28 @@ const renderAuditTable = () => {
       <td>${diffHtml || '<span style="font-size:11px;color:#8e8e93;">—</span>'}</td>
     </tr>`;
   }).join('');
+};
+
+const purgeKycAuditLogs = async () => {
+  const btn = document.getElementById('auditPurgeBtn');
+  if (!confirm('Permanently delete all system KYC polling logs from the database?')) return;
+  btn.disabled = true;
+  btn.textContent = 'Clearing…';
+  try {
+    const r = await fetch('/api/cyber-compliance?action=purge-kyc-audit', { method: 'POST', headers: authH() });
+    const d = await r.json();
+    if (d.ok) {
+      btn.textContent = `✓ Cleared ${d.deleted ?? ''}`;
+      setTimeout(() => { btn.disabled = false; btn.textContent = '🗑 Clear KYC logs'; }, 2500);
+      await loadAuditLog();
+    } else {
+      btn.textContent = 'Error';
+      setTimeout(() => { btn.disabled = false; btn.textContent = '🗑 Clear KYC logs'; }, 2000);
+    }
+  } catch {
+    btn.textContent = 'Error';
+    setTimeout(() => { btn.disabled = false; btn.textContent = '🗑 Clear KYC logs'; }, 2000);
+  }
 };
 
 const loadAuditLog = async () => {
