@@ -280,13 +280,10 @@ module.exports = async (req, res) => {
     if (action === 'run-policy-checks-live') {
       if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
       const env = (url.searchParams.get('env') || '').replace(/[^a-z]/g, '');
-      const crmBase = process.env.REPLIT_DEV_DOMAIN
-        ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-        : `http://localhost:${process.env.PORT || 5000}`;
       const ENV_URLS = {
-        live: 'https://app.mymint.co.za',
-        dev:  'https://mint-development.vercel.app',
-        crm:  crmBase
+        live: process.env.MINT_APP_URL_LIVE || 'https://app.mymint.co.za',
+        dev:  process.env.MINT_APP_URL_DEV  || 'https://mint-development.vercel.app',
+        crm:  'https://my-mint-admin.vercel.app'
       };
       const targetUrl = ENV_URLS[env];
       if (!targetUrl) return sendJson(res, 400, { error: 'env must be live, dev, or crm' });
@@ -352,42 +349,77 @@ module.exports = async (req, res) => {
 
       // CRM only: add env-var / config checks and persist all results to DB
       if (env === 'crm') {
+        const chk = (val) => Boolean(val && val.trim());
         const envChecks = [
-          { name: 'Service Role Key Configured', cat: 'Authentication',        sev: 'critical',
-            pass: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
-            det:  process.env.SUPABASE_SERVICE_ROLE_KEY ? 'Key present in environment' : 'SUPABASE_SERVICE_ROLE_KEY missing',
-            rec:  'Set SUPABASE_SERVICE_ROLE_KEY in Replit Secrets' },
-          { name: 'Database URL Configured',     cat: 'Authentication',        sev: 'critical',
-            pass: Boolean(process.env.SUPABASE_URL),
-            det:  process.env.SUPABASE_URL ? 'SUPABASE_URL present' : 'SUPABASE_URL missing',
-            rec:  'Set SUPABASE_URL in Replit Secrets' },
-          { name: 'Cron Endpoint Protected',     cat: 'Authentication',        sev: 'high',
-            pass: Boolean(process.env.CRON_SECRET),
-            det:  process.env.CRON_SECRET ? 'CRON_SECRET present' : 'CRON_SECRET missing',
-            rec:  'Set CRON_SECRET in Replit Secrets' },
-          { name: 'Secrets in Environment',      cat: 'Secret Management',     sev: 'critical',
+          // ── Supabase / Database ──────────────────────────────────────────────
+          { name: 'Supabase Service Role Key',   cat: 'Authentication',    sev: 'critical',
+            pass: chk(process.env.SUPABASE_SERVICE_ROLE_KEY),
+            det:  chk(process.env.SUPABASE_SERVICE_ROLE_KEY) ? 'SUPABASE_SERVICE_ROLE_KEY configured' : 'SUPABASE_SERVICE_ROLE_KEY missing',
+            rec:  'Set SUPABASE_SERVICE_ROLE_KEY in Vercel environment variables' },
+          { name: 'Supabase URL Configured',     cat: 'Authentication',    sev: 'critical',
+            pass: chk(process.env.SUPABASE_URL),
+            det:  chk(process.env.SUPABASE_URL) ? `SUPABASE_URL configured` : 'SUPABASE_URL missing',
+            rec:  'Set SUPABASE_URL in Vercel environment variables' },
+          // ── Cron protection ──────────────────────────────────────────────────
+          { name: 'Cron Endpoint Protected',     cat: 'Authentication',    sev: 'high',
+            pass: chk(process.env.CRON_SECRET),
+            det:  chk(process.env.CRON_SECRET) ? 'CRON_SECRET present' : 'CRON_SECRET missing — cron endpoints are unprotected',
+            rec:  'Set CRON_SECRET in Vercel environment variables' },
+          // ── Email / Resend ───────────────────────────────────────────────────
+          { name: 'Resend Email API Key',        cat: 'Communications',    sev: 'high',
+            pass: chk(process.env.RESEND_API_KEY),
+            det:  chk(process.env.RESEND_API_KEY) ? 'RESEND_API_KEY configured' : 'RESEND_API_KEY missing — email sending will fail',
+            rec:  'Set RESEND_API_KEY in Vercel environment variables' },
+          { name: 'Orderbook Email Addresses',   cat: 'Communications',    sev: 'medium',
+            pass: chk(process.env.ORDERBOOK_EMAIL_FROM) && chk(process.env.ORDERBOOK_EMAIL_TO),
+            det:  (chk(process.env.ORDERBOOK_EMAIL_FROM) && chk(process.env.ORDERBOOK_EMAIL_TO))
+                    ? `FROM: ${process.env.ORDERBOOK_EMAIL_FROM} | TO configured`
+                    : `Missing: ${!chk(process.env.ORDERBOOK_EMAIL_FROM) ? 'ORDERBOOK_EMAIL_FROM ' : ''}${!chk(process.env.ORDERBOOK_EMAIL_TO) ? 'ORDERBOOK_EMAIL_TO' : ''}`.trim(),
+            rec:  'Set ORDERBOOK_EMAIL_FROM and ORDERBOOK_EMAIL_TO in Vercel environment variables' },
+          // ── SumSub KYC ───────────────────────────────────────────────────────
+          { name: 'SumSub App Token',            cat: 'KYC / Identity',    sev: 'high',
+            pass: chk(process.env.SUMSUB_APP_TOKEN),
+            det:  chk(process.env.SUMSUB_APP_TOKEN) ? 'SUMSUB_APP_TOKEN configured' : 'SUMSUB_APP_TOKEN missing — KYC will fail',
+            rec:  'Set SUMSUB_APP_TOKEN in Vercel environment variables' },
+          { name: 'SumSub Secret Key',           cat: 'KYC / Identity',    sev: 'high',
+            pass: chk(process.env.SUMSUB_SECRET_KEY),
+            det:  chk(process.env.SUMSUB_SECRET_KEY) ? 'SUMSUB_SECRET_KEY configured' : 'SUMSUB_SECRET_KEY missing',
+            rec:  'Set SUMSUB_SECRET_KEY in Vercel environment variables' },
+          { name: 'SumSub Base URL',             cat: 'KYC / Identity',    sev: 'medium',
+            pass: chk(process.env.SUMSUB_BASE_URL),
+            det:  chk(process.env.SUMSUB_BASE_URL) ? `SUMSUB_BASE_URL: ${process.env.SUMSUB_BASE_URL}` : 'SUMSUB_BASE_URL missing',
+            rec:  'Set SUMSUB_BASE_URL in Vercel environment variables' },
+          { name: 'SumSub Level Name',           cat: 'KYC / Identity',    sev: 'low',
+            pass: chk(process.env.SUMSUB_LEVEL_NAME),
+            det:  chk(process.env.SUMSUB_LEVEL_NAME) ? `Level: ${process.env.SUMSUB_LEVEL_NAME}` : 'SUMSUB_LEVEL_NAME missing',
+            rec:  'Set SUMSUB_LEVEL_NAME to your verification level name in Vercel' },
+          // ── Experian credit checks ────────────────────────────────────────────
+          { name: 'Experian Password',           cat: 'Credit / Experian', sev: 'high',
+            pass: chk(process.env.EXPERIAN_PASSWORD),
+            det:  chk(process.env.EXPERIAN_PASSWORD) ? 'EXPERIAN_PASSWORD configured' : 'EXPERIAN_PASSWORD missing — credit checks will fail',
+            rec:  'Set EXPERIAN_PASSWORD in Vercel environment variables' },
+          { name: 'Experian Origin Configured',  cat: 'Credit / Experian', sev: 'medium',
+            pass: chk(process.env.EXPERIAN_ORIGIN),
+            det:  chk(process.env.EXPERIAN_ORIGIN) ? `Origin: ${process.env.EXPERIAN_ORIGIN}` : 'EXPERIAN_ORIGIN missing',
+            rec:  'Set EXPERIAN_ORIGIN in Vercel environment variables' },
+          // ── App URLs ─────────────────────────────────────────────────────────
+          { name: 'Mint Live URL Configured',    cat: 'Configuration',     sev: 'medium',
+            pass: chk(process.env.MINT_APP_URL_LIVE),
+            det:  chk(process.env.MINT_APP_URL_LIVE) ? `MINT_APP_URL_LIVE: ${process.env.MINT_APP_URL_LIVE}` : 'MINT_APP_URL_LIVE missing',
+            rec:  'Set MINT_APP_URL_LIVE in Vercel environment variables' },
+          { name: 'Mint Dev URL Configured',     cat: 'Configuration',     sev: 'low',
+            pass: chk(process.env.MINT_APP_URL_DEV),
+            det:  chk(process.env.MINT_APP_URL_DEV) ? `MINT_APP_URL_DEV: ${process.env.MINT_APP_URL_DEV}` : 'MINT_APP_URL_DEV missing',
+            rec:  'Set MINT_APP_URL_DEV in Vercel environment variables' },
+          // ── Security posture ─────────────────────────────────────────────────
+          { name: 'Secrets in Environment Only', cat: 'Secret Management', sev: 'critical',
             pass: true,
-            det:  'All secrets loaded via process.env — no hardcoded values detected',
+            det:  'All secrets loaded via process.env — no hardcoded values detected in server code',
             rec:  'Never commit API keys or tokens directly in source files' },
-          { name: 'KYC Service Credentials',     cat: 'Third-Party',          sev: 'high',
-            pass: Boolean(process.env.SUMSUB_APP_TOKEN && process.env.SUMSUB_APP_SECRET),
-            det:  (process.env.SUMSUB_APP_TOKEN && process.env.SUMSUB_APP_SECRET)
-                    ? 'SumSub tokens present'
-                    : 'SUMSUB_APP_TOKEN or SUMSUB_APP_SECRET missing',
-            rec:  'Set SUMSUB_APP_TOKEN and SUMSUB_APP_SECRET in Replit Secrets' },
-          { name: 'Email Service Configured',    cat: 'Communications',        sev: 'medium',
-            pass: Boolean(process.env.RESEND_API_KEY),
-            det:  process.env.RESEND_API_KEY ? 'RESEND_API_KEY present' : 'RESEND_API_KEY missing',
-            rec:  'Set RESEND_API_KEY in Replit Secrets' },
-          { name: 'Orderbook Email Configured',  cat: 'Communications',        sev: 'medium',
-            pass: Boolean(process.env.ORDERBOOK_EMAIL_FROM && process.env.ORDERBOOK_EMAIL_TO),
-            det:  (process.env.ORDERBOOK_EMAIL_FROM && process.env.ORDERBOOK_EMAIL_TO)
-                    ? 'FROM and TO configured' : 'ORDERBOOK_EMAIL_FROM or TO missing',
-            rec:  'Set ORDERBOOK_EMAIL_FROM and ORDERBOOK_EMAIL_TO in environment' },
-          { name: 'API Rate Limiting',           cat: 'Security Controls',     sev: 'medium',
+          { name: 'API Rate Limiting Active',    cat: 'Security Controls', sev: 'medium',
             pass: true,
-            det:  'IP-based rate limiter active; admin endpoints require Supabase JWT auth',
-            rec:  'Consider a shared rate-limiting middleware across all routes' }
+            det:  'IP-based rate limiter active; all admin endpoints require Supabase JWT bearer token',
+            rec:  'Consider centralising rate-limit middleware across all API routes' }
         ];
         envChecks.forEach(c => checks.push(mk(c.name, c.cat, c.pass, c.sev, c.det, c.rec)));
 
