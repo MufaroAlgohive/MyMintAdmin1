@@ -40,8 +40,11 @@
     /* Tabs */
     .tab-bar{display:flex;gap:2px;background:#f2f2f7;border-radius:12px;padding:3px;margin-bottom:22px;overflow-x:auto;}
     .tab-btn{flex:none;padding:7px 16px;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer;border:none;background:transparent;color:#636366;white-space:nowrap;transition:all .15s;}
-    .tab-btn.active{background:#fff;color:#1c1c1e;box-shadow:0 1px 3px rgba(0,0,0,.1);}
-    .tab-btn:hover:not(.active){color:#1c1c1e;}
+    .tab-btn.active{background:#64748b;color:#fff;box-shadow:0 1px 4px rgba(0,0,0,.15);}
+    .tab-btn:hover:not(.active){color:#1c1c1e;background:rgba(0,0,0,.04);}
+    /* Skeleton shimmer */
+    @keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
+    .sk{display:inline-block;background:linear-gradient(90deg,#ececf0 25%,#f5f5f7 50%,#ececf0 75%);background-size:200% 100%;animation:shimmer 1.5s infinite;border-radius:5px;}
     .tab-pane{display:none;}
     .tab-pane.active{display:block;}
     /* Stats strip */
@@ -314,11 +317,19 @@
 
     <!-- ── Status Tab ──────────────────────────────────────────────────── -->
     <div class="tab-pane active" id="tab-status">
-      <div class="service-grid" id="statusServiceGrid"></div>
+      <div class="service-grid" id="statusServiceGrid">
+        <div class="service-card"><div class="sk" style="height:16px;width:55%;margin-bottom:10px;"></div><div class="sk" style="height:11px;width:38%;margin-bottom:8px;"></div><div class="sk" style="height:11px;width:70%;"></div></div>
+        <div class="service-card"><div class="sk" style="height:16px;width:60%;margin-bottom:10px;"></div><div class="sk" style="height:11px;width:42%;margin-bottom:8px;"></div><div class="sk" style="height:11px;width:65%;"></div></div>
+        <div class="service-card"><div class="sk" style="height:16px;width:50%;margin-bottom:10px;"></div><div class="sk" style="height:11px;width:35%;margin-bottom:8px;"></div><div class="sk" style="height:11px;width:75%;"></div></div>
+      </div>
       <div class="card">
         <div class="card-header"><span class="card-title" id="statusTableTitle">Recent Uptime Log</span></div>
         <table><thead><tr><th>Service</th><th>Status</th><th>Response</th><th>Status Code</th><th>Checked</th></tr></thead>
-        <tbody id="statusUptimeTable"></tbody></table>
+        <tbody id="statusUptimeTable">
+          <tr><td><span class="sk" style="height:12px;width:70%;display:block;"></span></td><td><span class="sk" style="height:12px;width:60%;display:block;"></span></td><td><span class="sk" style="height:12px;width:50%;display:block;"></span></td><td><span class="sk" style="height:12px;width:40%;display:block;"></span></td><td><span class="sk" style="height:12px;width:55%;display:block;"></span></td></tr>
+          <tr><td><span class="sk" style="height:12px;width:65%;display:block;"></span></td><td><span class="sk" style="height:12px;width:55%;display:block;"></span></td><td><span class="sk" style="height:12px;width:45%;display:block;"></span></td><td><span class="sk" style="height:12px;width:35%;display:block;"></span></td><td><span class="sk" style="height:12px;width:60%;display:block;"></span></td></tr>
+          <tr><td><span class="sk" style="height:12px;width:75%;display:block;"></span></td><td><span class="sk" style="height:12px;width:65%;display:block;"></span></td><td><span class="sk" style="height:12px;width:55%;display:block;"></span></td><td><span class="sk" style="height:12px;width:45%;display:block;"></span></td><td><span class="sk" style="height:12px;width:50%;display:block;"></span></td></tr>
+        </tbody></table>
       </div>
     </div>
 
@@ -891,6 +902,40 @@ const statusBadge = s => {
   return `<span class="badge s-${(s||'open').replace('_','-')}">${lbl[s]||s}</span>`;
 };
 
+// ── Skeleton helpers ─────────────────────────────────────────────────────────
+const skTableRows = (cols, rows = 5) =>
+  Array(rows).fill(`<tr>${Array(cols).fill(
+    '<td><span class="sk" style="height:12px;width:75%;display:block;"></span></td>'
+  ).join('')}</tr>`).join('');
+
+const skGridCards = (n = 6) =>
+  Array(n).fill(`<div class="service-card">
+    <div class="sk" style="height:16px;width:55%;margin-bottom:10px;"></div>
+    <div class="sk" style="height:11px;width:38%;margin-bottom:8px;"></div>
+    <div class="sk" style="height:11px;width:70%;"></div>
+  </div>`).join('');
+
+const skUserCards = (n = 8) =>
+  Array(n).fill(`<div style="background:#fff;border-radius:14px;border:1px solid #e5e5ea;padding:16px;display:flex;flex-direction:column;gap:8px;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span class="sk" style="width:36px;height:36px;border-radius:50%;flex-shrink:0;"></span>
+      <div style="flex:1"><div class="sk" style="height:13px;width:60%;margin-bottom:6px;"></div><div class="sk" style="height:10px;width:40%;"></div></div>
+    </div>
+    <div class="sk" style="height:10px;width:80%;"></div>
+  </div>`).join('');
+
+const setTabSkeleton = (tab) => {
+  const m = {
+    status:    () => { const g = document.getElementById('statusServiceGrid'); const t = document.getElementById('statusUptimeTable'); if (g) g.innerHTML = skGridCards(); if (t) t.innerHTML = skTableRows(5); },
+    api:       () => { const t = document.getElementById('apiHealthTable');    if (t) t.innerHTML = skTableRows(6); },
+    incidents: () => { const t = document.getElementById('incidentTableBody'); if (t) t.innerHTML = skTableRows(6); },
+    audit:     () => { const t = document.getElementById('auditTableBody');    if (t) t.innerHTML = skTableRows(5); },
+    policy:    () => { const t = document.getElementById('policyTableBody');   if (t) t.innerHTML = skTableRows(7); },
+    activity:  () => { const g = document.getElementById('userGrid');          if (g) g.innerHTML = skUserCards(); },
+  };
+  if (m[tab]) m[tab]();
+};
+
 // ── Tab switching ───────────────────────────────────────────────────────────
 let _activeTab = 'status';
 const switchTab = (tab) => {
@@ -904,6 +949,8 @@ const switchTab = (tab) => {
   if (tab === 'audit'    && _auditAllLogs.length > 0) renderAuditTable();
   if (tab === 'activity' && _allUsers.length > 0)     filterUsers();
   if (tab === 'status'   && _uptimeLogs.length > 0)   renderStatusSubTab();
+
+  setTabSkeleton(tab);
 
   const loaders = {
     status: loadStatusData, api: loadApiHealth,
@@ -980,6 +1027,7 @@ const renderStatusSubTab = () => {
 };
 
 const loadStatusData = async () => {
+  setTabSkeleton('status');
   try {
     const r = await fetch('/api/cyber-compliance?action=list-uptime&limit=200', { headers: authH() });
     const d = await r.json();
@@ -998,6 +1046,7 @@ const loadStatusData = async () => {
 
 // ── API Health ──────────────────────────────────────────────────────────────
 const loadApiHealth = async () => {
+  setTabSkeleton('api');
   try {
     const r = await fetch('/api/cyber-compliance?action=list-api-health&limit=200', { headers: authH() });
     const d = await r.json();
@@ -1022,6 +1071,7 @@ const loadApiHealth = async () => {
 // ── Incidents ───────────────────────────────────────────────────────────────
 let _incidents = [];
 const loadIncidents = async () => {
+  setTabSkeleton('incidents');
   const status   = document.getElementById('incFilterStatus').value;
   const priority = document.getElementById('incFilterPriority').value;
   const env      = document.getElementById('incFilterEnv').value;
@@ -1222,6 +1272,7 @@ const purgeKycAuditLogs = async () => {
 };
 
 const loadAuditLog = async () => {
+  setTabSkeleton('audit');
   const table = document.getElementById('auditFilterTable').value;
   const op    = document.getElementById('auditFilterOp').value;
   const tbody = document.getElementById('auditTableBody');
@@ -1287,6 +1338,7 @@ const switchPolicyEnv = async (env, btn) => {
 };
 
 const loadPolicyChecks = async () => {
+  setTabSkeleton('policy');
   const env   = _currentPolicyEnv;
   const tbody = document.getElementById('policyTableBody');
 
@@ -1511,6 +1563,7 @@ const filterUsers = () => {
 };
 
 const loadUserActivity = async () => {
+  setTabSkeleton('activity');
   const grid = document.getElementById('userGrid');
   try {
     const r = await fetch('/api/cyber-compliance?action=list-active-users', { headers: authH() });
@@ -1672,7 +1725,8 @@ const loadHealthSummary = async () => {
       apiEl.textContent = '—';
       apiEl.className = 'hs-value';
       apiDot.className = 'hs-dot neutral';
-      apiSub.textContent = 'No API health data yet';
+      apiSub.innerHTML = '<span style="color:#8e8e93;margin-right:6px;">No data yet</span>'
+        + '<button onclick="event.stopPropagation();runHealthCheckNow(this)" style="background:none;border:none;color:#2563eb;font-size:11px;font-weight:600;cursor:pointer;padding:0;text-decoration:underline;">▶ Run check</button>';
     }
 
     // Policy pass rate
@@ -1692,6 +1746,19 @@ const loadHealthSummary = async () => {
     }
   } catch {
     // Fail silently — strip stays at "—"
+  }
+};
+
+// ── Run health check on-demand ────────────────────────────────────────────────
+const runHealthCheckNow = async (btn) => {
+  if (btn) { btn.textContent = 'Running…'; btn.disabled = true; btn.style.color = '#8e8e93'; }
+  try {
+    await fetch('/api/cyber-compliance?action=run-health-check', { method: 'POST', headers: authH() });
+    showToast('Health check started — refreshing in 15s ⏳');
+    setTimeout(() => { loadHealthSummary(); if (_activeTab === 'api') loadApiHealth(); }, 15000);
+  } catch {
+    if (btn) { btn.textContent = '▶ Run check'; btn.disabled = false; btn.style.color = '#2563eb'; }
+    showToast('Failed to start health check');
   }
 };
 

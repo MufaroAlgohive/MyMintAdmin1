@@ -653,7 +653,7 @@ module.exports = async (req, res) => {
 
       const [uptimeRows, apiRows, policyRows] = await Promise.all([
         sbGet(`/rest/v1/cc_uptime_log?select=is_up,checked_at&checked_at=gte.${since24h}&order=checked_at.desc&limit=2000`).catch(() => []),
-        sbGet(`/rest/v1/cc_api_health?select=endpoint_key,passed,checked_at&order=checked_at.desc&limit=500`).catch(() => []),
+        sbGet(`/rest/v1/cc_api_health?select=endpoint,label,passed,checked_at&order=checked_at.desc&limit=500`).catch(() => []),
         sbGet(`/rest/v1/cc_policy_checks?select=policy_name,passed,checked_at&order=checked_at.desc&limit=500`).catch(() => [])
       ]);
 
@@ -666,7 +666,7 @@ module.exports = async (req, res) => {
         : null;
 
       const apiByKey = {};
-      apiArr.forEach(r => { if (!apiByKey[r.endpoint_key]) apiByKey[r.endpoint_key] = r; });
+      apiArr.forEach(r => { if (!apiByKey[r.endpoint]) apiByKey[r.endpoint] = r; });
       const apiLatest = Object.values(apiByKey);
       const apiPassRate = apiLatest.length
         ? Math.round((apiLatest.filter(r => r.passed).length / apiLatest.length) * 100)
