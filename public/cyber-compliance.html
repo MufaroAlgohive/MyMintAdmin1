@@ -44,6 +44,11 @@
     .tab-btn:hover:not(.active){color:#1c1c1e;}
     .tab-pane{display:none;}
     .tab-pane.active{display:block;}
+    /* Sub-tabs (inside Status pane) */
+    .sub-tab-bar{display:flex;gap:6px;margin-bottom:20px;flex-wrap:wrap;}
+    .sub-tab-btn{padding:8px 18px;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid #e5e5ea;background:#fff;color:#636366;white-space:nowrap;transition:all .15s;}
+    .sub-tab-btn.active{background:#1c1c1e;color:#fff;border-color:#1c1c1e;}
+    .sub-tab-btn:hover:not(.active){background:#f2f2f7;color:#1c1c1e;}
     /* Stats strip */
     .stats-row{display:flex;gap:14px;margin-bottom:22px;flex-wrap:wrap;}
     .stat-card{background:#fff;border-radius:14px;padding:14px 18px;flex:1;min-width:110px;border:1px solid #e5e5ea;}
@@ -268,12 +273,12 @@
 
     <!-- Health Summary Strip -->
     <div class="hs-strip" id="healthSummaryStrip">
-      <a class="hs-card" onclick="switchTab('live');return false;" href="#">
+      <a class="hs-card" onclick="switchTab('status');return false;" href="#">
         <div class="hs-label"><span class="hs-dot neutral" id="hsLastDot"></span>Last Check</div>
         <div class="hs-value" id="hsLastCheck" style="font-size:15px;font-weight:700;">—</div>
-        <div class="hs-sub">Click to view Live Status →</div>
+        <div class="hs-sub">Click to view Status →</div>
       </a>
-      <a class="hs-card" onclick="switchTab('live');return false;" href="#">
+      <a class="hs-card" onclick="switchTab('status');return false;" href="#">
         <div class="hs-label"><span class="hs-dot neutral" id="hsUptimeDot"></span>Uptime (24h)</div>
         <div class="hs-value" id="hsUptimePct">—</div>
         <div class="hs-sub" id="hsUptimeSub">Based on uptime log</div>
@@ -302,8 +307,7 @@
 
     <!-- Tab bar -->
     <div class="tab-bar">
-      <button class="tab-btn active" onclick="switchTab('live')">🟢 Live Status</button>
-      <button class="tab-btn" onclick="switchTab('dev')">🔵 Dev Status</button>
+      <button class="tab-btn active" onclick="switchTab('status')">📡 Status</button>
       <button class="tab-btn" onclick="switchTab('api')">⚡ API Health</button>
       <button class="tab-btn" onclick="switchTab('incidents')">🚨 Incidents</button>
       <button class="tab-btn" onclick="switchTab('audit')">📋 Audit Log</button>
@@ -311,25 +315,19 @@
       <button class="tab-btn" onclick="switchTab('activity')">👤 User Activity</button>
     </div>
 
-    <!-- ── Live Status Tab ─────────────────────────────────────────────── -->
-    <div class="tab-pane active" id="tab-live">
-      <div class="service-grid" id="liveServiceGrid"></div>
-      <div class="card">
-        <div class="card-header"><span class="card-title">Recent Uptime Log — Live Services</span></div>
-        <table><thead><tr><th>Service</th><th>Status</th><th>Response</th><th>Status Code</th><th>Checked</th></tr></thead>
-        <tbody id="liveUptimeTable"></tbody></table>
+    <!-- ── Status Tab ──────────────────────────────────────────────────── -->
+    <div class="tab-pane active" id="tab-status">
+      <div class="sub-tab-bar">
+        <button class="sub-tab-btn active" id="stab-mint-live" onclick="switchStatusTab('mint-live',this)">🟢 Live Status</button>
+        <button class="sub-tab-btn" id="stab-mint-dev"  onclick="switchStatusTab('mint-dev',this)">🔵 Dev Status</button>
+        <button class="sub-tab-btn" id="stab-crm"       onclick="switchStatusTab('crm',this)">🖥️ CRM Admin Status</button>
+        <button class="sub-tab-btn" id="stab-supabase"  onclick="switchStatusTab('supabase',this)">🗄️ Supabase Status</button>
       </div>
-    </div>
-
-    <!-- ── Dev Status Tab ──────────────────────────────────────────────── -->
-    <div class="tab-pane" id="tab-dev">
-      <div class="service-grid" id="devServiceGrid">
-        <div style="color:#8e8e93;font-size:13px;padding:20px;">No dev service data yet.</div>
-      </div>
+      <div class="service-grid" id="statusServiceGrid"></div>
       <div class="card">
-        <div class="card-header"><span class="card-title">Recent Uptime Log — Dev Services</span></div>
+        <div class="card-header"><span class="card-title" id="statusTableTitle">Recent Uptime Log — Live Status</span></div>
         <table><thead><tr><th>Service</th><th>Status</th><th>Response</th><th>Status Code</th><th>Checked</th></tr></thead>
-        <tbody id="devUptimeTable"></tbody></table>
+        <tbody id="statusUptimeTable"></tbody></table>
       </div>
     </div>
 
@@ -903,31 +901,21 @@ const statusBadge = s => {
 };
 
 // ── Tab switching ───────────────────────────────────────────────────────────
-let _activeTab = 'live';
+let _activeTab = 'status';
 const switchTab = (tab) => {
   _activeTab = tab;
-  document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.remove('active'));
   document.querySelectorAll('.tab-btn').forEach(b => {
-    if (b.getAttribute('onclick') === `switchTab('${tab}')`) b.classList.add('active');
+    b.classList.toggle('active', b.getAttribute('onclick') === `switchTab('${tab}')`);
   });
   document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
   document.getElementById(`tab-${tab}`).classList.add('active');
 
-  // Pre-render cached data immediately so the tab never shows blank during a background refresh
   if (tab === 'audit'    && _auditAllLogs.length > 0) renderAuditTable();
   if (tab === 'activity' && _allUsers.length > 0)     filterUsers();
-  if (tab === 'live' && _uptimeLogs.length > 0) {
-    renderServiceGrid(_uptimeLogs, 'liveServiceGrid', null);
-    renderUptimeTable(_uptimeLogs, 'liveUptimeTable', null);
-  }
-  if (tab === 'dev' && _uptimeLogs.length > 0) {
-    const devLogs = _uptimeLogs.filter(l => l.service_key === 'mint-dev');
-    renderServiceGrid(devLogs, 'devServiceGrid', null);
-    renderUptimeTable(devLogs, 'devUptimeTable', null);
-  }
+  if (tab === 'status'   && _uptimeLogs.length > 0)   renderStatusSubTab();
 
   const loaders = {
-    live: loadLiveStatus, dev: loadDevStatus, api: loadApiHealth,
+    status: loadStatusData, api: loadApiHealth,
     incidents: loadIncidents, audit: loadAuditLog, policy: loadPolicyChecks, activity: loadUserActivity
   };
   if (loaders[tab]) loaders[tab]();
@@ -978,15 +966,37 @@ const renderUptimeTable = (logs, tbodyId, envFilter) => {
     </tr>`).join('');
 };
 
-const loadLiveStatus = async () => {
+// ── Status sub-tab ──────────────────────────────────────────────────────────
+let _activeStatusKey = 'mint-live';
+const STATUS_LABELS = {
+  'mint-live': 'Live Status',
+  'mint-dev':  'Dev Status',
+  'crm':       'CRM Admin Status',
+  'supabase':  'Supabase Status'
+};
+
+const renderStatusSubTab = () => {
+  const logs = _uptimeLogs.filter(l => l.service_key === _activeStatusKey);
+  renderServiceGrid(logs, 'statusServiceGrid', null);
+  renderUptimeTable(logs, 'statusUptimeTable', null);
+  const titleEl = document.getElementById('statusTableTitle');
+  if (titleEl) titleEl.textContent = `Recent Uptime Log — ${STATUS_LABELS[_activeStatusKey] || _activeStatusKey}`;
+};
+
+const switchStatusTab = (key, btn) => {
+  _activeStatusKey = key;
+  document.querySelectorAll('.sub-tab-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  renderStatusSubTab();
+};
+
+const loadStatusData = async () => {
   try {
     const r = await fetch('/api/cyber-compliance?action=list-uptime&limit=200', { headers: authH() });
     const d = await r.json();
     _uptimeLogs = d.logs || [];
-    renderServiceGrid(_uptimeLogs, 'liveServiceGrid', null);
-    renderUptimeTable(_uptimeLogs, 'liveUptimeTable', null);
+    renderStatusSubTab();
     document.getElementById('lastCheckedLabel').textContent = 'Last check: ' + ((_uptimeLogs[0]?.checked_at) ? fmtDate(_uptimeLogs[0].checked_at) : 'never');
-    // Update stats
     const recent = Object.values(_uptimeLogs.reduce((m, l) => {
       if (!m[l.service_key] || new Date(l.checked_at) > new Date(m[l.service_key].checked_at)) m[l.service_key] = l;
       return m;
@@ -994,19 +1004,7 @@ const loadLiveStatus = async () => {
     const upCount = recent.filter(l => l.is_up).length;
     document.getElementById('statServicesUp').textContent = `${upCount}/${recent.length}`;
     document.getElementById('statServicesUp').className = `stat-value ${upCount === recent.length ? 'up' : 'down'}`;
-  } catch { document.getElementById('liveServiceGrid').innerHTML = '<div style="color:#ff3b30;padding:20px;">Failed to load uptime data</div>'; }
-};
-
-const loadDevStatus = async () => {
-  if (!_uptimeLogs.length) {
-    const r = await fetch('/api/cyber-compliance?action=list-uptime&service_key=mint-dev&limit=50', { headers: authH() });
-    const d = await r.json();
-    renderServiceGrid(d.logs || [], 'devServiceGrid', null);
-    renderUptimeTable(d.logs || [], 'devUptimeTable', null);
-  } else {
-    renderServiceGrid(_uptimeLogs.filter(l => l.service_key === 'mint-dev'), 'devServiceGrid', null);
-    renderUptimeTable(_uptimeLogs.filter(l => l.service_key === 'mint-dev'), 'devUptimeTable', null);
-  }
+  } catch { document.getElementById('statusServiceGrid').innerHTML = '<div style="color:#ff3b30;padding:20px;">Failed to load uptime data</div>'; }
 };
 
 // ── API Health ──────────────────────────────────────────────────────────────
@@ -1711,7 +1709,7 @@ const loadHealthSummary = async () => {
 // ── Refresh all ─────────────────────────────────────────────────────────────
 const refreshAll = () => {
   loadHealthSummary();
-  loadLiveStatus();
+  loadStatusData();
   loadIncidents();
 };
 
@@ -1747,7 +1745,7 @@ const startAutoRefresh = () => {
   if (_autoRefreshTimer) clearInterval(_autoRefreshTimer);
   _autoRefreshTimer = setInterval(() => {
     const loaders = {
-      live: loadLiveStatus, dev: loadDevStatus, api: loadApiHealth,
+      status: loadStatusData, api: loadApiHealth,
       incidents: loadIncidents, audit: loadAuditLog, policy: loadPolicyChecks, activity: loadUserActivity
     };
     if (loaders[_activeTab]) loaders[_activeTab]();
@@ -1758,7 +1756,7 @@ const startAutoRefresh = () => {
 document.addEventListener('DOMContentLoaded', () => {
   checkMigration();
   loadHealthSummary();
-  loadLiveStatus();
+  loadStatusData();
   loadIncidents();
   loadPolicyChecks();
   startAutoRefresh();
