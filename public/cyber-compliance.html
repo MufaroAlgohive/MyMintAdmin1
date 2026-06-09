@@ -319,19 +319,19 @@
       <div class="card">
         <div class="card-header"><span class="card-title">Recent Uptime Log — Live Services</span></div>
         <table><thead><tr><th>Service</th><th>Status</th><th>Response</th><th>Status Code</th><th>Checked</th></tr></thead>
-        <tbody id="liveUptimeTable"><tr><td colspan="5" class="empty-state">Loading…</td></tr></tbody></table>
+        <tbody id="liveUptimeTable"></tbody></table>
       </div>
     </div>
 
     <!-- ── Dev Status Tab ──────────────────────────────────────────────── -->
     <div class="tab-pane" id="tab-dev">
       <div class="service-grid" id="devServiceGrid">
-        <div style="color:#8e8e93;font-size:13px;padding:20px;">Loading dev service status…</div>
+        <div style="color:#8e8e93;font-size:13px;padding:20px;">No dev service data yet.</div>
       </div>
       <div class="card">
         <div class="card-header"><span class="card-title">Recent Uptime Log — Dev Services</span></div>
         <table><thead><tr><th>Service</th><th>Status</th><th>Response</th><th>Status Code</th><th>Checked</th></tr></thead>
-        <tbody id="devUptimeTable"><tr><td colspan="5" class="empty-state">Loading…</td></tr></tbody></table>
+        <tbody id="devUptimeTable"></tbody></table>
       </div>
     </div>
 
@@ -343,7 +343,7 @@
           <div style="font-size:12px;color:#8e8e93;">Pass = endpoint responded (401 counts as pass — endpoint alive)</div>
         </div>
         <table><thead><tr><th>Endpoint</th><th>Method</th><th>Result</th><th>Status Code</th><th>Response Time</th><th>Checked</th></tr></thead>
-        <tbody id="apiHealthTable"><tr><td colspan="6" class="empty-state">Loading…</td></tr></tbody></table>
+        <tbody id="apiHealthTable"></tbody></table>
       </div>
     </div>
 
@@ -377,7 +377,7 @@
         </div>
         <table>
           <thead><tr><th>Incident</th><th>Env</th><th>Priority</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead>
-          <tbody id="incidentTableBody"><tr><td colspan="6" class="empty-state">Loading…</td></tr></tbody>
+          <tbody id="incidentTableBody"></tbody>
         </table>
       </div>
     </div>
@@ -451,7 +451,7 @@
               <th>What Changed</th>
             </tr>
           </thead>
-          <tbody id="auditTableBody"><tr><td colspan="5" class="empty-state">Loading…</td></tr></tbody>
+          <tbody id="auditTableBody"></tbody>
         </table>
       </div>
     </div>
@@ -495,7 +495,7 @@
         </div>
         <table>
           <thead><tr><th>Policy</th><th>Category</th><th>Severity</th><th>Result</th><th>Detail</th><th>Recommendation</th><th>Checked</th></tr></thead>
-          <tbody id="policyTableBody"><tr><td colspan="7" class="empty-state">Loading…</td></tr></tbody>
+          <tbody id="policyTableBody"></tbody>
         </table>
       </div>
     </div>
@@ -916,6 +916,19 @@ const switchTab = (tab) => {
   });
   document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
   document.getElementById(`tab-${tab}`).classList.add('active');
+
+  // Pre-render cached data immediately so the tab never shows blank during a background refresh
+  if (tab === 'audit'    && _auditAllLogs.length > 0) renderAuditTable();
+  if (tab === 'activity' && _allUsers.length > 0)     filterUsers();
+  if (tab === 'live' && _uptimeLogs.length > 0) {
+    renderServiceGrid(_uptimeLogs, 'liveServiceGrid', null);
+    renderUptimeTable(_uptimeLogs, 'liveUptimeTable', null);
+  }
+  if (tab === 'dev' && _uptimeLogs.length > 0) {
+    const devLogs = _uptimeLogs.filter(l => l.service_key === 'mint-dev');
+    renderServiceGrid(devLogs, 'devServiceGrid', null);
+    renderUptimeTable(devLogs, 'devUptimeTable', null);
+  }
 
   const loaders = {
     live: loadLiveStatus, dev: loadDevStatus, api: loadApiHealth,
