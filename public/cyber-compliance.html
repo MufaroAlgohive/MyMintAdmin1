@@ -313,9 +313,7 @@
 
     <!-- ── Live Status Tab ─────────────────────────────────────────────── -->
     <div class="tab-pane active" id="tab-live">
-      <div class="service-grid" id="liveServiceGrid">
-        <div style="color:#8e8e93;font-size:13px;padding:20px;">Loading live service status…</div>
-      </div>
+      <div class="service-grid" id="liveServiceGrid"></div>
       <div class="card">
         <div class="card-header"><span class="card-title">Recent Uptime Log — Live Services</span></div>
         <table><thead><tr><th>Service</th><th>Status</th><th>Response</th><th>Status Code</th><th>Checked</th></tr></thead>
@@ -543,9 +541,7 @@
             </select>
           </div>
         </div>
-        <div id="userGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;padding:16px;">
-          <div style="color:#8e8e93;font-size:13px;padding:20px;grid-column:1/-1;">Loading users…</div>
-        </div>
+        <div id="userGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;padding:16px;"></div>
       </div>
     </div>
 
@@ -1242,7 +1238,6 @@ const loadAuditLog = async () => {
   const table = document.getElementById('auditFilterTable').value;
   const op    = document.getElementById('auditFilterOp').value;
   const tbody = document.getElementById('auditTableBody');
-  setRefreshing(tbody, true);
 
   let qs = '/api/cyber-compliance?action=list-audit-log&limit=200';
   if (table) qs += '&table=' + encodeURIComponent(table);
@@ -1307,7 +1302,6 @@ const switchPolicyEnv = async (env, btn) => {
 const loadPolicyChecks = async () => {
   const env   = _currentPolicyEnv;
   const tbody = document.getElementById('policyTableBody');
-  setRefreshing(tbody, true);
 
   // DEV and LIVE: always run live on-demand checks (no DB needed)
   // CRM: use stored results from scheduled scans
@@ -1390,7 +1384,6 @@ const doCheckNow = async () => {
   if (btn)  btn.disabled  = true;
   if (spin) spin.style.display = 'inline-block';
   if (lbl)  lbl.textContent   = 'Checking…';
-  setRefreshing(tbody, true);
 
   try {
     const r = await fetch(`/api/cyber-compliance?action=run-policy-checks-live&env=${env}`, { headers: authH() });
@@ -1532,7 +1525,6 @@ const filterUsers = () => {
 
 const loadUserActivity = async () => {
   const grid = document.getElementById('userGrid');
-  setRefreshing(grid, true);
   try {
     const r = await fetch('/api/cyber-compliance?action=list-active-users', { headers: authH() });
     const d = await r.json();
