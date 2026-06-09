@@ -510,7 +510,31 @@ module.exports = async (req, res) => {
       }
 
       const rows = await sbGet(qs);
-      return sendJson(res, 200, { ok: true, logs: Array.isArray(rows) ? rows : [] });
+      if (!Array.isArray(rows) || !rows.length) return sendJson(res, 200, { ok: true, logs: [] });
+
+      // Resolve changed_by UUIDs → display names from profiles
+      const uuids = [...new Set(rows.map(r => r.changed_by).filter(v => v && /^[0-9a-f-]{36}$/i.test(v)))];
+      let nameMap = {};
+      if (uuids.length) {
+        try {
+          const profiles = await sbGet(
+            `/rest/v1/profiles?select=id,first_name,last_name,email&id=in.(${uuids.join(',')})`
+          );
+          if (Array.isArray(profiles)) {
+            profiles.forEach(p => {
+              const name = [p.first_name, p.last_name].filter(Boolean).join(' ').trim() || p.email || p.id;
+              nameMap[p.id] = name;
+            });
+          }
+        } catch { /* leave UUIDs as-is if lookup fails */ }
+      }
+
+      const logs = rows.map(r => ({
+        ...r,
+        changed_by: nameMap[r.changed_by] || r.changed_by || 'system'
+      }));
+
+      return sendJson(res, 200, { ok: true, logs });
     }
 
     // ── PURGE KYC AUDIT LOGS ──────────────────────────────────────────────────
