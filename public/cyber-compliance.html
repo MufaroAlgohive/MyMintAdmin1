@@ -1027,7 +1027,6 @@ const renderStatusSubTab = () => {
 };
 
 const loadStatusData = async () => {
-  setTabSkeleton('status');
   try {
     const r = await fetch('/api/cyber-compliance?action=list-uptime&limit=200', { headers: authH() });
     const d = await r.json();
@@ -1046,7 +1045,6 @@ const loadStatusData = async () => {
 
 // ── API Health ──────────────────────────────────────────────────────────────
 const loadApiHealth = async () => {
-  setTabSkeleton('api');
   try {
     const r = await fetch('/api/cyber-compliance?action=list-api-health&limit=200', { headers: authH() });
     const d = await r.json();
@@ -1071,7 +1069,6 @@ const loadApiHealth = async () => {
 // ── Incidents ───────────────────────────────────────────────────────────────
 let _incidents = [];
 const loadIncidents = async () => {
-  setTabSkeleton('incidents');
   const status   = document.getElementById('incFilterStatus').value;
   const priority = document.getElementById('incFilterPriority').value;
   const env      = document.getElementById('incFilterEnv').value;
@@ -1272,7 +1269,6 @@ const purgeKycAuditLogs = async () => {
 };
 
 const loadAuditLog = async () => {
-  setTabSkeleton('audit');
   const table = document.getElementById('auditFilterTable').value;
   const op    = document.getElementById('auditFilterOp').value;
   const tbody = document.getElementById('auditTableBody');
@@ -1338,7 +1334,6 @@ const switchPolicyEnv = async (env, btn) => {
 };
 
 const loadPolicyChecks = async () => {
-  setTabSkeleton('policy');
   const env   = _currentPolicyEnv;
   const tbody = document.getElementById('policyTableBody');
 
@@ -1563,7 +1558,6 @@ const filterUsers = () => {
 };
 
 const loadUserActivity = async () => {
-  setTabSkeleton('activity');
   const grid = document.getElementById('userGrid');
   try {
     const r = await fetch('/api/cyber-compliance?action=list-active-users', { headers: authH() });
