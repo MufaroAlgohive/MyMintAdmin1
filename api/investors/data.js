@@ -30,7 +30,7 @@ module.exports = async (req, res) => {
       fetch(`${supabaseUrl}/rest/v1/${path}`, { headers: sbH }).then((r) => r.json());
 
     const [holdings, strategies] = await Promise.all([
-      sbGet('stock_holdings_c?select=user_id,family_member_id,security_id,strategy_id,quantity,avg_fill,expected_fill:%22Expected_fill%22,market_value,created_at&is_active=eq.true&trade_side=eq.BUY'),
+      sbGet('stock_holdings_c?select=user_id,family_member_id,security_id,strategy_id,quantity,avg_fill,expected_fill:%22Expected_fill%22,market_value,transaction_id,created_at&is_active=eq.true&trade_side=eq.BUY'),
       sbGet('strategies_c?select=id,name,short_name,description,risk_level,sector'),
     ]);
 

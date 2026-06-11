@@ -394,6 +394,24 @@
         residualByKey[key] = (residualByKey[key] || 0) + (Number(r.balance_cents)||0)/100;
       });
 
+      /* Held 8% buffer (reserve) per investor, in rands. Mirrors the MINT app:
+         buffer = Σ over the active holdings' funding transactions of
+         (buffer_cents − buffer_consumed_cents), each transaction counted once.
+         Reached via stock_holdings_c.transaction_id → transactions. Counts as the
+         investor's cash, so it's added to value alongside the residual. */
+      const bufferCentsById = {};
+      (txns||[]).forEach(t => { bufferCentsById[t.id] = (Number(t.buffer_cents)||0) - (Number(t.buffer_consumed_cents)||0); });
+      const bufferByInvestor = {};
+      const _bufSeen = {};
+      (holdings||[]).forEach(h => {
+        if (!h.user_id || !h.transaction_id) return;
+        const key = `${h.user_id}:${h.family_member_id || ''}`;
+        if (!_bufSeen[key]) _bufSeen[key] = new Set();
+        if (_bufSeen[key].has(h.transaction_id)) return;
+        _bufSeen[key].add(h.transaction_id);
+        bufferByInvestor[key] = (bufferByInvestor[key] || 0) + (bufferCentsById[h.transaction_id] || 0) / 100;
+      });
+
       /* Rebalance fees per (user|familyMember) � admin reconciliation only.
          A rebalance posts a R0 audit transaction, so its sell/buy brokerage (0.5%)
          + custody (R69 per ISIN side) never reach the transactions fee columns.
@@ -555,11 +573,15 @@
            strategy_rebalance_residuals; it's the client's money but sits as cash,
            not positions. Broken out from holdings value in the detail view. */
         const residualCash = residualByKey[`${u.userId}:${u.familyMemberId || ''}:${u.strategyId || ''}`] || 0;
-        /* holdingsValue = LIVE positions value (current = Σ live price � qty),
+        /* Held 8% buffer for this investor (cash sitting in the strategy). */
+        const bufferCash = bufferByInvestor[investorKey] || 0;
+        /* holdingsValue = LIVE positions value (current = sum of live price x qty),
            which matches the orderbook. csrAum (basket_value snapshot) can be stale
-           after a rebalance, so we use current here. value = positions + cash. */
+           after a rebalance, so we use current here. value = positions + cash,
+           where cash = rebalance residual + held 8% buffer. */
         const holdingsValue = current;
-        const value = holdingsValue + residualCash;
+        const cashComponent = residualCash + bufferCash;
+        const value = holdingsValue + cashComponent;
         return {
           type: isStrategy ? 'strategy' : 'security',
           userId: u.userId, investorKey, familyMemberId: u.familyMemberId, isMinor: !!u.familyMemberId, name, email: prof.email, mintNo: prof.mint_number,
@@ -567,7 +589,7 @@
           strategyDesc: strat.description, riskLevel: strat.risk_level,
           invested, current, pnl, retPct: +retPct.toFixed(2),
           csrAum, csrInvested, csrPnl, csrRetPct, csrYtdPct,
-          residualCash, holdingsValue, value,
+          residualCash, bufferCash, cashComponent, holdingsValue, value,
           rebFeeBroker: (rebFeeByOwner[investorKey] || {}).broker || 0,
           rebFeeCustody: (rebFeeByOwner[investorKey] || {}).custody || 0,
           days, annualised, inception,
@@ -584,7 +606,7 @@
     /* ─── KPI Bar ─── */
     function renderKpiBar(investors) {
       const visible = investors.filter(i => i.type === activeView);
-      /* TOTAL AUM includes residual cash (i.value = holdings + residual) so the
+      /* TOTAL AUM includes cash (i.value = holdings + residual + 8% buffer) so the
          headline portfolio matches what clients actually hold after rebalances. */
       const aum  = visible.reduce((s,i)=>s+(i.value ?? i.csrAum),0);
       const inv  = visible.reduce((s,i)=>s+i.csrInvested,0);
@@ -694,7 +716,7 @@
             <div style="text-align:right;flex-shrink:0;">
               <div style="font-size:20px;font-weight:700;color:#0f172a;font-family:ui-monospace,monospace;">${fmtR2(i.value ?? i.current)}</div>
               <div style="font-size:12px;font-weight:600;color:${pctClr(i.retPct)};">${fmtPct(i.retPct)} all-time</div>
-              ${i.residualCash > 0 ? `<div style="font-size:10.5px;color:#64748b;margin-top:3px;font-family:ui-monospace,monospace;">Holdings ${fmtR2(i.holdingsValue)} &middot; <span style="color:#0e7490;">Cash ${fmtR2(i.residualCash)}</span></div>` : ''}
+              ${i.cashComponent > 0 ? `<div style="font-size:10.5px;color:#64748b;margin-top:3px;font-family:ui-monospace,monospace;">Holdings ${fmtR2(i.holdingsValue)} &middot; <span style="color:#0e7490;">Cash ${fmtR2(i.cashComponent)}</span></div>` : ''}
             </div>
           </div>
           <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px;">
