@@ -592,6 +592,84 @@ module.exports = async (req, res) => {
       }
     }
 
+    // APP-SETTINGS-GET — admin only. Returns a settings JSON blob by key
+    // (default 'fees') from the app_settings table.
+    if (action === 'app-settings-get') {
+      if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+      const result = await requireAdmin(req, res);
+      if (!result) return;
+      const key = (url.searchParams.get('key') || 'fees').trim();
+      try {
+        const rows = await supabaseRequest(
+          `/rest/v1/app_settings?key=eq.${encodeURIComponent(key)}&select=value,updated_at,updated_by&limit=1`
+        );
+        const row = rows && rows[0];
+        return sendJson(res, 200, {
+          ok: true, key,
+          value: row?.value || null,
+          updated_at: row?.updated_at || null,
+          updated_by: row?.updated_by || null
+        });
+      } catch (err) {
+        return sendJson(res, 200, { ok: true, key, value: null, notice: 'app_settings table not found — run the migration SQL.' });
+      }
+    }
+
+    // APP-SETTINGS-SAVE — admin only. Upserts a settings JSON blob by key. For
+    // 'fees', the payload is whitelisted + coerced to non-negative numbers.
+    if (action === 'app-settings-save') {
+      if (req.method !== 'POST' && req.method !== 'PUT' && req.method !== 'PATCH') {
+        return sendJson(res, 405, { error: 'Method not allowed' });
+      }
+      const result = await requireAdmin(req, res);
+      if (!result) return;
+      const key = (req.body?.key || 'fees').trim();
+      const incoming = req.body?.value;
+      if (!incoming || typeof incoming !== 'object') return sendJson(res, 400, { error: 'value object is required' });
+
+      let value = incoming;
+      if (key === 'fees') {
+        const allow = ['isinFeePerAsset', 'brokerFeeRate', 'executionReserveRate', 'transactionFeeRate', 'monthlyStrategyFee', 'rebBrokerageRate', 'rebCustodyFee'];
+        value = {};
+        for (const k of allow) {
+          const n = Number(incoming[k]);
+          if (incoming[k] == null || incoming[k] === '' || isNaN(n) || n < 0) {
+            return sendJson(res, 400, { error: `Invalid value for ${k}` });
+          }
+          value[k] = n;
+        }
+      }
+
+      let before = null;
+      try {
+        const rows = await supabaseRequest(`/rest/v1/app_settings?key=eq.${encodeURIComponent(key)}&select=value&limit=1`);
+        before = (rows && rows[0]?.value) || null;
+      } catch { /* table may not exist yet */ }
+
+      let saved;
+      try {
+        const out = await supabaseRequest(`/rest/v1/app_settings?on_conflict=key`, {
+          method: 'POST',
+          extraHeaders: { 'Prefer': 'resolution=merge-duplicates,return=representation' },
+          body: { key, value, updated_at: new Date().toISOString(), updated_by: result.user.email }
+        });
+        saved = Array.isArray(out) ? out[0] : out;
+      } catch (err) {
+        return sendJson(res, 500, { error: `Could not save settings: ${err.message}. Has the app_settings table been created?` });
+      }
+
+      await writeAudit({
+        action: 'update',
+        target_email: result.user.email,
+        target_member_id: null,
+        actor_email: result.user.email,
+        actor_user_id: result.user.id,
+        details: { setting: key, before, after: value }
+      });
+
+      return sendJson(res, 200, { ok: true, value: saved?.value || value });
+    }
+
     sendJson(res, 404, { error: 'Not found' });
   } catch (err) {
     console.error('[Team API]', err);
