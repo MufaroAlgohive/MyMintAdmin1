@@ -86,7 +86,7 @@ module.exports = async (req, res) => {
       }
     });
 
-    const [profiles, secMeta, secReturns, secIntraday, txns, familyMembers, drawdowns, residuals, rebEvents, rebBatches] = await Promise.all([
+    const [profiles, secMeta, secReturns, secIntraday, txns, familyMembers, drawdowns, residuals, rebEvents, rebBatches, closedHoldings] = await Promise.all([
       userIds.length
         ? sbGet(`profiles?select=id,first_name,last_name,email,mint_number,computershare_number&id=in.(${userIds.join(',')})`)
         : Promise.resolve([]),
@@ -135,6 +135,12 @@ module.exports = async (req, res) => {
         ? sbGet(`rebalance_event?select=user_id,family_member_id,batch_id,trade_side,quantity,price_at_commit,avg_fill,closed_reason&user_id=in.(${userIds.join(',')})`)
         : Promise.resolve([]),
       sbGet(`rebalance_batch?select=id,status`),
+      /* Closed positions (rebalance sells) carry REALISED P&L: (avg_exit −
+         avg_fill) × qty. Needed so a client's live P&L row stays stable across
+         rebalances instead of shrinking when sold shares leave the cost basis. */
+      userIds.length
+        ? sbGet(`stock_holdings_c?select=user_id,family_member_id,strategy_id,quantity,avg_fill,avg_exit&is_active=eq.false&user_id=in.(${userIds.join(',')})`)
+        : Promise.resolve([]),
     ]);
 
     /* Merge intraday current_price (cents) into secLive rows so the client
@@ -161,7 +167,7 @@ module.exports = async (req, res) => {
     });
 
     res.statusCode = 200;
-    res.end(JSON.stringify({ holdings, strategies, stratHist, profiles, secMeta, secLive, txns, familyMembers, drawdowns, residuals, rebEvents, rebBatches }));
+    res.end(JSON.stringify({ holdings, strategies, stratHist, profiles, secMeta, secLive, txns, familyMembers, drawdowns, residuals, rebEvents, rebBatches, closedHoldings }));
   } catch (err) {
     res.statusCode = 500;
     res.end(JSON.stringify({ error: err.message }));
