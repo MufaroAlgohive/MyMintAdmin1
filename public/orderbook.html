@@ -7445,6 +7445,13 @@
       if (!stratRow) {
         stratRow = (allOrderbookRows || []).find((r) => r.isStrategy && String(r.strategyId || '') === String(strategyId));
       }
+      if (!stratRow) {
+        // Top table is showing a pinned snapshot (live rows are empty/different),
+        // so resolve the strategy row from the pinned book's own rows. The fill
+        // pencils still write by sourceId — the same holdings either card touches.
+        const pinned = getPinnedTopBook();
+        stratRow = (pinned?.rows || []).find((r) => r.isStrategy && String(r.strategyId || '') === String(strategyId));
+      }
       if (!stratRow) return;
       const archiveScope = bookId != null && rowIndex != null
         ? `[data-book-id="${CSS.escape(String(bookId))}"][data-row-index="${CSS.escape(String(rowIndex))}"]`
