@@ -1170,6 +1170,12 @@
     .pin-order-btn svg { width: 13px; height: 13px; }
     .pin-order-btn.is-pinned { background: #2563eb; border-color: #2563eb; color: #fff; box-shadow: 0 1px 4px rgba(37,99,235,.35); }
     .pin-investor-col { width: 36px; text-align: center; }
+    .orderbook-section-row td.orderbook-section-cell {
+      position: sticky; left: 0;
+      background: #f1f5f9; color: #334155;
+      font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+      padding: 8px 14px; border-top: 2px solid #cbd5e1; border-bottom: 1px solid #e2e8f0;
+    }
     .investor-row { cursor: pointer; transition: background 0.12s ease; }
     .investor-row:hover { background: #f5f3ff; }
     .investor-row.selected { background: #ede9fe; box-shadow: inset 4px 0 0 #7c3aed; }
@@ -2695,8 +2701,9 @@
             : '';
           const investorKey = buildInvestorKey(u);
           const isSelected = selectedInvestorKey === investorKey;
+          const showPin = !!bookIdForPin && !options.hidePin;
           const isPinned = !!bookIdForPin && orderbookPins.has(bookIdForPin);
-          const pinCell = bookIdForPin
+          const pinCell = showPin
             ? `<td class="pin-investor-col"><button type="button" class="pin-order-btn${isPinned ? ' is-pinned' : ''}" data-pin-investor data-pin-key="${escapeHtml(bookIdForPin)}" title="${isPinned ? 'Unpin this order book from top' : 'Pin this order book to top'}" aria-pressed="${isPinned}"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H19v-2l-3-2z"/></svg></button></td>`
             : '';
           // Show purchase time so two buys of the same strategy by the same
@@ -2719,7 +2726,7 @@
         `;
         }).join('');
 
-        const pinHeader = bookIdForPin ? '<th class="pin-investor-col" aria-label="Pin"></th>' : '';
+        const pinHeader = (bookIdForPin && !options.hidePin) ? '<th class="pin-investor-col" aria-label="Pin"></th>' : '';
         const deleteHeader = cleanup ? '<th class="cleanup-delete-col" aria-label="Remove"></th>' : '';
         const reverseHeader = allowReverse ? '<th class="reverse-investor-col" aria-label="Reverse"></th>' : '';
 
@@ -3795,7 +3802,6 @@
     const updateOrderbookHeaderSequence = () => {
       activeOrderbookSequence = getTodayOrderbookSequence();
       if (!orderbookTitle) return;
-      if (getPinnedTopBook()) return; // a pinned snapshot owns the top title
       orderbookTitle.textContent = `Orderbook :${String(activeOrderbookSequence).padStart(2, '0')}`;
     };
 
@@ -5193,17 +5199,12 @@
       }
     };
 
-    const renderOrderbookRows = (rows) => {
-      if (!orderbookTableBody || !orderbookCount || !exportOrderbookBtn) return;
-      orderbookCount.textContent = `${rows.length} record${rows.length === 1 ? '' : 's'}`;
-      exportOrderbookBtn.disabled = rows.length === 0;
-
-      if (!rows.length) {
-        orderbookTableBody.innerHTML = '<tr><td class="orderbook-empty-row" colspan="14">No orderbook records found.</td></tr>';
-        return;
-      }
-
-      orderbookTableBody.innerHTML = rows.map((row) => {
+    // Build one main+detail row pair. keyPrefix namespaces the line keys so the
+    // pinned section and the live section never collide on data-line-key; detailOpts
+    // lets the pinned section render its strategy detail in its own DOM scope.
+    const buildOrderbookRowHtml = (row, opts = {}) => {
+        const keyPrefix = opts.keyPrefix || '';
+        const detailOpts = opts.detailOpts || { allowReverse: true };
         const sideValue = String(row.side || '-').toUpperCase();
         const sideClass = sideValue === 'BUY'
           ? 'side-badge-buy'
@@ -5232,7 +5233,7 @@
           const isSelected = option === row.brokerRef ? ' selected' : '';
           return `<option value="${escapeHtml(option)}"${isSelected}>${escapeHtml(option)}</option>`;
         }).join('');
-        const lineKey = escapeHtml(String(row.line));
+        const lineKey = escapeHtml(keyPrefix + String(row.line));
 
         // Build price / fill column
         let priceActionHtml = '';
@@ -5305,12 +5306,12 @@
             <td>${escapeHtml(asRandValue(row.marketValue))}</td>
             <td>${escapeHtml(row.orderType || '-')}</td>
             <td>
-              <select class="orderbook-select" data-settlement-select data-line="${escapeHtml(String(row.line))}">
+              <select class="orderbook-select" data-settlement-select data-line="${lineKey}">
                 ${settlementOptions}
               </select>
             </td>
             <td>
-              <select class="orderbook-select" data-broker-select data-line="${escapeHtml(String(row.line))}">
+              <select class="orderbook-select" data-broker-select data-line="${lineKey}">
                 ${brokerRefOptions}
               </select>
             </td>
@@ -5319,43 +5320,86 @@
           <tr class="orderbook-detail-row is-hidden" data-orderbook-detail-row data-line-key="${lineKey}">
             <td colspan="14">
               <div class="orderbook-detail-wrap">
-                ${row.isStrategy ? renderStrategyDetailsTable(row, { allowReverse: true }) : `<div class="orderbook-detail-title">BND Allocation Details</div>${renderBndDetailsTable(row)}`}
+                ${row.isStrategy ? renderStrategyDetailsTable(row, detailOpts) : `<div class="orderbook-detail-title">BND Allocation Details</div>${renderBndDetailsTable(row)}`}
               </div>
             </td>
           </tr>
         `;
-      }).join('');
     };
 
-    const applySearchFilter = () => {
-      // A pinned snapshot takes over the top table; otherwise show the live rows.
-      const pinnedBook = getPinnedTopBook();
-      const baseRows = pinnedBook ? (pinnedBook.rows || []) : allOrderbookRows;
-      if (orderbookTitle) {
-        orderbookTitle.textContent = pinnedBook
-          ? `Order Book ${pinnedBook.sequence} (pinned)`
-          : `Orderbook :${String(activeOrderbookSequence).padStart(2, '0')}`;
-      }
+    const renderSectionHeaderRow = (label) =>
+      `<tr class="orderbook-section-row"><td colspan="14" class="orderbook-section-cell">${escapeHtml(label)}</td></tr>`;
 
-      const query = orderbookSearch?.value?.trim().toLowerCase() || '';
-      if (!query) {
-        renderOrderbookRows(baseRows);
+    const renderOrderbookRows = (rows) => {
+      if (!orderbookTableBody || !orderbookCount || !exportOrderbookBtn) return;
+      orderbookCount.textContent = `${rows.length} record${rows.length === 1 ? '' : 's'}`;
+      exportOrderbookBtn.disabled = rows.length === 0;
+
+      if (!rows.length) {
+        orderbookTableBody.innerHTML = '<tr><td class="orderbook-empty-row" colspan="14">No orderbook records found.</td></tr>';
         return;
       }
 
-      const filtered = baseRows.filter((row) => {
-        return String(row.instrumentName || '').toLowerCase().includes(query)
-          || String(row.ticker || '').toLowerCase().includes(query)
-          || String(row.side || '').toLowerCase().includes(query)
-          || String(row.strategyName || '').toLowerCase().includes(query)
-          || String(row.strategyShortName || '').toLowerCase().includes(query)
-          || String(row.marketValue || '').toLowerCase().includes(query)
-          || String(row.orderType || '').toLowerCase().includes(query)
-          || String(row.settlementAccount || '').toLowerCase().includes(query)
-          || String(row.brokerRef || '').toLowerCase().includes(query)
-          || String(row.unrealizedPnl || '').toLowerCase().includes(query);
-      });
-      renderOrderbookRows(filtered);
+      orderbookTableBody.innerHTML = rows.map((row) => buildOrderbookRowHtml(row)).join('');
+    };
+
+    // A pinned snapshot is promoted into the top card under its own header, with
+    // the live/new orders kept visible underneath under a second header. The
+    // pinned section renders its detail in a distinct DOM scope (bookId
+    // "pinned:<id>") so its per-investor panels don't collide with the live
+    // section or the snapshot card below.
+    const renderOrderbookPinnedAndLive = (pinnedBook, pinnedRows, liveRows) => {
+      if (!orderbookTableBody || !orderbookCount || !exportOrderbookBtn) return;
+      orderbookCount.textContent = `${liveRows.length} live · ${pinnedRows.length} pinned`;
+      exportOrderbookBtn.disabled = (pinnedRows.length + liveRows.length) === 0;
+
+      const pinnedHtml = pinnedRows.length
+        ? renderSectionHeaderRow(`📌 Pinned — Order Book ${pinnedBook.sequence}`)
+          + pinnedRows.map((row) => buildOrderbookRowHtml(row, {
+              keyPrefix: 'p:',
+              detailOpts: {
+                allowReverse: true,
+                hidePin: true,
+                bookId: `pinned:${pinnedBook.id}`,
+                rowIndex: (pinnedBook.rows || []).indexOf(row),
+              },
+            })).join('')
+        : '';
+
+      const liveHtml = renderSectionHeaderRow('Live / new orders')
+        + (liveRows.length
+          ? liveRows.map((row) => buildOrderbookRowHtml(row)).join('')
+          : '<tr><td class="orderbook-empty-row" colspan="14">No new orders yet.</td></tr>');
+
+      orderbookTableBody.innerHTML = pinnedHtml + liveHtml;
+    };
+
+    const applySearchFilter = () => {
+      const pinnedBook = getPinnedTopBook();
+      if (orderbookTitle) {
+        orderbookTitle.textContent = `Orderbook :${String(activeOrderbookSequence).padStart(2, '0')}`;
+      }
+
+      const query = orderbookSearch?.value?.trim().toLowerCase() || '';
+      const matches = (row) =>
+        String(row.instrumentName || '').toLowerCase().includes(query)
+        || String(row.ticker || '').toLowerCase().includes(query)
+        || String(row.side || '').toLowerCase().includes(query)
+        || String(row.strategyName || '').toLowerCase().includes(query)
+        || String(row.strategyShortName || '').toLowerCase().includes(query)
+        || String(row.marketValue || '').toLowerCase().includes(query)
+        || String(row.orderType || '').toLowerCase().includes(query)
+        || String(row.settlementAccount || '').toLowerCase().includes(query)
+        || String(row.brokerRef || '').toLowerCase().includes(query)
+        || String(row.unrealizedPnl || '').toLowerCase().includes(query);
+
+      const liveRows = query ? allOrderbookRows.filter(matches) : allOrderbookRows;
+      if (!pinnedBook) {
+        renderOrderbookRows(liveRows);
+        return;
+      }
+      const pinnedRows = query ? (pinnedBook.rows || []).filter(matches) : (pinnedBook.rows || []);
+      renderOrderbookPinnedAndLive(pinnedBook, pinnedRows, liveRows);
     };
 
     const loadOrderbookClientSideFallback = async () => {
@@ -7439,7 +7483,10 @@
       if (!strategyId) return;
       let stratRow = null;
       if (bookId != null && rowIndex != null) {
-        const book = filledOrderbooksArchive.find((b) => String(b.id) === String(bookId));
+        // The pinned top section scopes its DOM with "pinned:<id>"; strip that to
+        // find the real archive book (the DOM scope keeps the prefix below).
+        const realBookId = String(bookId).replace(/^pinned:/, '');
+        const book = filledOrderbooksArchive.find((b) => String(b.id) === realBookId);
         stratRow = book?.rows?.[Number(rowIndex)] || null;
       }
       if (!stratRow) {
