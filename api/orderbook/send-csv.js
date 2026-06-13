@@ -21,25 +21,25 @@ module.exports = async (req, res) => {
     }
 
     // ── Orderbook pins ────────────────────────────────────────────────────────
-    // Pin a fresh order (by sourceId = stock_holdings_c.id) so it floats to the
-    // top of the live list. Non-destructive — no password gate. Stored in the
-    // orderbook_pins table (service-role; the page reads via list-pins).
+    // Pin an investor row (by pin_key = buildInvestorKey: userId|familyMemberId|
+    // txn) so it floats to the top of that strategy's investor list. Non-
+    // destructive — no password gate. Stored in orderbook_pins (service-role).
     if (action === 'list-pins') {
-      const pins = await fetchSupabaseJson('/rest/v1/orderbook_pins?select=source_id,user_id');
+      const pins = await fetchSupabaseJson('/rest/v1/orderbook_pins?select=pin_key,user_id');
       return sendJson(res, 200, { pins: Array.isArray(pins) ? pins : [] });
     }
     if (action === 'pin-investor' || action === 'unpin-investor') {
       const body = req.body && typeof req.body === 'object' ? req.body : {};
-      const sourceId = String(body.sourceId || '').trim();
-      if (!sourceId) return sendJson(res, 400, { error: 'sourceId required' });
+      const pinKey = String(body.pinKey || '').trim();
+      if (!pinKey) return sendJson(res, 400, { error: 'pinKey required' });
       if (action === 'unpin-investor') {
-        await requestSupabaseJson(`/rest/v1/orderbook_pins?source_id=eq.${encodeURIComponent(sourceId)}`, { method: 'DELETE' });
+        await requestSupabaseJson(`/rest/v1/orderbook_pins?pin_key=eq.${encodeURIComponent(pinKey)}`, { method: 'DELETE' });
         return sendJson(res, 200, { ok: true, pinned: false });
       }
-      await requestSupabaseJson('/rest/v1/orderbook_pins?on_conflict=source_id', {
+      await requestSupabaseJson('/rest/v1/orderbook_pins?on_conflict=pin_key', {
         method: 'POST',
         extraHeaders: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-        body: { source_id: sourceId, user_id: String(body.userId || '') || null, pinned_by: authUser?.email || null, pinned_at: new Date().toISOString() }
+        body: { pin_key: pinKey, user_id: String(body.userId || '') || null, pinned_by: authUser?.email || null, pinned_at: new Date().toISOString() }
       });
       return sendJson(res, 200, { ok: true, pinned: true });
     }

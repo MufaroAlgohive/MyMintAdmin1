@@ -1169,7 +1169,7 @@
     .pin-order-btn:hover { background: #dbeafe; border-color: #93c5fd; }
     .pin-order-btn svg { width: 13px; height: 13px; }
     .pin-order-btn.is-pinned { background: #2563eb; border-color: #2563eb; color: #fff; box-shadow: 0 1px 4px rgba(37,99,235,.35); }
-    .orderbook-pinned-row > td { background: #f5f9ff; }
+    .pin-investor-col { width: 36px; text-align: center; }
     .investor-row { cursor: pointer; transition: background 0.12s ease; }
     .investor-row:hover { background: #f5f3ff; }
     .investor-row.selected { background: #ede9fe; box-shadow: inset 4px 0 0 #7c3aed; }
@@ -2661,7 +2661,11 @@
       let usersHtml = '';
       if (users.length) {
         const allowReverse = allowReverseOpt && editable && !cleanup && !!row.strategyId;
-        const uBody = users.map((u, i) => {
+        // Pinned investors float to the top of this strategy's investor list.
+        const sortedUsers = users.slice().sort((a, b) =>
+          (orderbookPins.has(buildInvestorKey(b)) ? 1 : 0) - (orderbookPins.has(buildInvestorKey(a)) ? 1 : 0)
+        );
+        const uBody = sortedUsers.map((u, i) => {
           const deleteCell = cleanup
             ? `<td class="cleanup-delete-col"><button type="button" class="cleanup-delete-btn" data-cleanup-delete data-book-id="${escapeHtml(cleanupBookId)}" data-row-index="${escapeHtml(cleanupRowIndex)}" data-user-id="${escapeHtml(String(u.userId || ''))}" title="Remove this investor from this orderbook snapshot">&times;</button></td>`
             : '';
@@ -2683,6 +2687,8 @@
             : '';
           const investorKey = buildInvestorKey(u);
           const isSelected = selectedInvestorKey === investorKey;
+          const isPinned = orderbookPins.has(investorKey);
+          const pinCell = `<td class="pin-investor-col"><button type="button" class="pin-order-btn${isPinned ? ' is-pinned' : ''}" data-pin-investor data-pin-key="${escapeHtml(investorKey)}" data-user-id="${escapeHtml(String(u.userId || ''))}" title="${isPinned ? 'Unpin from top' : 'Pin to top'}" aria-pressed="${isPinned}"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H19v-2l-3-2z"/></svg></button></td>`;
           // Show purchase time so two buys of the same strategy by the same
           // user are visually distinguishable.
           const buyTime = u.createdAtBucket
@@ -2696,12 +2702,14 @@
             <td>${escapeHtml(maskIdentifier(u.clientIdRegNo || '-'))}</td>
             <td>${escapeHtml(formatMoney(u.totalMarketValue))}</td>
             <td>${escapeHtml(String(u.holdingsCount))}</td>
+            ${pinCell}
             ${deleteCell}
             ${reverseCell}
           </tr>
         `;
         }).join('');
 
+        const pinHeader = '<th class="pin-investor-col" aria-label="Pin"></th>';
         const deleteHeader = cleanup ? '<th class="cleanup-delete-col" aria-label="Remove"></th>' : '';
         const reverseHeader = allowReverse ? '<th class="reverse-investor-col" aria-label="Reverse"></th>' : '';
 
@@ -2717,6 +2725,7 @@
                   <th>ID / Reg No</th>
                   <th>Live Price</th>
                   <th>Holdings</th>
+                  ${pinHeader}
                   ${deleteHeader}
                   ${reverseHeader}
                 </tr>
@@ -5178,12 +5187,7 @@
         return;
       }
 
-      // Pinned orders float to the top (stable — preserves order within groups).
-      const orderedRows = rows.slice().sort((a, b) =>
-        (orderbookPins.has(String(b.sourceId)) ? 1 : 0) - (orderbookPins.has(String(a.sourceId)) ? 1 : 0)
-      );
-
-      orderbookTableBody.innerHTML = orderedRows.map((row) => {
+      orderbookTableBody.innerHTML = rows.map((row) => {
         const sideValue = String(row.side || '-').toUpperCase();
         const sideClass = sideValue === 'BUY'
           ? 'side-badge-buy'
@@ -5272,14 +5276,9 @@
           }
         }
 
-        const isPinned = !!row.sourceId && orderbookPins.has(String(row.sourceId));
-        const pinBtn = row.sourceId
-          ? `<button type="button" class="pin-order-btn${isPinned ? ' is-pinned' : ''}" data-pin-investor data-source-id="${escapeHtml(String(row.sourceId))}" data-user-id="${escapeHtml(String(row.userId || ''))}" title="${isPinned ? 'Unpin from top' : 'Pin to top'}" aria-pressed="${isPinned}"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H19v-2l-3-2z"/></svg></button>`
-          : '';
-
         return `
-          <tr class="orderbook-main-row${isPending ? ' orderbook-pending-row' : ''}${isPinned ? ' orderbook-pinned-row' : ''}" data-orderbook-main-row data-line-key="${lineKey}">
-            <td style="white-space:nowrap;"><span class="ob-actions-wrap">${pinBtn}${actionsHtml}</span></td>
+          <tr class="orderbook-main-row${isPending ? ' orderbook-pending-row' : ''}" data-orderbook-main-row data-line-key="${lineKey}">
+            <td style="white-space:nowrap;">${actionsHtml}</td>
             <td>${escapeHtml(String(row.line ?? '-'))}</td>
             <td>${escapeHtml(row.instrumentName || '-')}${strategyTag}${pendingBadge}${rebalancedBadge}</td>
             <td class="orderbook-cell-muted">${escapeHtml(row.ticker || '-')}</td>
@@ -5881,7 +5880,7 @@
           body: '{}',
         });
         const j = await r.json();
-        orderbookPins = new Set((j.pins || []).map((p) => String(p.source_id)));
+        orderbookPins = new Set((j.pins || []).map((p) => String(p.pin_key)));
       } catch (e) { /* keep existing pins on failure */ }
     };
 
@@ -7095,10 +7094,10 @@
         if (!pinBtn) return;
         event.preventDefault();
         event.stopPropagation();
-        const sourceId = pinBtn.dataset.sourceId;
+        const pinKey = pinBtn.dataset.pinKey;
         const userId = pinBtn.dataset.userId || '';
-        if (!sourceId) return;
-        const currentlyPinned = orderbookPins.has(String(sourceId));
+        if (!pinKey) return;
+        const currentlyPinned = orderbookPins.has(String(pinKey));
         pinBtn.disabled = true;
         try {
           const { data } = await supabaseClient.auth.getSession();
@@ -7108,13 +7107,16 @@
           const r = await fetch('/api/orderbook/send-csv?action=' + action, {
             method: 'POST',
             headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sourceId, userId }),
+            body: JSON.stringify({ pinKey, userId }),
           });
           const j = await r.json();
           if (!r.ok || !j.ok) throw new Error(j?.error || 'Pin failed');
-          if (currentlyPinned) orderbookPins.delete(String(sourceId));
-          else orderbookPins.add(String(sourceId));
+          if (currentlyPinned) orderbookPins.delete(String(pinKey));
+          else orderbookPins.add(String(pinKey));
+          // Re-render both the live list and the snapshots (the investor table
+          // lives in both) so the pinned row jumps to the top.
           applySearchFilter();
+          if (typeof renderFilledOrderbooks === 'function') renderFilledOrderbooks();
         } catch (err) {
           alert('Pin error: ' + (err?.message || err));
         } finally {
