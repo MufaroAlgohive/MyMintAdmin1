@@ -108,6 +108,9 @@
         <div class="group-label">Purchase fees (app)</div>
         <div id="grp-purchase"></div>
 
+        <div class="group-label">Cash asset class</div>
+        <div id="grp-cash"></div>
+
         <div class="group-label">Strategy</div>
         <div id="grp-strategy"></div>
 
@@ -133,7 +136,7 @@
     const FIELDS = [
       { key:'isinFeePerAsset',      group:'grp-purchase',  kind:'money',   label:'Custody fee per asset',  hint:'Charged per underlying security in a basket' },
       { key:'brokerFeeRate',        group:'grp-purchase',  kind:'percent', label:'Broker fee',             hint:'Percent of the buffered investment' },
-      { key:'executionReserveRate', group:'grp-purchase',  kind:'percent', label:'Execution reserve (buffer)', hint:'The reserve held on every buy' },
+      { key:'executionReserveRate', group:'grp-cash',      kind:'percent', label:'Execution reserve', hint:'Held cash set aside on every buy — a cash asset, not a fee' },
       { key:'transactionFeeRate',   group:'grp-purchase',  kind:'percent', label:'Transaction fee',        hint:'Percent of the buffered investment' },
       { key:'monthlyStrategyFee',   group:'grp-strategy',  kind:'money',   label:'Monthly additional-strategy fee', hint:'Charged per extra strategy, per month' },
       { key:'rebBrokerageRate',     group:'grp-rebalance', kind:'percent', label:'Rebalance brokerage',    hint:'Brokerage applied during rebalances' },
