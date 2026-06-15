@@ -96,21 +96,23 @@ const handleAddWallet = async (req, res, token) => {
   }
 
   let walletId;
+  let newWalletBalance;
   try {
     if (existing && existing.length > 0) {
       const wallet = existing[0];
-      const newBalance = Number(wallet.balance || 0) + numericAmount;
+      newWalletBalance = Number(wallet.balance || 0) + numericAmount;
       await requestSupabaseJson(`/rest/v1/wallets?id=eq.${encodeURIComponent(wallet.id)}`, {
         method: 'PATCH',
         useServiceRoleAuth: true,
-        body: { balance: newBalance, updated_at: new Date().toISOString() },
+        body: { balance: newWalletBalance, mailer: 'sent', updated_at: new Date().toISOString() },
       });
       walletId = wallet.id;
     } else {
+      newWalletBalance = numericAmount;
       const created = await requestSupabaseJson('/rest/v1/wallets', {
         method: 'POST',
         useServiceRoleAuth: true,
-        body: { user_id, balance: numericAmount, currency: 'ZAR' },
+        body: { user_id, balance: numericAmount, currency: 'ZAR', mailer: 'sent' },
         extraHeaders: { Prefer: 'return=representation' },
       });
       if (Array.isArray(created) && created[0]) {
@@ -122,7 +124,6 @@ const handleAddWallet = async (req, res, token) => {
   } catch (e) {
     return sendJson(res, 500, { error: 'wallet-upsert: ' + e.message });
   }
-
 
   if (walletId) {
     try {
@@ -136,7 +137,7 @@ const handleAddWallet = async (req, res, token) => {
     }
   }
 
-  return sendJson(res, 200, { success: true });
+  return sendJson(res, 200, { success: true, amountAdded: numericAmount, newBalance: newWalletBalance, walletId });
 };
 
 module.exports = async (req, res) => {

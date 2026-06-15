@@ -576,8 +576,30 @@
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || 'Failed to add to wallet');
 
+        // Refresh table to get updated profile/wallet info for the email
         addWalletSuccess.textContent = `Successfully added ${formatCurrency(amount)} to wallet`;
         addWalletSuccess.style.display = 'block';
+
+        // Fetch profile so we have email, firstName, mintNumber for the notification email
+        const { data: profileRows } = await supabaseClient
+          .from('profiles')
+          .select('email, first_name, mint_number')
+          .eq('id', clientId)
+          .limit(1);
+        const profile = profileRows && profileRows[0];
+
+        if (profile && profile.email) {
+          await sendWalletEmail(
+            result.walletId || '',
+            profile.email,
+            profile.first_name || '',
+            profile.mint_number || '',
+            result.newBalance,
+            'ZAR',
+            new Date().toISOString(),
+            result.amountAdded
+          );
+        }
 
         walletAmount.value = '';
         selectedClientId.value = '';
@@ -778,7 +800,7 @@
       }, 4000);
     };
 
-    window.sendWalletEmail = async (walletId, email, firstName, mintNumber, balance, currency, createdAt) => {
+    window.sendWalletEmail = async (walletId, email, firstName, mintNumber, balance, currency, createdAt, amountAdded) => {
       if (!email) {
         alert('Client email not found');
         return;
@@ -852,11 +874,15 @@
               <td class="padding-mobile" style="padding:0 48px 32px 48px;">
                 <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
                   <tr>
-                    <td class="feature-col-a" valign="middle" style="width:55%;padding-right:20px;text-align:center;">
+                    <td class="feature-col-a" valign="middle" style="width:55%;padding-right:20px;">
                       <p style="margin:0;font-size:11px;color:#8e8eb2;text-transform:uppercase;letter-spacing:1.5px;font-weight:700;">MINT Number</p>
                       <p class="text-primary" style="margin:6px 0 36px 0;font-size:16px;font-weight:500;color:#31005e;">${mintNumber}</p>
-                      <p style="margin:0;font-size:11px;color:#8e8eb2;text-transform:uppercase;letter-spacing:1.5px;font-weight:700;">Wallet Balance</p>
-                      <p style="margin:6px 0 0 0;font-size:32px;font-weight:700;color:#5c3bcf;letter-spacing:-0.5px;">${currency} ${balance}</p>
+                      ${amountAdded != null ? `
+                      <p style="margin:0;font-size:11px;color:#8e8eb2;text-transform:uppercase;letter-spacing:1.5px;font-weight:700;">Amount Added</p>
+                      <p style="margin:6px 0 24px 0;font-size:24px;font-weight:700;color:#059669;letter-spacing:-0.5px;">${currency} ${Number(amountAdded).toLocaleString('en-ZA', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                      ` : ''}
+                      <p style="margin:0;font-size:11px;color:#8e8eb2;text-transform:uppercase;letter-spacing:1.5px;font-weight:700;">Total Wallet Balance</p>
+                      <p style="margin:6px 0 0 0;font-size:32px;font-weight:700;color:#5c3bcf;letter-spacing:-0.5px;">${currency} ${Number(balance).toLocaleString('en-ZA', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
                     </td>
                     <td class="feature-col-b" valign="middle" style="width:45%;text-align:right;">
                       <img src="https://my-mint-admin.vercel.app/images/wallet-illustration.svg" alt="Wallet Illustration" width="180" style="display:inline-block;border-radius:16px;">
