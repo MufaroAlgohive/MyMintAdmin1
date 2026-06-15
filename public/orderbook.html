@@ -6215,6 +6215,25 @@
         const nowIso = new Date().toISOString();
         const fillDateStr = nowIso.split('T')[0];
         const strategyId = batch.strategy_id;
+
+        /* ── Idempotency guard (atomic claim) ──────────────────────────────────
+           Settlement is NOT idempotent — it inserts BUY holdings and SELL audit
+           rows unconditionally. A double-click or a retry under a slow DB would
+           therefore run it twice and duplicate every row (we saw ABG 2+2=4,
+           CLI 40+40=80). Flip PENDING→SETTLED in a single conditional UPDATE and
+           only proceed if THIS call won the flip. The DB makes the WHERE
+           status='PENDING' atomic, so a concurrent/duplicate settle matches 0
+           rows and aborts here, before any holdings are written. */
+        const claim = await supabaseClient
+          .from('rebalance_batch')
+          .update({ status: 'SETTLED', updated_at: nowIso })
+          .eq('id', batch.id)
+          .eq('status', 'PENDING')
+          .select('id');
+        if (claim.error) throw new Error('Could not claim batch for settlement: ' + claim.error.message);
+        if (!claim.data || !claim.data.length) {
+          throw new Error('This batch is no longer pending — it has already been settled or reversed. Settlement skipped to prevent duplicate holdings.');
+        }
         const sellEvts = events.filter((e) => e.trade_side === 'SELL');
         const buyEvts = events.filter((e) => e.closed_reason === 'REBALANCE_EVENT_BUY');
         const walletBuyEvts = events.filter((e) => e.closed_reason === 'REBALANCE_EVENT_BUY_WALLET');
