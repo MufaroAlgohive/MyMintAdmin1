@@ -478,9 +478,7 @@ const handleSendTradeConfirmation = async (req, res, token) => {
           const sQtyDisplay = Number(sHolding.total_quantity).toLocaleString('en-ZA', { minimumFractionDigits: 0, maximumFractionDigits: 4 });
           const sTotalStr = `R ${sHolding.total_value.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
           
-          if (tableRowsHtml !== '') {
-            tableRowsHtml += `<tr><td colspan="2" style="height:20px;border-bottom:1px solid #e2e8f0;background:#f8fafc;"></td></tr>`;
-          }
+          // separator removed
           tableRowsHtml += buildTradeRow({ side: sSide, assetName: sSecurity.name || sTicker, quantityDisplay: sQtyDisplay, totalAmountStr: sTotalStr, ref: sHolding.ref });
         }
 
@@ -491,7 +489,7 @@ const handleSendTradeConfirmation = async (req, res, token) => {
           orderDate: execDate,
           tableRowsHtml,
           subjectHeading: 'Basket Purchased.',
-          subjectIntro: `Welcome to intentional investing. <br/><br/>Your <strong>${strategyName}</strong> is built and MINT's engine is now actively managing it for you. Here is what we executed:`
+          subjectIntro: `Welcome to intentional investing. <br/><br/>Your Yield Basket is now live and being actively managed by MINT. Here is what we executed:`
         });
       } else {
         htmlContent = buildEmailHtml({
@@ -547,9 +545,7 @@ const handleSendTradeConfirmation = async (req, res, token) => {
         const quantityDisplay = Number(bHolding.total_quantity).toLocaleString('en-ZA', { minimumFractionDigits: 0, maximumFractionDigits: 4 });
         const totalAmountStr = `R ${bHolding.total_value.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
         
-        if (tableRowsHtml !== '') {
-          tableRowsHtml += `<tr><td colspan="2" style="height:20px;border-bottom:1px solid #e2e8f0;background:#f8fafc;"></td></tr>`;
-        }
+        // separator removed
         tableRowsHtml += buildTradeRow({ side, assetName: security.name || ticker, quantityDisplay, totalAmountStr, ref: bHolding.ref });
       }
 

@@ -123,7 +123,11 @@ const buildEmailHtml = ({ firstName, mintRef, orderDate, tableRowsHtml, subjectH
 </body>
 </html>`;
 
-const run = async () => {
+export default async function handler(req, res) {
+  if (req.method !== 'POST' && req.method !== 'GET') {
+    return res.status(405).json({ error: 'Method Not Allowed' });
+  }
+
   const emailTo = ['lonwabo@mymint.co.za', 'mufaro.ncube@mymint.co.za'];
   const resendApiKey = process.env.RESEND_API_KEY;
   const orderbookEmailFrom = process.env.ORDERBOOK_EMAIL_FROM || 'notifications@mymint.co.za';
@@ -132,13 +136,15 @@ const run = async () => {
 
   if (!resendApiKey || !supabaseUrl || !supabaseKey) {
     console.error('Missing env vars');
-    return;
+    return res.status(500).json({ error: 'Missing env vars' });
   }
 
   const usersToTest = [
     '68a99359-5689-4692-b2ab-c3396704a190',
     '0f3dff04-c62b-491f-87dc-8e94edad57ee'
   ];
+
+  const results = [];
 
   for (const userId of usersToTest) {
     console.log(`\n--- Fetching live data for user ${userId} ---`);
@@ -289,11 +295,13 @@ const run = async () => {
 
     if (response.ok) {
       console.log('  Live-data mock email sent successfully!');
+      results.push({ userId, status: 'success' });
     } else {
       const err = await response.json().catch(()=>({}));
       console.error('  Failed to send mock email:', err);
+      results.push({ userId, status: 'error', error: err });
     }
   }
-};
 
-run();
+  return res.status(200).json({ success: true, results });
+}
