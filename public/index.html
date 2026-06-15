@@ -8156,7 +8156,10 @@
           || (activeProfileFilters.kyc === 'completed' && effectiveKycState.completed)
           || (activeProfileFilters.kyc === 'pending' && effectiveKycState.pending)
           || (activeProfileFilters.kyc === 'rejected' && effectiveKycState.rejected)
-          || (activeProfileFilters.kyc === 'not-completed' && !effectiveKycState.completed);
+          || (activeProfileFilters.kyc === 'not-completed'
+              && !effectiveKycState.completed
+              && !effectiveKycState.pending
+              && !effectiveKycState.rejected);
 
         const bankInitiated = getBankInitiatedForProfile(profile);
         const matchesBank = activeProfileFilters.bank === 'all'

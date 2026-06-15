@@ -1158,6 +1158,24 @@
       cursor: not-allowed;
     }
     .reverse-investor-btn svg { width: 14px; height: 14px; }
+    /* Pin-to-top button (blue) on fresh orders */
+    .ob-actions-wrap { display: inline-flex; align-items: center; gap: 6px; }
+    .pin-order-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 26px; height: 26px; flex-shrink: 0;
+      border-radius: 7px; border: 1px solid #bfdbfe; background: #eff6ff;
+      color: #2563eb; cursor: pointer; padding: 0; transition: all 0.12s ease;
+    }
+    .pin-order-btn:hover { background: #dbeafe; border-color: #93c5fd; }
+    .pin-order-btn svg { width: 13px; height: 13px; }
+    .pin-order-btn.is-pinned { background: #2563eb; border-color: #2563eb; color: #fff; box-shadow: 0 1px 4px rgba(37,99,235,.35); }
+    .pin-investor-col { width: 36px; text-align: center; }
+    .orderbook-section-row td.orderbook-section-cell {
+      position: sticky; left: 0;
+      background: transparent; color: #b6bfca;
+      font-size: 10.5px; font-weight: 500; letter-spacing: .01em;
+      padding: 12px 14px 4px; border: 0;
+    }
     .investor-row { cursor: pointer; transition: background 0.12s ease; }
     .investor-row:hover { background: #f5f3ff; }
     .investor-row.selected { background: #ede9fe; box-shadow: inset 4px 0 0 #7c3aed; }
@@ -1597,6 +1615,9 @@
     const strateBirPreviewHead = document.getElementById('strateBirPreviewHead');
     const strateBirPreviewBody = document.getElementById('strateBirPreviewBody');
     let allOrderbookRows = [];
+    // Pinned fresh orders (sourceId = stock_holdings_c.id) — float to the top of
+    // the live list. Loaded from orderbook_pins via the send-csv api.
+    let orderbookPins = new Set();
     let allOrderbookRawRows = [];
     let allBirSourceRows = [];
     let strateBirPreviewMode = 'table';
@@ -1616,6 +1637,15 @@
     const ARCHIVE_BACKFILL_KEY = 'orderbook-archive-backfill-v2';
     const MANUALLY_CLOSED_BOOKS_KEY = 'orderbook-manually-closed-v1';
     let filledOrderbooksArchive = [];
+    // The blue pin promotes a captured snapshot into the top "live" table.
+    // If any snapshot is pinned, the most recent pinned book's rows are shown
+    // up top (instead of the live active rows) until it is unpinned.
+    const getPinnedTopBook = () => {
+      if (!orderbookPins || !orderbookPins.size) return null;
+      const pinned = (filledOrderbooksArchive || []).filter((b) => orderbookPins.has(String(b.id)));
+      if (!pinned.length) return null;
+      return pinned.slice().sort((a, b) => (b.sequence || 0) - (a.sequence || 0))[0];
+    };
     let holdingFillDateById = new Map();
     /* Per-holding execution economics for the MINT PnL column, keyed by
        stock_holdings_c id. Built once per load from the authoritative holdings
@@ -2474,7 +2504,7 @@
 
       const { data, error } = await supabaseClient
         .from('stock_holdings_c')
-        .select('id, quantity, avg_fill, security_id, side')
+        .select('id, quantity, avg_fill, security_id')
         .in('id', ids);
       if (error) throw new Error(error.message || 'Failed to load investor holdings');
 
@@ -2497,7 +2527,7 @@
           avgFill: avgFillRand != null
             ? `R ${avgFillRand.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
             : '-',
-          side: db.side || m.side || '-',
+          side: m.side || '-',
           sourceIds: [String(db.id)],
           sourceId: String(db.id),
         };
@@ -2646,6 +2676,9 @@
       let usersHtml = '';
       if (users.length) {
         const allowReverse = allowReverseOpt && editable && !cleanup && !!row.strategyId;
+        // The blue pin (per investor row) pins the WHOLE order book to the top of
+        // the Snapshots list — keyed by the book id, not the investor.
+        const bookIdForPin = options.bookId != null ? String(options.bookId) : '';
         const uBody = users.map((u, i) => {
           const deleteCell = cleanup
             ? `<td class="cleanup-delete-col"><button type="button" class="cleanup-delete-btn" data-cleanup-delete data-book-id="${escapeHtml(cleanupBookId)}" data-row-index="${escapeHtml(cleanupRowIndex)}" data-user-id="${escapeHtml(String(u.userId || ''))}" title="Remove this investor from this orderbook snapshot">&times;</button></td>`
@@ -2668,6 +2701,11 @@
             : '';
           const investorKey = buildInvestorKey(u);
           const isSelected = selectedInvestorKey === investorKey;
+          const showPin = !!bookIdForPin && !options.hidePin;
+          const isPinned = !!bookIdForPin && orderbookPins.has(bookIdForPin);
+          const pinCell = showPin
+            ? `<td class="pin-investor-col"><button type="button" class="pin-order-btn${isPinned ? ' is-pinned' : ''}" data-pin-investor data-pin-key="${escapeHtml(bookIdForPin)}" title="${isPinned ? 'Unpin this order book from top' : 'Pin this order book to top'}" aria-pressed="${isPinned}"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H19v-2l-3-2z"/></svg></button></td>`
+            : '';
           // Show purchase time so two buys of the same strategy by the same
           // user are visually distinguishable.
           const buyTime = u.createdAtBucket
@@ -2681,12 +2719,14 @@
             <td>${escapeHtml(maskIdentifier(u.clientIdRegNo || '-'))}</td>
             <td>${escapeHtml(formatMoney(u.totalMarketValue))}</td>
             <td>${escapeHtml(String(u.holdingsCount))}</td>
+            ${pinCell}
             ${deleteCell}
             ${reverseCell}
           </tr>
         `;
         }).join('');
 
+        const pinHeader = (bookIdForPin && !options.hidePin) ? '<th class="pin-investor-col" aria-label="Pin"></th>' : '';
         const deleteHeader = cleanup ? '<th class="cleanup-delete-col" aria-label="Remove"></th>' : '';
         const reverseHeader = allowReverse ? '<th class="reverse-investor-col" aria-label="Reverse"></th>' : '';
 
@@ -2702,6 +2742,7 @@
                   <th>ID / Reg No</th>
                   <th>Live Price</th>
                   <th>Holdings</th>
+                  ${pinHeader}
                   ${deleteHeader}
                   ${reverseHeader}
                 </tr>
@@ -2859,12 +2900,12 @@
       return csvLines.join('\n');
     };
 
-    const downloadCsv = (rows) => {
+    const downloadCsv = (rows, fileName) => {
       const blob = new Blob([toCsvContent(rows)], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `orderbook-${new Date().toISOString().slice(0, 10)}.csv`;
+      link.download = fileName || `orderbook-${new Date().toISOString().slice(0, 10)}.csv`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -4636,6 +4677,11 @@
           sorted = activeBooks.slice().sort((a, b) => (b.sequence || 0) - (a.sequence || 0));
         }
 
+        // Pinned order books float to the very top (stable within the chosen sort).
+        sorted = sorted.slice().sort((a, b) =>
+          (orderbookPins.has(String(b.id)) ? 1 : 0) - (orderbookPins.has(String(a.id)) ? 1 : 0)
+        );
+
         filledOrderbooksList.innerHTML = sorted.map((book) => {
           const rows = Array.isArray(book.rows) ? book.rows : [];
           const body = rows.length
@@ -5153,17 +5199,12 @@
       }
     };
 
-    const renderOrderbookRows = (rows) => {
-      if (!orderbookTableBody || !orderbookCount || !exportOrderbookBtn) return;
-      orderbookCount.textContent = `${rows.length} record${rows.length === 1 ? '' : 's'}`;
-      exportOrderbookBtn.disabled = rows.length === 0;
-
-      if (!rows.length) {
-        orderbookTableBody.innerHTML = '<tr><td class="orderbook-empty-row" colspan="14">No orderbook records found.</td></tr>';
-        return;
-      }
-
-      orderbookTableBody.innerHTML = rows.map((row) => {
+    // Build one main+detail row pair. keyPrefix namespaces the line keys so the
+    // pinned section and the live section never collide on data-line-key; detailOpts
+    // lets the pinned section render its strategy detail in its own DOM scope.
+    const buildOrderbookRowHtml = (row, opts = {}) => {
+        const keyPrefix = opts.keyPrefix || '';
+        const detailOpts = opts.detailOpts || { allowReverse: true };
         const sideValue = String(row.side || '-').toUpperCase();
         const sideClass = sideValue === 'BUY'
           ? 'side-badge-buy'
@@ -5192,7 +5233,7 @@
           const isSelected = option === row.brokerRef ? ' selected' : '';
           return `<option value="${escapeHtml(option)}"${isSelected}>${escapeHtml(option)}</option>`;
         }).join('');
-        const lineKey = escapeHtml(String(row.line));
+        const lineKey = escapeHtml(keyPrefix + String(row.line));
 
         // Build price / fill column
         let priceActionHtml = '';
@@ -5265,12 +5306,12 @@
             <td>${escapeHtml(asRandValue(row.marketValue))}</td>
             <td>${escapeHtml(row.orderType || '-')}</td>
             <td>
-              <select class="orderbook-select" data-settlement-select data-line="${escapeHtml(String(row.line))}">
+              <select class="orderbook-select" data-settlement-select data-line="${lineKey}">
                 ${settlementOptions}
               </select>
             </td>
             <td>
-              <select class="orderbook-select" data-broker-select data-line="${escapeHtml(String(row.line))}">
+              <select class="orderbook-select" data-broker-select data-line="${lineKey}">
                 ${brokerRefOptions}
               </select>
             </td>
@@ -5279,34 +5320,87 @@
           <tr class="orderbook-detail-row is-hidden" data-orderbook-detail-row data-line-key="${lineKey}">
             <td colspan="14">
               <div class="orderbook-detail-wrap">
-                ${row.isStrategy ? renderStrategyDetailsTable(row, { allowReverse: true }) : `<div class="orderbook-detail-title">BND Allocation Details</div>${renderBndDetailsTable(row)}`}
+                ${row.isStrategy ? renderStrategyDetailsTable(row, detailOpts) : `<div class="orderbook-detail-title">BND Allocation Details</div>${renderBndDetailsTable(row)}`}
               </div>
             </td>
           </tr>
         `;
-      }).join('');
     };
 
-    const applySearchFilter = () => {
-      const query = orderbookSearch?.value?.trim().toLowerCase() || '';
-      if (!query) {
-        renderOrderbookRows(allOrderbookRows);
+    const renderSectionHeaderRow = (label) =>
+      `<tr class="orderbook-section-row"><td colspan="14" class="orderbook-section-cell">${escapeHtml(label)}</td></tr>`;
+
+    const renderOrderbookRows = (rows) => {
+      if (!orderbookTableBody || !orderbookCount || !exportOrderbookBtn) return;
+      orderbookCount.textContent = `${rows.length} record${rows.length === 1 ? '' : 's'}`;
+      exportOrderbookBtn.disabled = rows.length === 0;
+
+      if (!rows.length) {
+        orderbookTableBody.innerHTML = '<tr><td class="orderbook-empty-row" colspan="14">No orderbook records found.</td></tr>';
         return;
       }
 
-      const filtered = allOrderbookRows.filter((row) => {
-        return String(row.instrumentName || '').toLowerCase().includes(query)
-          || String(row.ticker || '').toLowerCase().includes(query)
-          || String(row.side || '').toLowerCase().includes(query)
-          || String(row.strategyName || '').toLowerCase().includes(query)
-          || String(row.strategyShortName || '').toLowerCase().includes(query)
-          || String(row.marketValue || '').toLowerCase().includes(query)
-          || String(row.orderType || '').toLowerCase().includes(query)
-          || String(row.settlementAccount || '').toLowerCase().includes(query)
-          || String(row.brokerRef || '').toLowerCase().includes(query)
-          || String(row.unrealizedPnl || '').toLowerCase().includes(query);
-      });
-      renderOrderbookRows(filtered);
+      orderbookTableBody.innerHTML = rows.map((row) => buildOrderbookRowHtml(row)).join('');
+    };
+
+    // A pinned snapshot is promoted into the top card under its own header, with
+    // the live/new orders kept visible underneath under a second header. The
+    // pinned section renders its detail in a distinct DOM scope (bookId
+    // "pinned:<id>") so its per-investor panels don't collide with the live
+    // section or the snapshot card below.
+    const renderOrderbookPinnedAndLive = (pinnedBook, pinnedRows, liveRows) => {
+      if (!orderbookTableBody || !orderbookCount || !exportOrderbookBtn) return;
+      const total = pinnedRows.length + liveRows.length;
+      orderbookCount.textContent = `${total} record${total === 1 ? '' : 's'}`;
+      exportOrderbookBtn.disabled = total === 0;
+
+      const pinnedHtml = pinnedRows.length
+        ? renderSectionHeaderRow(`Order Book ${pinnedBook.sequence}`)
+          + pinnedRows.map((row) => buildOrderbookRowHtml(row, {
+              keyPrefix: 'p:',
+              detailOpts: {
+                allowReverse: true,
+                hidePin: true,
+                bookId: `pinned:${pinnedBook.id}`,
+                rowIndex: (pinnedBook.rows || []).indexOf(row),
+              },
+            })).join('')
+        : '';
+
+      const liveHtml = renderSectionHeaderRow('Live')
+        + (liveRows.length
+          ? liveRows.map((row) => buildOrderbookRowHtml(row)).join('')
+          : '<tr><td class="orderbook-empty-row" colspan="14">No new orders yet.</td></tr>');
+
+      orderbookTableBody.innerHTML = pinnedHtml + liveHtml;
+    };
+
+    const applySearchFilter = () => {
+      const pinnedBook = getPinnedTopBook();
+      if (orderbookTitle) {
+        orderbookTitle.textContent = `Orderbook :${String(activeOrderbookSequence).padStart(2, '0')}`;
+      }
+
+      const query = orderbookSearch?.value?.trim().toLowerCase() || '';
+      const matches = (row) =>
+        String(row.instrumentName || '').toLowerCase().includes(query)
+        || String(row.ticker || '').toLowerCase().includes(query)
+        || String(row.side || '').toLowerCase().includes(query)
+        || String(row.strategyName || '').toLowerCase().includes(query)
+        || String(row.strategyShortName || '').toLowerCase().includes(query)
+        || String(row.marketValue || '').toLowerCase().includes(query)
+        || String(row.orderType || '').toLowerCase().includes(query)
+        || String(row.settlementAccount || '').toLowerCase().includes(query)
+        || String(row.brokerRef || '').toLowerCase().includes(query)
+        || String(row.unrealizedPnl || '').toLowerCase().includes(query);
+
+      const liveRows = query ? allOrderbookRows.filter(matches) : allOrderbookRows;
+      if (!pinnedBook) {
+        renderOrderbookRows(liveRows);
+        return;
+      }
+      const pinnedRows = query ? (pinnedBook.rows || []).filter(matches) : (pinnedBook.rows || []);
+      renderOrderbookPinnedAndLive(pinnedBook, pinnedRows, liveRows);
     };
 
     const loadOrderbookClientSideFallback = async () => {
@@ -5845,6 +5939,21 @@
       return groupByStrategy(aggregated, allDisplayRows);
     };
 
+    const loadOrderbookPins = async () => {
+      try {
+        const { data } = await supabaseClient.auth.getSession();
+        const t = data?.session?.access_token;
+        if (!t) return;
+        const r = await fetch('/api/orderbook/send-csv?action=list-pins', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' },
+          body: '{}',
+        });
+        const j = await r.json();
+        orderbookPins = new Set((j.pins || []).map((p) => String(p.pin_key)));
+      } catch (e) { /* keep existing pins on failure */ }
+    };
+
     const loadOrderbook = async () => {
       if (!orderbookTableBody) return;
 
@@ -5858,6 +5967,7 @@
       setArchiveBooksLoading(true);
 
       try {
+        await loadOrderbookPins();
         allOrderbookRows = await loadOrderbookClientSideFallback();
         applySearchFilter();
         renderStrateBirPreview();
@@ -7047,6 +7157,45 @@
     }
 
     if (orderbookTableBody) {
+      // Pin / unpin the whole order book to the top of the Snapshots list
+      // (non-destructive, no password). The pin button lives inside snapshot
+      // investor tables (rendered in filledOrderbooksList, not this live table),
+      // so listen at the document level. Persists in orderbook_pins via the api.
+      document.addEventListener('click', async (event) => {
+        const pinBtn = event.target.closest('[data-pin-investor]');
+        if (!pinBtn) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const pinKey = pinBtn.dataset.pinKey;
+        const userId = pinBtn.dataset.userId || '';
+        if (!pinKey) return;
+        const currentlyPinned = orderbookPins.has(String(pinKey));
+        pinBtn.disabled = true;
+        try {
+          const { data } = await supabaseClient.auth.getSession();
+          const t = data?.session?.access_token;
+          if (!t) { alert('No active session.'); return; }
+          const action = currentlyPinned ? 'unpin-investor' : 'pin-investor';
+          const r = await fetch('/api/orderbook/send-csv?action=' + action, {
+            method: 'POST',
+            headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pinKey, userId }),
+          });
+          const j = await r.json();
+          if (!r.ok || !j.ok) throw new Error(j?.error || 'Pin failed');
+          if (currentlyPinned) orderbookPins.delete(String(pinKey));
+          else orderbookPins.add(String(pinKey));
+          // Re-render both the live list and the snapshots (the investor table
+          // lives in both) so the pinned row jumps to the top.
+          applySearchFilter();
+          if (typeof renderFilledOrderbooks === 'function') renderFilledOrderbooks();
+        } catch (err) {
+          alert('Pin error: ' + (err?.message || err));
+        } finally {
+          pinBtn.disabled = false;
+        }
+      });
+
       orderbookTableBody.addEventListener('click', (event) => {
         if (event.target.closest('select, button, input, a, option')) {
           return;
@@ -7093,19 +7242,37 @@
     if (exportOrderbookBtn) {
       exportOrderbookBtn.addEventListener('click', () => {
         const query = orderbookSearch?.value?.trim().toLowerCase() || '';
-        const rows = query
-          ? allOrderbookRows.filter((row) => {
-            return String(row.instrumentName || '').toLowerCase().includes(query)
-              || String(row.ticker || '').toLowerCase().includes(query)
-              || String(row.side || '').toLowerCase().includes(query)
-              || String(row.marketValue || '').toLowerCase().includes(query)
-              || String(row.orderType || '').toLowerCase().includes(query)
-              || String(row.settlementAccount || '').toLowerCase().includes(query)
-                || String(row.brokerRef || '').toLowerCase().includes(query)
-                || String(row.unrealizedPnl || '').toLowerCase().includes(query);
-          })
-          : allOrderbookRows;
-        downloadCsv(rows);
+        const matches = (row) =>
+          String(row.instrumentName || '').toLowerCase().includes(query)
+          || String(row.ticker || '').toLowerCase().includes(query)
+          || String(row.side || '').toLowerCase().includes(query)
+          || String(row.strategyName || '').toLowerCase().includes(query)
+          || String(row.strategyShortName || '').toLowerCase().includes(query)
+          || String(row.marketValue || '').toLowerCase().includes(query)
+          || String(row.orderType || '').toLowerCase().includes(query)
+          || String(row.settlementAccount || '').toLowerCase().includes(query)
+          || String(row.brokerRef || '').toLowerCase().includes(query)
+          || String(row.unrealizedPnl || '').toLowerCase().includes(query);
+
+        const today = new Date().toISOString().slice(0, 10);
+        const liveRows = query ? allOrderbookRows.filter(matches) : allOrderbookRows;
+
+        // If a snapshot is pinned to the top, export it as its own CSV alongside
+        // the live/active order book (two downloads).
+        const pinnedBook = getPinnedTopBook();
+        const pinnedRows = pinnedBook
+          ? (query ? (pinnedBook.rows || []).filter(matches) : (pinnedBook.rows || []))
+          : [];
+
+        if (pinnedBook && pinnedRows.length) {
+          downloadCsv(pinnedRows, `orderbook-pinned-OrderBook-${pinnedBook.sequence}-${today}.csv`);
+          // Stagger so the browser doesn't drop the second download.
+          if (liveRows.length) {
+            setTimeout(() => downloadCsv(liveRows, `orderbook-active-${today}.csv`), 400);
+          }
+        } else {
+          downloadCsv(liveRows, `orderbook-${today}.csv`);
+        }
       });
     }
 
@@ -7335,11 +7502,21 @@
       if (!strategyId) return;
       let stratRow = null;
       if (bookId != null && rowIndex != null) {
-        const book = filledOrderbooksArchive.find((b) => String(b.id) === String(bookId));
+        // The pinned top section scopes its DOM with "pinned:<id>"; strip that to
+        // find the real archive book (the DOM scope keeps the prefix below).
+        const realBookId = String(bookId).replace(/^pinned:/, '');
+        const book = filledOrderbooksArchive.find((b) => String(b.id) === realBookId);
         stratRow = book?.rows?.[Number(rowIndex)] || null;
       }
       if (!stratRow) {
         stratRow = (allOrderbookRows || []).find((r) => r.isStrategy && String(r.strategyId || '') === String(strategyId));
+      }
+      if (!stratRow) {
+        // Top table is showing a pinned snapshot (live rows are empty/different),
+        // so resolve the strategy row from the pinned book's own rows. The fill
+        // pencils still write by sourceId — the same holdings either card touches.
+        const pinned = getPinnedTopBook();
+        stratRow = (pinned?.rows || []).find((r) => r.isStrategy && String(r.strategyId || '') === String(strategyId));
       }
       if (!stratRow) return;
       const archiveScope = bookId != null && rowIndex != null

@@ -383,7 +383,18 @@
          bypassing Supabase RLS so ALL investors are always visible to admins. */
       const resp = await fetch('/api/investors/data');
       if (!resp.ok) throw new Error(`Investor data fetch failed: ${resp.status}`);
-      const { holdings, strategies, stratHist, profiles, secMeta, secLive, txns, familyMembers, drawdowns, residuals, rebEvents, rebBatches } = await resp.json();
+      const { holdings, strategies, stratHist, profiles, secMeta, secLive, txns, familyMembers, drawdowns, residuals, rebEvents, rebBatches, closedHoldings } = await resp.json();
+
+      /* Realised P&L per (user:familyMember:strategy) from closed positions
+         (rebalance sells): Σ(avg_exit − avg_fill)×qty, cents → rands. Folded into
+         each investor's P&L so the return stays stable across rebalances. */
+      const realizedByKey = {};
+      (closedHoldings || []).forEach(h => {
+        const fill = Number(h.avg_fill || 0), exit = Number(h.avg_exit || 0), qty = Number(h.quantity || 0);
+        if (!fill || !exit || !qty) return;
+        const key = `${h.user_id}:${h.family_member_id || ''}:${h.strategy_id || ''}`;
+        realizedByKey[key] = (realizedByKey[key] || 0) + ((exit - fill) / 100) * qty;
+      });
 
       /* Per-strategy residual cash (rebalance leftovers), keyed by
          user|familyMember|strategy so each investor card can add its own cash
@@ -417,7 +428,7 @@
          + custody (R69 per ISIN side) never reach the transactions fee columns.
          We derive them here from settled, non-reversed rebalance_event rows so the
          Transactions tab can show "Rebalance fees" and the audit reconciles fully. */
-      const REB_BROKERAGE_RATE = 0.005, REB_CUSTODY_FEE = 69;
+      const REB_BROKERAGE_RATE = (APP_FEES && +APP_FEES.rebBrokerageRate) || 0.005, REB_CUSTODY_FEE = (APP_FEES && +APP_FEES.rebCustodyFee) || 69;
       const settledBatchIds = new Set((rebBatches||[]).filter(b => String(b.status||'').toUpperCase() === 'SETTLED').map(b => b.id));
       const rebFeeByOwner = {}; // key -> { broker, custody }
       const custodySeen = {};   // key -> Set of `${batch}:${reasonGroup}`
@@ -582,12 +593,20 @@
         const holdingsValue = current;
         const cashComponent = residualCash + bufferCash;
         const value = holdingsValue + cashComponent;
+        /* Fold realised P&L (locked-in rebalance gains) into this investor's P&L so
+           the return stays stable across rebalances: total = unrealised (current −
+           open cost) + realised. invested is DERIVED from value so invested + P&L =
+           value, and the % doesn't drift when sold shares leave the cost basis. */
+        const realized = realizedByKey[`${u.userId}:${u.familyMemberId || ''}:${u.strategyId || ''}`] || 0;
+        const totalPnl = +(((current - invested) + realized)).toFixed(2);
+        const investedStable = +((value - totalPnl)).toFixed(2);
+        const retPctStable = investedStable > 0 ? +((totalPnl / investedStable) * 100).toFixed(2) : 0;
         return {
           type: isStrategy ? 'strategy' : 'security',
           userId: u.userId, investorKey, familyMemberId: u.familyMemberId, isMinor: !!u.familyMemberId, name, email: prof.email, mintNo: prof.mint_number, computershareNumber: (u.familyMemberId ? (famMap[u.familyMemberId] || {}).computershare_number : prof.computershare_number) || null,
           strategy: strat.short_name || strat.name || (isStrategy ? '&mdash;' : 'Direct securities'), strategyId: u.strategyId,
           strategyDesc: strat.description, riskLevel: strat.risk_level,
-          invested, current, pnl, retPct: +retPct.toFixed(2),
+          invested: investedStable, current, pnl: totalPnl, retPct: retPctStable, realized,
           csrAum, csrInvested, csrPnl, csrRetPct, csrYtdPct,
           residualCash, bufferCash, cashComponent, holdingsValue, value,
           rebFeeBroker: (rebFeeByOwner[investorKey] || {}).broker || 0,
@@ -1153,14 +1172,14 @@
             <div style="font-size:10px;color:#94a3b8;font-weight:600;margin-bottom:6px;letter-spacing:0.04em;">PURCHASE</div>
             <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
               ${kpi('Broker (0.25%)', feeBroker, '#b45309')}
-              ${kpi('Custody / ISIN', feeCustody, '#b45309')}
+              ${kpi('Custody fee', feeCustody, '#b45309')}
               ${kpi('MINT revenue (3.8%)', feeMint, '#059669')}
             </div>
             ${rebFeeTotal > 0 ? `
             <div style="font-size:10px;color:#94a3b8;font-weight:600;margin:12px 0 6px;letter-spacing:0.04em;">REBALANCE${'�'}&middot;${'�'}<span style="color:#0e7490;">admin only</span></div>
             <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
               ${kpi('Reb. broker (0.5%)', rebFeeBroker, '#b45309')}
-              ${kpi('Reb. custody (R69/ISIN)', rebFeeCustody, '#b45309')}
+              ${kpi('Rebalance custody', rebFeeCustody, '#b45309')}
               ${kpi('Rebalance total', rebFeeTotal, '#b45309')}
             </div>` : ''}
           </div>
@@ -1226,6 +1245,21 @@
       `;
     }
 
+    /* ─── App fee config (rebalance fee reconciliation reads custody/brokerage
+       from app_settings('fees') so the CRM App Settings page controls them) ─── */
+    let APP_FEES = null;
+    async function loadAppFees() {
+      try {
+        const { data } = await sb.auth.getSession();
+        if (!data || !data.session || !data.session.access_token) return;
+        const res = await fetch('/api/team?action=app-settings-get&key=fees', {
+          headers: { Authorization: 'Bearer ' + data.session.access_token }
+        });
+        const j = await res.json();
+        if (j && j.value) APP_FEES = j.value;
+      } catch (e) { /* keep defaults */ }
+    }
+
     /* ─── Init ─── */
     document.addEventListener('DOMContentLoaded', async () => {
       try {
@@ -1238,6 +1272,7 @@
         }
       } catch (e) { console.warn('Auth check failed', e); }
 
+      await loadAppFees();
       try {
         allInvestors = await loadAll();
         renderKpiBar(allInvestors);

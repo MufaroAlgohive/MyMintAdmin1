@@ -8140,9 +8140,27 @@
       ═══════════════════════════════════════════════════════════════════ */
 
       /* ── Constants ── */
-      const REB_BROKERAGE_RATE = 0.005; // 0.5%
-      const REB_OFF_CUSTODY_FEE = 69;   // R69
+      // Defaults — overridden from app_settings('fees') below so the CRM App
+      // Settings page controls these too. Falls back to these on any failure.
+      let REB_BROKERAGE_RATE = 0.005; // 0.5%
+      let REB_OFF_CUSTODY_FEE = 69;   // R69
       const REB_WALLET_TABLE = "wallets";
+
+      (async () => {
+        try {
+          const { data } = await supabaseClient.auth.getSession();
+          if (!data || !data.session || !data.session.access_token) return;
+          const res = await fetch('/api/team?action=app-settings-get&key=fees', {
+            headers: { Authorization: 'Bearer ' + data.session.access_token }
+          });
+          const j = await res.json();
+          const f = j && j.value;
+          if (f) {
+            if (f.rebCustodyFee != null && !isNaN(+f.rebCustodyFee)) REB_OFF_CUSTODY_FEE = +f.rebCustodyFee;
+            if (f.rebBrokerageRate != null && !isNaN(+f.rebBrokerageRate)) REB_BROKERAGE_RATE = +f.rebBrokerageRate;
+          }
+        } catch (e) { /* keep defaults */ }
+      })();
 
       /* ── Engine functions ── */
       function rebGetDivisors(n) {
@@ -8729,7 +8747,9 @@
 
       /* ── State ── */
       let rebIsins = [];           // [{code, description, unitsPerLot, currentPrice, weightPercent}]
-      let rebRawHoldings = {};     // code &rarr; [{userId, name, quantity}]
+      let rebRawHoldings = {};     // code &rarr; [{userId, name, quantity}]  (FILLED only — see partition in rebLoadStrategy)
+      let rebUnfilledHoldings = {}; // code &rarr; [{holdingId, securityId, userId, familyMemberId, quantity}] — avg_fill=0 orders, handled by the swap step, never the sell/buy engine
+      let rebSwapDryRun = true;    // SAFETY: true = unfilled-order swap step LOGS its plan and writes NOTHING. Flip to false to arm live swaps.
       let rebSelectedIsin = null;
       let rebSelectedStep = null;
       let rebSellNetProceeds = 0;
@@ -8906,6 +8926,7 @@
         rebSelectedIsin = null;
         rebSelectedStep = null;
         rebRawHoldings = {};
+        rebUnfilledHoldings = {};
         rebWalletByClient = {};
         rebPendingRebalance = null;
         rebSelectedStrategyId = strategyId ? String(strategyId) : null;
@@ -8951,7 +8972,7 @@
             if (secIds.length) {
               let holdingsQuery = supabaseClient
                 .from("stock_holdings_c")
-                .select("security_id, user_id, family_member_id, quantity, avg_fill, expected_fill:\"Expected_fill\", strategy_id")
+                .select("id, security_id, user_id, family_member_id, quantity, avg_fill, expected_fill:\"Expected_fill\", strategy_id")
                 .eq("is_active", true)
                 .eq("trade_side", "BUY")
                 .in("security_id", secIds);
@@ -9074,6 +9095,20 @@
                 const qty = Number(r.quantity) || 0;
                 /* avg_fill stored in cents (consistent with orderbook PnL convention) */
                 const fillCents = Number(r.avg_fill) || 0;
+                /* Unfilled orders (avg_fill = 0) have no broker position to sell.
+                   Stash them for the swap step (which rewrites the pending order
+                   in place) and keep them OUT of the sell/buy engine entirely. */
+                if (fillCents <= 0) {
+                  if (!rebUnfilledHoldings[code]) rebUnfilledHoldings[code] = [];
+                  rebUnfilledHoldings[code].push({
+                    holdingId: r.id,
+                    securityId: r.security_id,
+                    userId: uid,
+                    familyMemberId: fmId,
+                    quantity: qty,
+                  });
+                  return;
+                }
                 /* Client cost basis in cents = Expected_fill (the price the client
                    saw, rands) preferred over avg_fill (carries MINT's spread);
                    legacy-cents guarded. Used ONLY for the P/L column below, never
@@ -10247,7 +10282,7 @@
         /* ── Read existing active positions (read-only &mdash; to compute sell quantities) ── */
         const { data: existingRows, error: existingErr } = await supabaseClient
           .from("stock_holdings_c")
-          .select("id, user_id, security_id, quantity, trade_side, is_active")
+          .select("id, user_id, security_id, quantity, trade_side, is_active, avg_fill")
           .eq("strategy_id", strategyId)
           .eq("is_active", true)
           .eq("trade_side", "BUY")
@@ -10256,9 +10291,12 @@
         if (existingErr) throw new Error(existingErr.message || "Failed to load existing holdings.");
 
         const nowIso = new Date().toISOString();
+        /* Only FILLED rows (avg_fill > 0) are sold by the engine. Unfilled
+           orders are handled by the swap step below — never via SELL events. */
         const activeSellRows = (existingRows || []).filter((row) => {
           return String(row.security_id) === String(sellSecurityId)
-            && Number(row.quantity || 0) > 0;
+            && Number(row.quantity || 0) > 0
+            && Number(row.avg_fill || 0) > 0;
         });
 
         if (!activeSellRows.length) {
@@ -10394,6 +10432,156 @@
             .from("rebalance_event")
             .insert(allEvents);
           if (eventsErr) throw new Error(eventsErr.message || "Failed to insert rebalance events.");
+        }
+
+        /* ════════════════════════════════════════════════════════════════
+           UNFILLED-ORDER SWAP (fill-aware rebalance)
+           Clients with no avg_fill on the sold asset have no broker position to
+           sell. Instead of a SELL/BUY event (which would settle at R0), rewrite
+           their PENDING order in place: deactivate the old pending row and add a
+           new pending row for the buy asset, sized at the live price. Sub-share
+           leftover → strategy residual (their 8%). They get NO rebalance_event,
+           so fill & settle never touches them — they simply fill into the new
+           basket on the next broker run, and the order-book CSV updates now.
+           ════════════════════════════════════════════════════════════════ */
+        try {
+          const swapScopeFmId = familyMemberIdForEvents;
+          let unfilledQuery = supabaseClient
+            .from("stock_holdings_c")
+            .select("id, user_id, family_member_id, quantity, avg_fill")
+            .eq("strategy_id", strategyId)
+            .eq("security_id", sellSecurityId)
+            .eq("is_active", true)
+            .eq("trade_side", "BUY");
+          unfilledQuery = swapScopeFmId
+            ? unfilledQuery.eq("family_member_id", swapScopeFmId)
+            : unfilledQuery.is("family_member_id", null);
+          const { data: unfilledSellRows, error: unfilledErr } = await unfilledQuery;
+          if (unfilledErr) throw new Error(unfilledErr.message || "Failed to load unfilled orders for swap.");
+
+          const swapRows = (unfilledSellRows || []).filter(
+            (r) => !Number(r.avg_fill) && Number(r.quantity || 0) > 0
+          );
+
+          if (swapRows.length) {
+            const sellLive = Number(rebSelectedIsin.currentPrice) || 0;   // rands
+            const buyLive = Number(buyExec.pricePerShare) || 0;           // rands (committed buy price)
+            const residualTotalsByUser = {};   // userId → NEW total residual (rands) to SET (existing + leftover)
+            const swapPlan = [];
+
+            for (const row of swapRows) {
+              const qty = Number(row.quantity || 0);
+              const sliceRand = qty * sellLive;
+              const newQty = buyLive > 0 ? Math.floor(sliceRand / buyLive) : 0;
+              const leftover = sliceRand - newQty * buyLive;
+              const uid = String(row.user_id);
+              const baseResidual = residualTotalsByUser[uid] != null
+                ? residualTotalsByUser[uid]
+                : Number(rebWalletByClient[uid] || 0);
+              residualTotalsByUser[uid] = rebRoundMoney(baseResidual + leftover);
+              swapPlan.push({ row, qty, sliceRand, newQty, leftover, uid });
+            }
+
+            if (rebSwapDryRun) {
+              console.warn("⟦REB SWAP DRY-RUN⟧ no writes — planned unfilled-order swaps:");
+              swapPlan.forEach((p) => console.warn(
+                `  user=${p.uid.slice(0, 8)} fm=${swapScopeFmId ? String(swapScopeFmId).slice(0, 8) : "—"}  ` +
+                `${sellIsinCode} ${p.qty}@R${sellLive.toFixed(2)} (R${p.sliceRand.toFixed(2)}) → ` +
+                `${buyIsinCode} ${p.newQty}@R${buyLive.toFixed(2)}  leftover→cash R${p.leftover.toFixed(2)}  ` +
+                `(would deactivate holdingId ${p.row.id})`
+              ));
+              console.warn("⟦REB SWAP DRY-RUN⟧ residual totals it would SET (rands):", residualTotalsByUser);
+            } else {
+              const swapErrors = [];
+              for (const p of swapPlan) {
+                /* 1. Deactivate the old pending holding */
+                const { error: deErr } = await supabaseClient
+                  .from("stock_holdings_c")
+                  .update({
+                    is_active: false,
+                    Status: "inactive",
+                    closed_reason: "REBALANCE_PENDING_SWAP",
+                    closed_at: nowIso,
+                    updated_at: nowIso,
+                  })
+                  .eq("id", p.row.id);
+                if (deErr) { swapErrors.push(`deactivate ${p.row.id}: ${deErr.message}`); continue; }
+
+                /* 2. Add the new pending buy holding (merge if one already exists) */
+                if (p.newQty > 0) {
+                  let existsQ = supabaseClient
+                    .from("stock_holdings_c")
+                    .select("id, quantity")
+                    .eq("strategy_id", strategyId)
+                    .eq("security_id", buySecurityId)
+                    .eq("user_id", p.uid)
+                    .eq("is_active", true)
+                    .eq("trade_side", "BUY")
+                    .is("avg_fill", null);
+                  existsQ = swapScopeFmId
+                    ? existsQ.eq("family_member_id", swapScopeFmId)
+                    : existsQ.is("family_member_id", null);
+                  const { data: existingBuy } = await existsQ.maybeSingle();
+
+                  if (existingBuy) {
+                    const { error: upErr } = await supabaseClient
+                      .from("stock_holdings_c")
+                      .update({ quantity: Number(existingBuy.quantity || 0) + p.newQty, updated_at: nowIso })
+                      .eq("id", existingBuy.id);
+                    if (upErr) swapErrors.push(`merge buy ${p.uid}: ${upErr.message}`);
+                  } else {
+                    const { error: insErr } = await supabaseClient
+                      .from("stock_holdings_c")
+                      .insert({
+                        user_id: p.uid,
+                        family_member_id: swapScopeFmId || null,
+                        security_id: buySecurityId,
+                        strategy_id: strategyId,
+                        quantity: p.newQty,
+                        trade_side: "BUY",
+                        is_active: true,
+                        Status: "active",
+                        avg_fill: null,                 // still PENDING — fills via the order book
+                        "Expected_fill": buyLive,       // rands, the committed buy price
+                        market_value: 0,
+                        as_of_date: null,
+                        strategy_name_snapshot: strategyNameSnapshot,
+                        created_at: nowIso,
+                        updated_at: nowIso,
+                      });
+                    if (insErr) swapErrors.push(`insert buy ${p.uid}: ${insErr.message}`);
+                  }
+                }
+
+                /* 3. Audit txn (mirrors the filled rebalance history entry; R0, informational) */
+                const { error: txErr } = await supabaseClient.from("transactions").insert({
+                  user_id: p.uid,
+                  family_member_id: swapScopeFmId || null,
+                  direction: "credit",
+                  name: `Rebalance: ${strategyNameSnapshot || "Strategy"}`,
+                  description: `Pre-fill swap: ${p.qty} × ${sellIsinCode} → ${p.newQty} × ${buyIsinCode}`
+                    + (p.leftover > 0 ? `, R${p.leftover.toFixed(2)} to cash` : ""),
+                  amount: 0,
+                  status: "posted",
+                  transaction_date: nowIso,
+                  created_at: nowIso,
+                });
+                if (txErr) swapErrors.push(`audit txn ${p.uid}: ${txErr.message}`);
+              }
+
+              /* 4. Residual upsert — SETs the new total (existing + leftover) per user */
+              if (Object.keys(residualTotalsByUser).length) {
+                await rebUpsertWalletBalances(strategyId, residualTotalsByUser, swapScopeFmId);
+              }
+
+              if (swapErrors.length) console.error("⟦REB SWAP⟧ completed WITH ERRORS:", swapErrors);
+              else console.info(`⟦REB SWAP⟧ swapped ${swapPlan.length} unfilled order(s): ${sellIsinCode} → ${buyIsinCode}`);
+            }
+          }
+        } catch (swapErr) {
+          /* The filled batch already committed; surface the swap problem without
+             unwinding the filled rebalance. */
+          console.error("⟦REB SWAP⟧ failed:", swapErr?.message || swapErr);
         }
 
         /* ── stock_holdings_c is NOT touched ──

@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>App Settings — Admin</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background:#f2f2f7;color:#1c1c1e;display:flex;min-height:100vh;}
+    a{color:inherit;text-decoration:none;}
+    /* Sidebar */
+    .sidebar{position:fixed;left:0;top:0;width:220px;height:100vh;background:#fff;border-right:1px solid #e5e5ea;display:flex;flex-direction:column;z-index:1000;}
+    .sidebar-header{display:flex;align-items:center;gap:10px;padding:20px 20px 16px;border-bottom:1px solid #f2f2f7;}
+    .sidebar-brand-name{font-size:14px;font-weight:700;line-height:1.2;}
+    .sidebar-brand-sub{font-size:10px;color:#8e8e93;font-weight:500;letter-spacing:.04em;text-transform:uppercase;}
+    .sidebar-nav{flex:1;overflow-y:auto;padding:8px 10px;}
+    .sidebar-section-label{display:block;font-size:10px;font-weight:600;color:#8e8e93;letter-spacing:.07em;text-transform:uppercase;padding:8px 8px 4px;margin-top:6px;}
+    .nav-icon{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;font-size:13.5px;font-weight:500;color:#3a3a3c;margin-bottom:2px;}
+    .nav-icon svg{width:18px;height:18px;fill:currentColor;flex-shrink:0;}
+    .nav-icon:hover{background:#f2f2f7;}
+    .nav-icon.active{background:#eef0ff;color:#4f46e5;font-weight:600;}
+    .sidebar-footer{padding:12px;border-top:1px solid #f2f2f7;}
+    .sidebar-user{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+    .sidebar-avatar{width:32px;height:32px;border-radius:50%;background:#4f46e5;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:13px;}
+    .sidebar-user-name{font-size:12.5px;font-weight:600;}
+    .sidebar-user-role{font-size:10.5px;color:#8e8e93;}
+    .sidebar-signout{display:flex;align-items:center;gap:8px;width:100%;padding:9px 10px;border:none;background:none;border-radius:9px;font-size:13px;color:#ff3b30;cursor:pointer;font-weight:500;}
+    .sidebar-signout svg{width:18px;height:18px;fill:currentColor;}
+    .sidebar-signout:hover{background:rgba(255,59,48,.08);}
+    /* Content */
+    .main{margin-left:220px;flex:1;padding:32px 40px;max-width:920px;}
+    .page-title{font-size:24px;font-weight:700;}
+    .page-sub{font-size:13.5px;color:#8e8e93;margin-top:4px;margin-bottom:24px;}
+    .card{background:#fff;border:1px solid #e5e5ea;border-radius:16px;padding:22px 24px;margin-bottom:20px;}
+    .card-title{font-size:15px;font-weight:700;}
+    .card-sub{font-size:12.5px;color:#8e8e93;margin-top:3px;margin-bottom:16px;}
+    .group-label{font-size:11px;font-weight:700;color:#8e8e93;letter-spacing:.05em;text-transform:uppercase;margin:18px 0 8px;}
+    .field{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:11px 0;border-bottom:1px solid #f2f2f7;}
+    .field:last-child{border-bottom:none;}
+    .field-label{font-size:13.5px;font-weight:500;}
+    .field-hint{font-size:11.5px;color:#8e8e93;margin-top:2px;}
+    .input-wrap{position:relative;flex-shrink:0;}
+    .input-wrap .affix{position:absolute;top:50%;transform:translateY(-50%);color:#8e8e93;font-size:13px;pointer-events:none;}
+    .input-wrap .affix.pre{left:11px;}
+    .input-wrap .affix.suf{right:11px;}
+    input.fee{width:130px;padding:9px 11px;border:1px solid #d1d1d6;border-radius:9px;font-size:14px;text-align:right;background:#fff;}
+    input.fee.pre{padding-left:24px;}
+    input.fee.suf{padding-right:26px;}
+    input.fee:focus{outline:none;border-color:#4f46e5;box-shadow:0 0 0 3px rgba(79,70,229,.12);}
+    .actions{display:flex;align-items:center;gap:14px;margin-top:8px;}
+    .btn{padding:11px 20px;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;border:none;}
+    .btn-primary{background:#4f46e5;color:#fff;}
+    .btn-primary:disabled{opacity:.5;cursor:not-allowed;}
+    .meta{font-size:12px;color:#8e8e93;}
+    .toast{position:fixed;bottom:24px;right:24px;padding:13px 18px;border-radius:11px;font-size:13.5px;font-weight:600;color:#fff;opacity:0;transform:translateY(8px);transition:.25s;pointer-events:none;z-index:2000;}
+    .toast.show{opacity:1;transform:translateY(0);}
+    .toast.ok{background:#34c759;} .toast.err{background:#ff3b30;}
+    .banner{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:12px;padding:12px 16px;font-size:13px;margin-bottom:20px;display:none;}
+    .gate{display:none;text-align:center;padding:60px 20px;color:#8e8e93;}
+  </style>
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <a class="sidebar-logo" href="/index.html"><img src="/icon.png" alt="Mint" style="width:36px;height:36px;border-radius:10px;"></a>
+      <div><div class="sidebar-brand-name">Mint</div><div class="sidebar-brand-sub">Admin Panel</div></div>
+    </div>
+    <nav class="sidebar-nav">
+      <span class="sidebar-section-label">Main</span>
+      <a class="nav-icon" href="/index.html"><svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>Clients</a>
+      <a class="nav-icon" href="/studio.html"><svg viewBox="0 0 24 24"><path d="M17 1.01L7 1c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-1.99-2-1.99zM17 19H7V5h10v14z"/></svg>Client View Studio</a>
+      <span class="sidebar-section-label">Investments</span>
+      <a class="nav-icon" href="/dashboard.html"><svg viewBox="0 0 24 24"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>Dashboard</a>
+      <a class="nav-icon" href="/strategies.html"><svg viewBox="0 0 24 24"><path d="M3 3h7v7H3zm0 11h7v7H3zm11-11h7v7h-7zm0 11h7v7h-7z"/></svg>Strategies</a>
+      <a class="nav-icon" href="/factsheets.html"><svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>Factsheets</a>
+      <a class="nav-icon" href="/investors.html"><svg viewBox="0 0 24 24"><path d="M3.5 18.49l6-6.01 4 4L22 6.92l-1.41-1.41-7.09 7.97-4-4L2 16.99z"/></svg>Investors</a>
+      <a class="nav-icon" href="/orderbook.html"><svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 3c1.93 0 3.5 1.57 3.5 3.5S13.93 13 12 13s-3.5-1.57-3.5-3.5S10.07 6 12 6zm7 13H5v-.23c0-.62.28-1.2.76-1.58C7.47 15.82 9.64 15 12 15s4.53.82 6.24 2.19c.48.38.76.97.76 1.58V19z"/></svg>Order Book</a>
+      <span class="sidebar-section-label">Banking</span>
+      <a class="nav-icon" href="/eft.html"><svg viewBox="0 0 24 24"><path d="M20 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/></svg>EFT Payments</a>
+      <span class="sidebar-section-label">System</span>
+      <a class="nav-icon" href="/settings.html"><svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.62l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.62l2.03 1.58c-.05.32-.07.64-.07.94s.02.62.07.94l-2.03 1.58c-.18.14-.23.41-.12.62l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.62l-2.01-1.58z"/></svg>Settings</a>
+      <a class="nav-icon active" href="/app-settings.html"><svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34a.9959.9959 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>App Settings</a>
+      <a class="nav-icon" id="teamNavLink" href="/team.html" style="display:none"><svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>Team</a>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="sidebar-user">
+        <div class="sidebar-avatar" id="sidebarAvatarInitials">A</div>
+        <div><div class="sidebar-user-name" id="sidebarUserEmail">Admin</div><div class="sidebar-user-role">Administrator</div></div>
+      </div>
+      <button class="sidebar-signout" id="signOutBtn"><svg viewBox="0 0 24 24"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5-5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>Sign out</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="page-title">App Settings</div>
+    <div class="page-sub">Platform-wide configuration. Changes apply to new transactions within ~1 minute — no deploy needed.</div>
+
+    <div class="banner" id="missingBanner"></div>
+
+    <div class="gate" id="gate">Admins only.</div>
+
+    <div id="content" style="display:none;">
+      <div class="card">
+        <div class="card-title">Fees</div>
+        <div class="card-sub">The single source of truth for platform fees. The app and CRM read these values.</div>
+
+        <div class="group-label">Purchase fees (app)</div>
+        <div id="grp-purchase"></div>
+
+        <div class="group-label">Cash asset class</div>
+        <div id="grp-cash"></div>
+
+        <div class="group-label">Strategy</div>
+        <div id="grp-strategy"></div>
+
+        <div class="group-label">CRM rebalance engine</div>
+        <div id="grp-rebalance"></div>
+
+        <div class="actions" style="margin-top:20px;">
+          <button class="btn btn-primary" id="saveBtn" disabled>Save changes</button>
+          <span class="meta" id="metaLine"></span>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const SUPABASE_URL = 'https://mfxnghmuccevsxwcetej.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1meG5naG11Y2NldnN4d2NldGVqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg4NTI1ODAsImV4cCI6MjA4NDQyODU4MH0.lktfglzBMaHd79hLFDRH1HHSwsEwZ56Tv6e287kQiFg';
+    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // Field config. kind: 'money' (R, raw value) or 'percent' (shown as %, stored as decimal rate).
+    const FIELDS = [
+      { key:'isinFeePerAsset',      group:'grp-purchase',  kind:'money',   label:'Custody fee per asset',  hint:'Charged per underlying security in a basket' },
+      { key:'brokerFeeRate',        group:'grp-purchase',  kind:'percent', label:'Broker fee',             hint:'Percent of the buffered investment' },
+      { key:'executionReserveRate', group:'grp-cash',      kind:'percent', label:'Execution reserve', hint:'Held cash set aside on every buy — a cash asset, not a fee' },
+      { key:'transactionFeeRate',   group:'grp-purchase',  kind:'percent', label:'Transaction fee',        hint:'Percent of the buffered investment' },
+      { key:'monthlyStrategyFee',   group:'grp-strategy',  kind:'money',   label:'Monthly additional-strategy fee', hint:'Charged per extra strategy, per month' },
+      { key:'rebBrokerageRate',     group:'grp-rebalance', kind:'percent', label:'Rebalance brokerage',    hint:'Brokerage applied during rebalances' },
+      { key:'rebCustodyFee',        group:'grp-rebalance', kind:'money',   label:'Rebalance custody fee',  hint:'Custody per asset, per affected client' },
+    ];
+
+    let currentToken = null;
+    let original = {};
+
+    const authHeaders = () => ({ 'Authorization': `Bearer ${currentToken}`, 'Content-Type': 'application/json' });
+    const api = async (method, path, body) => {
+      const res = await fetch(path, { method, headers: authHeaders(), ...(body ? { body: JSON.stringify(body) } : {}) });
+      return res.json();
+    };
+    const toast = (msg, ok=true) => {
+      const t = document.getElementById('toast');
+      t.textContent = msg; t.className = 'toast show ' + (ok ? 'ok' : 'err');
+      setTimeout(() => { t.className = 'toast ' + (ok ? 'ok' : 'err'); }, 2800);
+    };
+
+    const renderFields = () => {
+      FIELDS.forEach(f => {
+        const isPct = f.kind === 'percent';
+        const wrap = document.createElement('div');
+        wrap.className = 'field';
+        wrap.innerHTML = `
+          <div>
+            <div class="field-label">${f.label}</div>
+            <div class="field-hint">${f.hint}</div>
+          </div>
+          <div class="input-wrap">
+            ${isPct ? '' : '<span class="affix pre">R</span>'}
+            <input class="fee ${isPct ? 'suf' : 'pre'}" type="number" step="${isPct ? '0.01' : '0.01'}" min="0" id="f_${f.key}">
+            ${isPct ? '<span class="affix suf">%</span>' : ''}
+          </div>`;
+        document.getElementById(f.group).appendChild(wrap);
+      });
+      document.querySelectorAll('input.fee').forEach(i => i.addEventListener('input', checkDirty));
+    };
+
+    const toInput = (f, val) => f.kind === 'percent' ? +(Number(val) * 100).toFixed(6) : Number(val);
+    const fromInput = (f, raw) => f.kind === 'percent' ? Number(raw) / 100 : Number(raw);
+
+    const populate = (value) => {
+      FIELDS.forEach(f => {
+        const v = value && value[f.key] != null ? value[f.key] : null;
+        document.getElementById('f_' + f.key).value = v == null ? '' : toInput(f, v);
+      });
+      original = {};
+      FIELDS.forEach(f => { original[f.key] = document.getElementById('f_' + f.key).value; });
+      checkDirty();
+    };
+
+    const checkDirty = () => {
+      let dirty = false, valid = true;
+      FIELDS.forEach(f => {
+        const el = document.getElementById('f_' + f.key);
+        if (el.value === '' || isNaN(Number(el.value)) || Number(el.value) < 0) valid = false;
+        if (el.value !== original[f.key]) dirty = true;
+      });
+      document.getElementById('saveBtn').disabled = !(dirty && valid);
+    };
+
+    const setMeta = (updated_at, updated_by) => {
+      const el = document.getElementById('metaLine');
+      if (!updated_at) { el.textContent = ''; return; }
+      const d = new Date(updated_at);
+      el.textContent = `Last updated ${d.toLocaleString('en-ZA')}${updated_by ? ' · ' + updated_by : ''}`;
+    };
+
+    const load = async () => {
+      const r = await api('GET', '/api/team?action=app-settings-get&key=fees');
+      if (r && r.notice) {
+        const b = document.getElementById('missingBanner');
+        b.style.display = 'block';
+        b.textContent = '⚠ ' + r.notice + ' Showing nothing until the app_settings table exists.';
+      }
+      populate(r && r.value ? r.value : {});
+      setMeta(r && r.updated_at, r && r.updated_by);
+    };
+
+    document.getElementById('saveBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('saveBtn');
+      const value = {};
+      for (const f of FIELDS) {
+        const raw = document.getElementById('f_' + f.key).value;
+        value[f.key] = fromInput(f, raw);
+      }
+      btn.disabled = true; btn.textContent = 'Saving…';
+      const r = await api('POST', '/api/team?action=app-settings-save', { key: 'fees', value });
+      btn.textContent = 'Save changes';
+      if (r && r.ok) {
+        toast('Fees saved');
+        populate(r.value);
+        setMeta(new Date().toISOString(), document.getElementById('sidebarUserEmail').textContent);
+      } else {
+        toast((r && r.error) || 'Save failed', false);
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById('signOutBtn').addEventListener('click', async () => {
+      await supabaseClient.auth.signOut();
+      window.location.href = '/signin.html';
+    });
+
+    (async () => {
+      const { data } = await supabaseClient.auth.getSession();
+      if (!data.session) { window.location.href = '/signin.html'; return; }
+      currentToken = data.session.access_token;
+      const email = data.session.user.email || '';
+      document.getElementById('sidebarUserEmail').textContent = email || 'Admin';
+      document.getElementById('sidebarAvatarInitials').textContent = email ? email[0].toUpperCase() : 'A';
+
+      const me = await api('GET', '/api/team?action=me');
+      if (!me.ok || me.role !== 'admin') {
+        document.getElementById('gate').style.display = 'block';
+        return;
+      }
+      document.getElementById('teamNavLink').style.display = 'flex';
+      document.getElementById('content').style.display = 'block';
+      renderFields();
+      await load();
+    })();
+  </script>
+</body>
+</html>
