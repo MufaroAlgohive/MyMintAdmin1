@@ -213,6 +213,9 @@ const handleSendTradeConfirmation = async (req, res, token) => {
 
     const isBatch = !!holding.rebalance_batch_id;
 
+    let strategyHoldings = null;
+    let existingConfirms = [];
+
     // --- DEDUPLICATION ---
     // For strategy (batch) purchases: if ANY holding in this batch already has a sent
     // confirmation, skip — the grouped email was already sent by the first holding.
@@ -224,17 +227,43 @@ const handleSendTradeConfirmation = async (req, res, token) => {
       if (batchConfirms && batchConfirms.length > 0) {
         return sendJson(res, 200, { ok: true, skipped: true, reason: 'Batch email already sent.' });
       }
-    }
-
-    // For single holdings: check if this specific holding already has a sent confirmation.
-    if (!isBatch && !forceResend) {
-      const existingConfirms = await fetchSupabaseJson(
-        `/rest/v1/investor_trade_confirmations?holding_id=eq.${encodeURIComponent(holdingId)}&select=id,sent_at,status`,
-        token
-      );
-      const alreadySent = existingConfirms && existingConfirms.some((r) => r.sent_at && r.status === 'sent');
-      if (alreadySent) {
-        return sendJson(res, 400, { error: 'Email already sent for this holding.' });
+    } else if (!isBatch) {
+      if (holding.strategy_id) {
+        try {
+          const stratHoldingsData = await fetchSupabaseJson(
+            `/rest/v1/stock_holdings_c?strategy_id=eq.${encodeURIComponent(holding.strategy_id)}&user_id=eq.${encodeURIComponent(holding.user_id)}&order=fill_date.desc&limit=50`,
+            token
+          );
+          const fillDay = holding.fill_date ? holding.fill_date.substring(0, 10) : null;
+          strategyHoldings = (stratHoldingsData || []).filter(h =>
+            !fillDay || (h.fill_date && h.fill_date.substring(0, 10) === fillDay)
+          );
+        } catch (e) {
+          strategyHoldings = [holding];
+        }
+        
+        if (!forceResend) {
+          const holdingIds = strategyHoldings.map(h => h.id).filter(Boolean);
+          if (holdingIds.length > 0) {
+            existingConfirms = await fetchSupabaseJson(
+              `/rest/v1/investor_trade_confirmations?holding_id=in.(${buildInFilter(holdingIds)})&select=id,sent_at,status`,
+              token
+            );
+            const alreadySent = existingConfirms && existingConfirms.some((r) => r.sent_at && r.status === 'sent');
+            if (alreadySent) {
+              return sendJson(res, 400, { error: 'Email already sent for this strategy order.' });
+            }
+          }
+        }
+      } else if (!forceResend) {
+        existingConfirms = await fetchSupabaseJson(
+          `/rest/v1/investor_trade_confirmations?holding_id=eq.${encodeURIComponent(holdingId)}&select=id,sent_at,status`,
+          token
+        );
+        const alreadySent = existingConfirms && existingConfirms.some((r) => r.sent_at && r.status === 'sent');
+        if (alreadySent) {
+          return sendJson(res, 400, { error: 'Email already sent for this holding.' });
+        }
       }
     }
 
@@ -424,24 +453,8 @@ const handleSendTradeConfirmation = async (req, res, token) => {
       const totalAmountStr = `R ${totalAmountValue.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
       if (isStrategy) {
-        // Fetch ALL holdings for this strategy + user to group into one email
-        let strategyHoldings = [];
-        try {
-          const stratHoldingsData = await fetchSupabaseJson(
-            `/rest/v1/stock_holdings_c?strategy_id=eq.${encodeURIComponent(holding.strategy_id)}&user_id=eq.${encodeURIComponent(holding.user_id)}&order=fill_date.desc&limit=50`,
-            token
-          );
-          // Filter to same fill_date (same day) to only include this batch
-          const fillDay = holding.fill_date ? holding.fill_date.substring(0, 10) : null;
-          strategyHoldings = (stratHoldingsData || []).filter(h =>
-            !fillDay || (h.fill_date && h.fill_date.substring(0, 10) === fillDay)
-          );
-        } catch (e) {
-          strategyHoldings = [holding]; // fallback to just this one
-        }
-
         let tableRowsHtml = '';
-        for (const sHolding of strategyHoldings) {
+        for (const sHolding of (strategyHoldings || [holding])) {
           let sSecurity = {};
           if (sHolding.security_id) {
             const secData = await fetchSupabaseJson(`/rest/v1/securities_c?id=eq.${encodeURIComponent(sHolding.security_id)}`, token);
@@ -546,37 +559,70 @@ const handleSendTradeConfirmation = async (req, res, token) => {
 
     const resendId = resendPayload?.id || null;
     const nowIso = new Date().toISOString();
-    const ref = isBatch
-      ? `BND-${holding.rebalance_batch_id.substring(0, 8).toUpperCase()}`
-      : (bndReference || `BND-${holding.id.substring(0, 8).toUpperCase()}`);
 
-    const confirmRecord = {
-      user_id: holding.user_id,
-      holding_id: isBatch ? null : holdingId,
-      rebalance_batch_id: isBatch ? holding.rebalance_batch_id : null,
-      reference_number: ref,
-      recipient_email: clientEmail,
-      status: 'sent',
-      resend_id: resendId,
-      executed_price_cents: holding.avg_fill || null,
-      quantity_filled: holding.quantity ? Math.abs(holding.quantity) : null,
-      strategy_name_at_execution: holding.strategy_name_snapshot || null,
-      sent_payload: isBatch ? { batch_id: holding.rebalance_batch_id } : { holding_id: holdingId },
-      sent_at: nowIso
-    };
-
-    await requestSupabaseJson(
-      '/rest/v1/investor_trade_confirmations',
-      { method: 'POST', token, body: confirmRecord }
-    ).catch(async () => {
-      const existingId = existingConfirms && existingConfirms[0]?.id;
-      if (existingId) {
-        await requestSupabaseJson(
-          `/rest/v1/investor_trade_confirmations?id=eq.${encodeURIComponent(existingId)}`,
-          { method: 'PATCH', token, body: { status: 'sent', sent_at: nowIso, resend_id: resendId } }
-        );
+    if (isBatch) {
+      const ref = `BND-${holding.rebalance_batch_id.substring(0, 8).toUpperCase()}`;
+      const confirmRecord = {
+        user_id: holding.user_id,
+        holding_id: null,
+        rebalance_batch_id: holding.rebalance_batch_id,
+        reference_number: ref,
+        recipient_email: clientEmail,
+        status: 'sent',
+        resend_id: resendId,
+        executed_price_cents: holding.avg_fill || null,
+        quantity_filled: holding.quantity ? Math.abs(holding.quantity) : null,
+        strategy_name_at_execution: holding.strategy_name_snapshot || null,
+        sent_payload: { batch_id: holding.rebalance_batch_id },
+        sent_at: nowIso
+      };
+      await requestSupabaseJson('/rest/v1/investor_trade_confirmations', { method: 'POST', token, body: confirmRecord }).catch(() => {});
+    } else if (strategyHoldings && strategyHoldings.length > 0) {
+      for (const sHolding of strategyHoldings) {
+        const sRef = sHolding.id === holdingId && bndReference ? bndReference : `BND-${sHolding.id.substring(0, 8).toUpperCase()}`;
+        const confirmRecord = {
+          user_id: holding.user_id,
+          holding_id: sHolding.id,
+          rebalance_batch_id: null,
+          reference_number: sRef,
+          recipient_email: clientEmail,
+          status: 'sent',
+          resend_id: resendId,
+          executed_price_cents: sHolding.avg_fill || null,
+          quantity_filled: sHolding.quantity ? Math.abs(sHolding.quantity) : null,
+          strategy_name_at_execution: sHolding.strategy_name_snapshot || null,
+          sent_payload: { holding_id: sHolding.id, grouped_with: holdingId },
+          sent_at: nowIso
+        };
+        await requestSupabaseJson('/rest/v1/investor_trade_confirmations', { method: 'POST', token, body: confirmRecord }).catch(async () => {
+          if (sHolding.id === holdingId && existingConfirms && existingConfirms[0]?.id) {
+            await requestSupabaseJson(`/rest/v1/investor_trade_confirmations?id=eq.${encodeURIComponent(existingConfirms[0].id)}`, { method: 'PATCH', token, body: { status: 'sent', sent_at: nowIso, resend_id: resendId } });
+          }
+        });
       }
-    });
+    } else {
+      const ref = bndReference || `BND-${holding.id.substring(0, 8).toUpperCase()}`;
+      const confirmRecord = {
+        user_id: holding.user_id,
+        holding_id: holdingId,
+        rebalance_batch_id: null,
+        reference_number: ref,
+        recipient_email: clientEmail,
+        status: 'sent',
+        resend_id: resendId,
+        executed_price_cents: holding.avg_fill || null,
+        quantity_filled: holding.quantity ? Math.abs(holding.quantity) : null,
+        strategy_name_at_execution: holding.strategy_name_snapshot || null,
+        sent_payload: { holding_id: holdingId },
+        sent_at: nowIso
+      };
+      await requestSupabaseJson('/rest/v1/investor_trade_confirmations', { method: 'POST', token, body: confirmRecord }).catch(async () => {
+        const existingId = existingConfirms && existingConfirms[0]?.id;
+        if (existingId) {
+          await requestSupabaseJson(`/rest/v1/investor_trade_confirmations?id=eq.${encodeURIComponent(existingId)}`, { method: 'PATCH', token, body: { status: 'sent', sent_at: nowIso, resend_id: resendId } });
+        }
+      });
+    }
 
     return sendJson(res, 200, { ok: true });
   } catch (error) {
