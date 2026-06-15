@@ -333,9 +333,9 @@ const handleSendTradeConfirmation = async (req, res, token) => {
   <meta name="color-scheme" content="light only">
   <title>${subjectHeading}</title>
 </head>
-<body style="margin:0;padding:0;background:#f4f4f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+<body style="margin:0;padding:0;background:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
   <span style="display:none!important;visibility:hidden;mso-hide:all;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">${subjectIntro.replace(/<[^>]+>/g, '')}</span>
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#f4f4f7" style="background:#f4f4f7;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#ffffff" style="background:#ffffff;">
     <tr>
       <td align="center" style="padding:32px 16px;">
         <table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 8px 32px rgba(15,23,42,0.07);">
@@ -491,7 +491,7 @@ const handleSendTradeConfirmation = async (req, res, token) => {
           orderDate: execDate,
           tableRowsHtml,
           subjectHeading: 'Basket Purchased.',
-          subjectIntro: `You have successfully purchased the <strong>${strategyName}</strong> basket. The following trades were executed to build your portfolio:`
+          subjectIntro: `Welcome to intentional investing. <br/><br/>Your <strong>${strategyName}</strong> is built and MINT's engine is now actively managing it for you. Here is what we executed:`
         });
       } else {
         htmlContent = buildEmailHtml({
