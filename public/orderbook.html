@@ -6551,6 +6551,45 @@
             }));
           }
 
+          // 4b. Restore the PER-STRATEGY residual table (strategy_rebalance_residuals)
+          //     — the one the app/card actually reads. Step 4 above only restores the
+          //     legacy wallets.rebalance_residual column, so without this a reversed
+          //     batch's residual would linger (phantom accumulation). Reset every
+          //     user this batch touched back to their pre-batch value (0 if none),
+          //     scoped by family_member_id, via the service-role endpoint.
+          if (batch.strategy_id) {
+            try {
+              const { data: evRows } = await supabaseClient
+                .from('rebalance_event')
+                .select('user_id, family_member_id')
+                .eq('batch_id', batchId);
+              const snap = (batch.wallet_snapshot_before && typeof batch.wallet_snapshot_before === 'object')
+                ? batch.wallet_snapshot_before : {};
+              const byScope = new Map(); // family_member_id ('' = parent) -> { userId: rands }
+              (evRows || []).forEach((e) => {
+                const uid = e.user_id ? String(e.user_id) : '';
+                if (!uid) return;
+                const fm = e.family_member_id ? String(e.family_member_id) : '';
+                if (!byScope.has(fm)) byScope.set(fm, {});
+                byScope.get(fm)[uid] = Number(snap[uid] || 0); // rands; 0 = had no prior residual
+              });
+              if (byScope.size) {
+                const { data: { session } } = await supabaseClient.auth.getSession();
+                const token = session?.access_token;
+                for (const [fm, balancesByUser] of byScope.entries()) {
+                  const resp = await fetch('/api/orderbook/send-csv?action=rebalance-upsert-residuals', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                    body: JSON.stringify({ strategyId: batch.strategy_id, balancesByUser, familyMemberId: fm || null }),
+                  });
+                  if (!resp.ok) errors.push('Strategy residual restore: HTTP ' + resp.status);
+                }
+              }
+            } catch (e) {
+              errors.push('Strategy residual restore: ' + (e?.message || e));
+            }
+          }
+
           // 5. Delete any stock_holdings_c rows that were created by this batch's settlement
           //    (in case the batch was settled before reversal &mdash; safety net)
           const { error: holdingsDelErr } = await supabaseClient
