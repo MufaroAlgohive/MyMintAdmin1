@@ -343,7 +343,7 @@ const handleSendTradeConfirmation = async (req, res, token) => {
           <!-- Header Image -->
           <tr>
             <td style="padding:0;">
-              <img src="${DASHBOARD_URL}/images/email-header.jpg" alt="Mint Investment Platform" width="600" style="width:100%;max-width:600px;height:auto;display:block;border-radius:18px 18px 0 0;" />
+              <img src="https://cdn.jsdelivr.net/gh/MufaroAlgohive/MyMintAdmin@main/public/images/email-header.jpg" alt="Mint Investment Platform" width="600" style="width:100%;max-width:600px;height:auto;display:block;border-radius:18px 18px 0 0;" />
             </td>
           </tr>
           <!-- Subject Heading -->
@@ -449,23 +449,39 @@ const handleSendTradeConfirmation = async (req, res, token) => {
 
       if (isStrategy) {
         let tableRowsHtml = '';
-        for (const sHolding of (strategyHoldings || [holding])) {
+        const groupedStrategyHoldings = {};
+        for (const h of (strategyHoldings || [holding])) {
+          const side = h.trade_side || (h.quantity < 0 ? 'SELL' : 'BUY');
+          const key = `${h.security_id}_${side}`;
+          if (!groupedStrategyHoldings[key]) {
+            groupedStrategyHoldings[key] = {
+              security_id: h.security_id,
+              trade_side: side,
+              total_quantity: Math.abs(h.quantity),
+              total_value: (Math.abs(h.quantity) * (h.avg_fill || 0)) / 100,
+              ref: h.id === holding.id && bndReference ? bndReference : `BND-${h.id.substring(0, 8).toUpperCase()}`
+            };
+          } else {
+            groupedStrategyHoldings[key].total_quantity += Math.abs(h.quantity);
+            groupedStrategyHoldings[key].total_value += (Math.abs(h.quantity) * (h.avg_fill || 0)) / 100;
+          }
+        }
+
+        for (const sHolding of Object.values(groupedStrategyHoldings)) {
           let sSecurity = {};
           if (sHolding.security_id) {
             const secData = await fetchSupabaseJson(`/rest/v1/securities_c?id=eq.${encodeURIComponent(sHolding.security_id)}`, token);
             if (secData && secData.length) sSecurity = secData[0];
           }
           const sTicker = sSecurity.symbol || '-';
-          const sSide = sHolding.trade_side || (sHolding.quantity < 0 ? 'SELL' : 'BUY');
-          const sQty = Math.abs(sHolding.quantity);
-          const sQtyDisplay = Number(sQty).toLocaleString('en-ZA', { minimumFractionDigits: 0, maximumFractionDigits: 4 });
-          const sTotalVal = (sQty * (sHolding.avg_fill || 0)) / 100;
-          const sTotalStr = `R ${sTotalVal.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-          const sRef = `BND-${sHolding.id.substring(0, 8).toUpperCase()}`;
+          const sSide = sHolding.trade_side;
+          const sQtyDisplay = Number(sHolding.total_quantity).toLocaleString('en-ZA', { minimumFractionDigits: 0, maximumFractionDigits: 4 });
+          const sTotalStr = `R ${sHolding.total_value.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+          
           if (tableRowsHtml !== '') {
             tableRowsHtml += `<tr><td colspan="2" style="height:20px;border-bottom:1px solid #e2e8f0;background:#f8fafc;"></td></tr>`;
           }
-          tableRowsHtml += buildTradeRow({ side: sSide, assetName: sSecurity.name || sTicker, quantityDisplay: sQtyDisplay, totalAmountStr: sTotalStr, ref: sRef });
+          tableRowsHtml += buildTradeRow({ side: sSide, assetName: sSecurity.name || sTicker, quantityDisplay: sQtyDisplay, totalAmountStr: sTotalStr, ref: sHolding.ref });
         }
 
         subject = 'Basket Purchased — MINT';
@@ -502,25 +518,39 @@ const handleSendTradeConfirmation = async (req, res, token) => {
         : currentDateStr;
 
       let tableRowsHtml = '';
-      for (const bHolding of batchHoldings) {
+      const groupedBatchHoldings = {};
+      for (const h of batchHoldings) {
+        const side = h.trade_side || (h.quantity < 0 ? 'SELL' : 'BUY');
+        const key = `${h.security_id}_${side}`;
+        if (!groupedBatchHoldings[key]) {
+          groupedBatchHoldings[key] = {
+            security_id: h.security_id,
+            trade_side: side,
+            total_quantity: Math.abs(h.quantity),
+            total_value: (Math.abs(h.quantity) * (h.avg_fill || 0)) / 100,
+            ref: `BND-${h.id.substring(0, 8).toUpperCase()}`
+          };
+        } else {
+          groupedBatchHoldings[key].total_quantity += Math.abs(h.quantity);
+          groupedBatchHoldings[key].total_value += (Math.abs(h.quantity) * (h.avg_fill || 0)) / 100;
+        }
+      }
+
+      for (const bHolding of Object.values(groupedBatchHoldings)) {
         let security = {};
         if (bHolding.security_id) {
           const secData = await fetchSupabaseJson(`/rest/v1/securities_c?id=eq.${encodeURIComponent(bHolding.security_id)}`, token);
           if (secData && secData.length) security = secData[0];
         }
         const ticker = security.symbol || '-';
-        const side = bHolding.trade_side || (bHolding.quantity < 0 ? 'SELL' : 'BUY');
-        const quantity = Math.abs(bHolding.quantity);
-        const avgFill = (bHolding.avg_fill / 100).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        const quantityDisplay = Number(quantity).toLocaleString('en-ZA', { minimumFractionDigits: 0, maximumFractionDigits: 4 });
-        const totalAmountValue = (quantity * (bHolding.avg_fill || 0)) / 100;
-        const totalAmountStr = `R ${totalAmountValue.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-        const refBatch = `BND-${bHolding.id.substring(0, 8).toUpperCase()}`;
-
+        const side = bHolding.trade_side;
+        const quantityDisplay = Number(bHolding.total_quantity).toLocaleString('en-ZA', { minimumFractionDigits: 0, maximumFractionDigits: 4 });
+        const totalAmountStr = `R ${bHolding.total_value.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        
         if (tableRowsHtml !== '') {
           tableRowsHtml += `<tr><td colspan="2" style="height:20px;border-bottom:1px solid #e2e8f0;background:#f8fafc;"></td></tr>`;
         }
-        tableRowsHtml += buildTradeRow({ side, assetName: security.name || ticker, quantityDisplay, totalAmountStr, ref: refBatch });
+        tableRowsHtml += buildTradeRow({ side, assetName: security.name || ticker, quantityDisplay, totalAmountStr, ref: bHolding.ref });
       }
 
       htmlContent = buildEmailHtml({
