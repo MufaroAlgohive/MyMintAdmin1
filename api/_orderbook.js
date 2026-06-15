@@ -242,6 +242,10 @@ const handleSendTradeConfirmation = async (req, res, token) => {
           strategyHoldings = [holding];
         }
         
+        if (strategyHoldings.length === 0) {
+          return sendJson(res, 400, { error: 'No active holdings found to include in the email.' });
+        }
+        
         if (!forceResend) {
           const holdingIds = strategyHoldings.map(h => h.id).filter(Boolean);
           if (holdingIds.length > 0) {
@@ -616,9 +620,7 @@ const handleSendTradeConfirmation = async (req, res, token) => {
           sent_at: nowIso
         };
         await requestSupabaseJson('/rest/v1/investor_trade_confirmations', { method: 'POST', token, body: confirmRecord }).catch(async () => {
-          if (sHolding.id === holdingId && existingConfirms && existingConfirms[0]?.id) {
-            await requestSupabaseJson(`/rest/v1/investor_trade_confirmations?id=eq.${encodeURIComponent(existingConfirms[0].id)}`, { method: 'PATCH', token, body: { status: 'sent', sent_at: nowIso, resend_id: resendId } });
-          }
+          await requestSupabaseJson(`/rest/v1/investor_trade_confirmations?holding_id=eq.${encodeURIComponent(sHolding.id)}`, { method: 'PATCH', token, body: { status: 'sent', sent_at: nowIso, resend_id: resendId } });
         });
       }
     } else {
@@ -638,10 +640,7 @@ const handleSendTradeConfirmation = async (req, res, token) => {
         sent_at: nowIso
       };
       await requestSupabaseJson('/rest/v1/investor_trade_confirmations', { method: 'POST', token, body: confirmRecord }).catch(async () => {
-        const existingId = existingConfirms && existingConfirms[0]?.id;
-        if (existingId) {
-          await requestSupabaseJson(`/rest/v1/investor_trade_confirmations?id=eq.${encodeURIComponent(existingId)}`, { method: 'PATCH', token, body: { status: 'sent', sent_at: nowIso, resend_id: resendId } });
-        }
+        await requestSupabaseJson(`/rest/v1/investor_trade_confirmations?holding_id=eq.${encodeURIComponent(holdingId)}`, { method: 'PATCH', token, body: { status: 'sent', sent_at: nowIso, resend_id: resendId } });
       });
     }
 
