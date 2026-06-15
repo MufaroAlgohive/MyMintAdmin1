@@ -1484,7 +1484,6 @@
           <div class="orderbook-toolbar">
             <div class="orderbook-count" id="orderbookCount">0 records</div>
             <button class="orderbook-export-btn" id="exportOrderbookBtn" type="button" disabled>Export CSV</button>
-            <button class="orderbook-export-btn" id="sendTestEmailBtn" type="button" style="margin-left:8px;background:#3b82f6;color:white;border-color:#3b82f6;">Send Test Email</button>
           </div>
           <div class="orderbook-table-wrap">
             <table class="orderbook-table">
@@ -1678,33 +1677,6 @@
       }
       return true;
     };
-
-    const sendTestEmailBtn = document.getElementById('sendTestEmailBtn');
-    if (sendTestEmailBtn) {
-      sendTestEmailBtn.addEventListener('click', async () => {
-        sendTestEmailBtn.disabled = true;
-        sendTestEmailBtn.textContent = 'Sending...';
-        try {
-          const res = await fetch('/api/orderbook/send-csv?action=send-test-email', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${window.localStorage.getItem('supabase.auth.token')}`
-            }
-          });
-          if (res.ok) {
-            alert('Test emails sent successfully!');
-          } else {
-            alert('Failed to send test emails.');
-          }
-        } catch (err) {
-          console.error(err);
-          alert('Error sending test emails.');
-        } finally {
-          sendTestEmailBtn.disabled = false;
-          sendTestEmailBtn.textContent = 'Send Test Email';
-        }
-      });
-    }
 
     const signOutBtn = document.getElementById('signOutBtn');
     if (signOutBtn) {

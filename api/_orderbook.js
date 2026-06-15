@@ -231,7 +231,7 @@ const handleSendTradeConfirmation = async (req, res, token) => {
       if (holding.strategy_id) {
         try {
           const stratHoldingsData = await fetchSupabaseJson(
-            `/rest/v1/stock_holdings_c?strategy_id=eq.${encodeURIComponent(holding.strategy_id)}&user_id=eq.${encodeURIComponent(holding.user_id)}&order=Fill_date.desc&limit=50`,
+            `/rest/v1/stock_holdings_c?strategy_id=eq.${encodeURIComponent(holding.strategy_id)}&user_id=eq.${encodeURIComponent(holding.user_id)}&Status=eq.Active&order=Fill_date.desc&limit=50`,
             token
           );
           const fillDay = holding.Fill_date ? holding.Fill_date.substring(0, 10) : null;
@@ -505,7 +505,7 @@ const handleSendTradeConfirmation = async (req, res, token) => {
     } else {
       subject = 'Portfolio Realignment — MINT';
       const batchHoldings = await fetchSupabaseJson(
-        `/rest/v1/stock_holdings_c?rebalance_batch_id=eq.${encodeURIComponent(holding.rebalance_batch_id)}&user_id=eq.${encodeURIComponent(holding.user_id)}`,
+        `/rest/v1/stock_holdings_c?rebalance_batch_id=eq.${encodeURIComponent(holding.rebalance_batch_id)}&user_id=eq.${encodeURIComponent(holding.user_id)}&Status=eq.Active`,
         token
       );
 

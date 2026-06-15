@@ -124,7 +124,7 @@ const buildEmailHtml = ({ firstName, mintRef, orderDate, tableRowsHtml, subjectH
 </html>`;
 
 const run = async () => {
-  const emailTo = ['lonwabo@mymint.co.za', 'mufaro.ncube@mymint.co.za'];
+  const emailTo = ['mufaro.ncube@mymint.co.za'];
   const resendApiKey = process.env.RESEND_API_KEY;
   const orderbookEmailFrom = process.env.ORDERBOOK_EMAIL_FROM || 'notifications@mymint.co.za';
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -152,7 +152,7 @@ const run = async () => {
     const firstName = profile.first_name || 'Investor';
 
     // Fetch latest holding
-    const holdRes = await fetch(`${supabaseUrl}/rest/v1/stock_holdings_c?user_id=eq.${userId}&order=Fill_date.desc&limit=1`, {
+    const holdRes = await fetch(`${supabaseUrl}/rest/v1/stock_holdings_c?user_id=eq.${userId}&Status=eq.Active&order=Fill_date.desc&limit=1`, {
       headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` }
     });
     const holdings = await holdRes.json();
@@ -190,7 +190,7 @@ const run = async () => {
 
     if (isStrategy) {
       const fillDay = holding.Fill_date ? holding.Fill_date.substring(0, 10) : null;
-      const shRes = await fetch(`${supabaseUrl}/rest/v1/stock_holdings_c?strategy_id=eq.${holding.strategy_id}&user_id=eq.${userId}&order=Fill_date.desc&limit=50`, {
+      const shRes = await fetch(`${supabaseUrl}/rest/v1/stock_holdings_c?strategy_id=eq.${holding.strategy_id}&user_id=eq.${userId}&Status=eq.Active&order=Fill_date.desc&limit=50`, {
         headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` }
       });
       const allSh = await shRes.json();
