@@ -231,12 +231,12 @@ const handleSendTradeConfirmation = async (req, res, token) => {
       if (holding.strategy_id) {
         try {
           const stratHoldingsData = await fetchSupabaseJson(
-            `/rest/v1/stock_holdings_c?strategy_id=eq.${encodeURIComponent(holding.strategy_id)}&user_id=eq.${encodeURIComponent(holding.user_id)}&order=fill_date.desc&limit=50`,
+            `/rest/v1/stock_holdings_c?strategy_id=eq.${encodeURIComponent(holding.strategy_id)}&user_id=eq.${encodeURIComponent(holding.user_id)}&order=Fill_date.desc&limit=50`,
             token
           );
-          const fillDay = holding.fill_date ? holding.fill_date.substring(0, 10) : null;
+          const fillDay = holding.Fill_date ? holding.Fill_date.substring(0, 10) : null;
           strategyHoldings = (stratHoldingsData || []).filter(h =>
-            !fillDay || (h.fill_date && h.fill_date.substring(0, 10) === fillDay)
+            !fillDay || (h.Fill_date && h.Fill_date.substring(0, 10) === fillDay)
           );
         } catch (e) {
           strategyHoldings = [holding];
@@ -443,8 +443,8 @@ const handleSendTradeConfirmation = async (req, res, token) => {
       const quantity = Math.abs(holding.quantity);
       const avgFill = (holding.avg_fill / 100).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       const ref = bndReference || `BND-${holding.id.substring(0, 8).toUpperCase()}`;
-      const execDate = holding.fill_date
-        ? new Date(holding.fill_date).toLocaleDateString('en-ZA', { year: 'numeric', month: 'long', day: 'numeric' })
+      const execDate = holding.Fill_date
+        ? new Date(holding.Fill_date).toLocaleDateString('en-ZA', { year: 'numeric', month: 'long', day: 'numeric' })
         : currentDateStr;
 
       const isStrategy = !!holding.strategy_id;
@@ -502,8 +502,8 @@ const handleSendTradeConfirmation = async (req, res, token) => {
 
       const strategyName = holding.strategy_name_snapshot || 'Mint';
       const batchRef = `BND-${holding.rebalance_batch_id.substring(0, 8).toUpperCase()}`;
-      const batchDate = holding.fill_date
-        ? new Date(holding.fill_date).toLocaleDateString('en-ZA', { year: 'numeric', month: 'long', day: 'numeric' })
+      const batchDate = holding.Fill_date
+        ? new Date(holding.Fill_date).toLocaleDateString('en-ZA', { year: 'numeric', month: 'long', day: 'numeric' })
         : currentDateStr;
 
       let tableRowsHtml = '';
