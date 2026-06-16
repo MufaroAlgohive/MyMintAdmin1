@@ -9,7 +9,7 @@ Internal admin dashboard for the Mint investment platform. Provides client manag
 - **Database**: Supabase (PostgreSQL)
 - **Services**: Resend (email), Sumsub (KYC)
 - **Deployment target**: Vercel (serverless functions in `api/`)
-- **auth stuff
+- **auth stuff()
 
 ## Key Pages
 - `/signin.html` - Admin login (Supabase Auth)
