@@ -8198,14 +8198,26 @@
         return { totalSharesDelta: reductionPerLot * totalLots, totalLots, deltaPerLot: reductionPerLot };
       }
 
-      function rebComputeSellExecution(isin, reductionPerLot, totalLots, affectedClientCount) {
+      function rebComputeSellExecution(isin, reductionPerLot, totalLots, affectedClientCount, clients) {
         const totalShares = reductionPerLot * totalLots;
-        const grossProceeds = totalShares * isin.currentPrice;
+        /* Cents-vs-rands guard: securities_c.last_price is stored in CENTS and is
+           usually ÷100'd to rands, but if a cents value slips through here the
+           price reads ~100x too big and the residual explodes (e.g. R153k for a
+           handful of shares). The clients' own avg_fill / Expected_fill (rands)
+           is a reliable reference — if the live price wildly exceeds it (>5x),
+           it's really cents, so divide by 100. Same heuristic as the cost-basis
+           helpers. No-op when the price is already sane. */
+        let priceR = Number(isin.currentPrice) || 0;
+        const refR = Array.isArray(clients)
+          ? clients.reduce((m, c) => Math.max(m, Number(c.costBasisR) || Number(c.avgFillR) || 0), 0)
+          : 0;
+        if (refR > 0 && priceR > refR * 5) priceR = priceR / 100;
+        const grossProceeds = totalShares * priceR;
         const brokerage = grossProceeds * REB_BROKERAGE_RATE;
         const offCustodyFeeMultiplier = Math.max(1, Number(affectedClientCount) || 1);
         const offCustodyFee = REB_OFF_CUSTODY_FEE * offCustodyFeeMultiplier;
         const netProceeds = grossProceeds - brokerage - offCustodyFee;
-        return { isinCode: isin.code, isinDescription: isin.description, totalShares, pricePerShare: isin.currentPrice, grossProceeds, brokerage, offCustodyFee, offCustodyFeeMultiplier, netProceeds };
+        return { isinCode: isin.code, isinDescription: isin.description, totalShares, pricePerShare: priceR, grossProceeds, brokerage, offCustodyFee, offCustodyFeeMultiplier, netProceeds };
       }
 
       function rebComputeBuyExecution(isinCode, isinDescription, pricePerShare, netCapital, clients, applyBuffer) {
@@ -9525,7 +9537,7 @@
         if (rebImpactChangeView) {
           setChangeHeaders();
           const totalLots = clients.reduce((sum, c) => sum + (Number(c.lots) || 0), 0);
-          const sellExec = rebComputeSellExecution(rebSelectedIsin, rebSelectedStep.reductionUnits, totalLots, clients.length);
+          const sellExec = rebComputeSellExecution(rebSelectedIsin, rebSelectedStep.reductionUnits, totalLots, clients.length, clients);
           const residualByClient = rebDistributeMoneyByLots(sellExec.netProceeds, residualClients);
           const totalResidual = Object.values(residualByClient).reduce((sum, v) => sum + Number(v || 0), 0);
           const totalWallet = residualClients.reduce((sum, c) => sum + Number(rebWalletByClient[String(c.id)] || 0), 0);
@@ -9628,7 +9640,7 @@
         if (!rebSelectedIsin || !rebSelectedStep) return;
         const clients = rebClientsForIsin(rebSelectedIsin);
         const totalLots = clients.reduce((s, c) => s + c.lots, 0);
-        const exec = rebComputeSellExecution(rebSelectedIsin, rebSelectedStep.reductionUnits, totalLots, clients.length);
+        const exec = rebComputeSellExecution(rebSelectedIsin, rebSelectedStep.reductionUnits, totalLots, clients.length, clients);
         const modal = document.getElementById("rebSellModal");
         const meta = document.getElementById("rebSellModalMeta");
         const body = document.getElementById("rebSellModalBody");
@@ -10724,7 +10736,7 @@
 
         /* Compute sell execution &rarr; net proceeds */
         const totalLots = clients.reduce((sum, c) => sum + (Number(c.lots) || 0), 0);
-        const sellExec = rebComputeSellExecution(rebSelectedIsin, rebSelectedStep.reductionUnits, totalLots, clients.length);
+        const sellExec = rebComputeSellExecution(rebSelectedIsin, rebSelectedStep.reductionUnits, totalLots, clients.length, clients);
         const netProceeds = Number(sellExec.netProceeds || 0);
         if (netProceeds <= 0) throw new Error("No net proceeds available.");
 
@@ -11237,7 +11249,7 @@
             if (!rebSelectedIsin || !rebSelectedStep) return;
             const clients = rebClientsForIsin(rebSelectedIsin);
             const totalLots = clients.reduce((sum, c) => sum + (Number(c.lots) || 0), 0);
-            const exec = rebComputeSellExecution(rebSelectedIsin, rebSelectedStep.reductionUnits, totalLots, clients.length);
+            const exec = rebComputeSellExecution(rebSelectedIsin, rebSelectedStep.reductionUnits, totalLots, clients.length, clients);
             rebShowBuyModal(exec.netProceeds);
           });
         }
