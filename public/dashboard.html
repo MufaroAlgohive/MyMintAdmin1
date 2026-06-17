@@ -5882,7 +5882,7 @@
         window.__dbgBreadcrumb('ovSelect:render-holdings');
         ovRenderHoldings(holdings, secMap, pendingRebalance);
         window.__dbgBreadcrumb('ovSelect:render-investors');
-        ovRenderInvestors(investRows, profiles, strat, analytics, txnInceptionMap, secPriceMap, pendingRebalance, familyMembers);
+        ovRenderInvestors(investRows, profiles, strat, analytics, txnInceptionMap, secPriceMap, pendingRebalance, familyMembers, residualByUid);
         fetchNewsInsights();
         window.__dbgBreadcrumb('ovSelect:done');
         } catch (err) {
@@ -6426,7 +6426,7 @@
         </tr></tfoot></table>`;
       };
 
-      const ovRenderInvestors = (investRows, profiles, strat, analytics, txnInceptionMap = {}, secPriceMap = {}, pendingRebalance = null, familyMembers = {}) => {
+      const ovRenderInvestors = (investRows, profiles, strat, analytics, txnInceptionMap = {}, secPriceMap = {}, pendingRebalance = null, familyMembers = {}, residualByUid = {}) => {
         const el = document.getElementById('ovInvestorsTable');
         const badge = document.getElementById('ovInvestorCountBadge');
         const aumLabel = document.getElementById('ovInvestorsTotalAUM');
