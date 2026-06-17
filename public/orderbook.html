@@ -5075,13 +5075,39 @@
         [...u.sells.entries()].forEach(([tk, q]) => { t += `<tr><td style="color:#b91c1c;font-weight:bold;">SELL</td><td>${instLabel(u, tk)}</td><td align="right">${q}</td></tr>`; });
       });
       t += `</table>`;
-      const full = `<html><head><meta charset="utf-8"></head><body>${t}</body></html>`;
-      const blob = new Blob(['﻿', full], { type: 'application/vnd.ms-excel' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = `${String(title).replace(/[^a-z0-9]+/gi, '-')}-per-client.xls`;
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      const safeTitle = esc(title);
+      const printDate = new Date().toLocaleDateString('en-ZA', { year: 'numeric', month: 'long', day: 'numeric' });
+      const full = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${safeTitle} — Per Client</title><style>
+        *{box-sizing:border-box;margin:0;padding:0;}
+        body{font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#111;background:#fff;padding:32px;}
+        h1{font-size:15pt;font-weight:700;color:#4c1d95;margin-bottom:4px;}
+        .subtitle{font-size:9pt;color:#6b7280;margin-bottom:24px;}
+        table{width:100%;border-collapse:collapse;margin-top:8px;}
+        th,td{border:1px solid #d1d5db;padding:6px 10px;text-align:left;}
+        th{background:#ede9fe;color:#3b0764;font-weight:700;font-size:10pt;}
+        td[align="right"]{text-align:right;font-variant-numeric:tabular-nums;}
+        .client-row td{background:#f5f3ff;color:#4c1d95;font-weight:700;font-size:11pt;}
+        .buy-label{color:#15803d;font-weight:700;}
+        .sell-label{color:#b91c1c;font-weight:700;}
+        .footer{margin-top:32px;font-size:8pt;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:8px;}
+        @media print{
+          body{padding:16px;}
+          @page{margin:20mm;size:A4 portrait;}
+          .footer{position:fixed;bottom:0;width:100%;}
+        }
+      </style></head><body>
+        <h1>${safeTitle}</h1>
+        <div class="subtitle">Buys / Sells per client &nbsp;·&nbsp; Generated ${printDate}</div>
+        ${t.replace(/<td style="color:#15803d;font-weight:bold;">BUY<\/td>/g, '<td class="buy-label">BUY</td>')
+           .replace(/<td style="color:#b91c1c;font-weight:bold;">SELL<\/td>/g, '<td class="sell-label">SELL</td>')
+           .replace(/<tr><td colspan="3" style="background:#f5f3ff;color:#4c1d95;font-weight:bold;font-size:12pt;">/g, '<tr class="client-row"><td colspan="3">')}
+        <div class="footer">Mint CRM Admin &nbsp;·&nbsp; ${safeTitle} &nbsp;·&nbsp; Confidential</div>
+        <script>window.onload=function(){window.print();}<\/script>
+      </body></html>`;
+      const pw = window.open('', '_blank', 'width=900,height=700');
+      if (!pw) { alert('Please allow pop-ups for this site to download the PDF.'); return; }
+      pw.document.write(full);
+      pw.document.close();
     };
 
     const renderClosedBooks = (closedBooks) => {
@@ -5163,7 +5189,7 @@
                 <button type="button" class="pin-order-btn"
                   style="width:24px;height:24px;padding:0;display:inline-flex;align-items:center;justify-content:center;"
                   onclick="event.preventDefault();event.stopPropagation();downloadClosedBookByUser('${escapeHtml(String(book.id))}')"
-                  title="Download per-client buys, sells &amp; holdings (Excel)">
+                  title="Download per-client buys, sells &amp; holdings (PDF)">
                   <svg viewBox="0 0 24 24" fill="currentColor" style="width:13px;height:13px;"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-7 4h14v-2H5v2z"/></svg>
                 </button>
                 <span style="background:#ecfdf3;color:#166534;border:1px solid #86efac;border-radius:999px;padding:3px 8px;font-size:0.72rem;font-weight:700;">Closed</span>
