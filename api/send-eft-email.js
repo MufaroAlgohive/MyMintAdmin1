@@ -176,7 +176,6 @@ const sendApprovalNotification = async (userId, amount) => {
 <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="max-width:520px;margin:0 auto;">
   <tr><td style="background:#fff;border-radius:16px;padding:32px;box-shadow:0 2px 8px rgba(0,0,0,0.07);border:1px solid #ede9fe;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:24px;">
-      <img src="https://app.mymint.co.za/icon.png" style="width:36px;height:36px;border-radius:9px;" />
       <span style="font-size:16px;font-weight:700;color:#0f172a;">Mint Admin</span>
     </div>
     <h2 style="font-size:18px;font-weight:700;color:#1e293b;margin:0 0 8px 0;">Wallet Deposit Request</h2>
