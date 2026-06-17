@@ -338,17 +338,161 @@ module.exports = async (req, res) => {
     }
 
     const body = typeof req.body === 'object' ? req.body : await readJsonBody(req);
-    const { to, subject, html, walletId } = body;
-
-    if (!to || !html) {
-      return sendJson(res, 400, { error: 'Missing to or html payload' });
-    }
+    let { to, subject, html, walletId } = body;
 
     const resendApiKey = process.env.RESEND_API_KEY;
     const orderbookEmailFrom = process.env.ORDERBOOK_EMAIL_FROM;
 
     if (!resendApiKey || !orderbookEmailFrom) {
       return sendJson(res, 500, { error: 'Email service not configured. Set RESEND_API_KEY and ORDERBOOK_EMAIL_FROM' });
+    }
+
+    if (walletId) {
+      // Securely fetch wallet, profile, and latest transaction amount
+      const wallets = await fetchSupabaseJson(`/rest/v1/wallets?id=eq.${encodeURIComponent(walletId)}&select=balance,currency,user_id&limit=1`);
+      if (wallets && wallets[0]) {
+        const wallet = wallets[0];
+        let amountAdded = null;
+        let mintNumber = '—';
+        let clientName = '';
+        
+        const txns = await fetchSupabaseJson(`/rest/v1/wallet_transactions?wallet_id=eq.${encodeURIComponent(walletId)}&transaction_type=eq.manual&order=created_at.desc&limit=1`);
+        if (txns && txns[0]) amountAdded = txns[0].amount;
+
+        const profiles = await fetchSupabaseJson(`/rest/v1/profiles?id=eq.${encodeURIComponent(wallet.user_id)}&select=first_name,mint_number&limit=1`);
+        if (profiles && profiles[0]) {
+          clientName = profiles[0].first_name || '';
+          mintNumber = profiles[0].mint_number || '—';
+        }
+
+        const currency = wallet.currency || 'ZAR';
+        const newBalance = wallet.balance || 0;
+
+        html = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="format-detection" content="telephone=no, date=no, address=no, email=no">
+  <meta name="color-scheme" content="light dark">
+  <meta name="supported-color-schemes" content="light dark">
+  <title>Funds Allocated – MINT</title>
+  <style type="text/css">
+    body { margin: 0; padding: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important; background-color: #f5f5f7; }
+    table, td, a { margin: 0; padding: 0; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    table, td { border-spacing: 0; border-collapse: collapse; mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+    img { border: 0; outline: none; text-decoration: none; display: block; max-width: 100%; height: auto; }
+    body { width: 100% !important; line-height: 1.5; -webkit-font-smoothing: antialiased; text-align: center; }
+    @media (prefers-color-scheme: dark) {
+      body, .email-wrapper { background-color: #000000 !important; }
+      .email-body { background-color: #0d0d12 !important; border-color: #1a1a24 !important; }
+      .text-primary { color: #ffffff !important; }
+      .text-secondary { color: #8e8eb2 !important; }
+      .divider { border-top-color: #1a1a24 !important; }
+    }
+    @media screen and (max-width: 480px) {
+      .email-body { width: 100% !important; border-radius: 0 !important; border: none !important; }
+      .padding-mobile { padding: 40px 24px !important; }
+      .feature-col-a, .feature-col-b { display: block !important; width: 100% !important; padding: 0 !important; }
+      .feature-col-b { margin-top: 40px !important; text-align: center !important; }
+      .cta-btn, .cta-btn a { display: block !important; width: 100% !important; }
+      .trust-table td { display: block !important; width: 100% !important; border: none !important; padding: 12px 0 !important; }
+    }
+  </style>
+</head>
+<body style="margin:0;padding:0;background-color:#f5f5f7;text-align:center;">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#f5f5f7;">
+    Confirmed: Your funds have been successfully allocated to your MINT wallet.
+  </div>
+  <table class="email-wrapper" role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color:#f5f5f7;text-align:center;">
+    <tr>
+      <td align="center" style="padding:48px 16px;">
+        <div style="max-width:600px;margin:0 auto;">
+          <table class="email-body" role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" align="center" style="max-width:600px;background-color:#ffffff;border-radius:24px;border:1px solid #eef0f7;overflow:hidden;box-shadow:0 12px 40px rgba(49,0,94,0.06);text-align:left;margin:0 auto;">
+            <tr>
+              <td>
+                <img src="https://my-mint-admin.vercel.app/images/Mailer%20Funds%20put.avif" width="600" alt="Funds Allocated" style="display:block;width:100%;height:auto;">
+              </td>
+            </tr>
+            <tr>
+              <td class="padding-mobile" style="padding:64px 48px 24px 48px;">
+                <h1 class="text-primary" style="margin:0 0 16px 0;font-size:32px;font-weight:700;color:#31005e;letter-spacing:-0.8px;line-height:1.1;">
+                  Funds Allocated.
+                </h1>
+                <p class="text-secondary" style="margin:0;font-size:16px;line-height:26px;color:#555c70;font-weight:400;">
+                  Hi <span style="font-weight:600;color:#31005e;" class="text-primary">${clientName}</span>, your transfer has been successfully processed. The funds are now active in your MINT Wallet and ready to be deployed.
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 48px;">
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                  <tr><td class="divider" style="border-top:1px solid #eef0f7;padding-top:40px;"></td></tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td class="padding-mobile" style="padding:0 48px 32px 48px;">
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                  <tr>
+                    <td class="feature-col-a" valign="middle" style="width:55%;padding-right:20px;">
+                      <p style="margin:0;font-size:11px;color:#8e8eb2;text-transform:uppercase;letter-spacing:1.5px;font-weight:700;">MINT Number</p>
+                      <p class="text-primary" style="margin:6px 0 36px 0;font-size:16px;font-weight:500;color:#31005e;">${mintNumber}</p>
+                      ${amountAdded != null ? `
+                      <p style="margin:0;font-size:11px;color:#8e8eb2;text-transform:uppercase;letter-spacing:1.5px;font-weight:700;">Amount Added</p>
+                      <p style="margin:6px 0 24px 0;font-size:24px;font-weight:700;color:#059669;letter-spacing:-0.5px;">+ ${currency} ${Number(amountAdded).toLocaleString('en-ZA', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                      ` : ''}
+                      <p style="margin:0;font-size:11px;color:#8e8eb2;text-transform:uppercase;letter-spacing:1.5px;font-weight:700;">Total Wallet Balance</p>
+                      <p style="margin:6px 0 0 0;font-size:32px;font-weight:700;color:#5c3bcf;letter-spacing:-0.5px;">${currency} ${Number(newBalance).toLocaleString('en-ZA', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                    </td>
+                    <td class="feature-col-b" valign="middle" style="width:45%;text-align:right;">
+                      <img src="https://my-mint-admin.vercel.app/images/wallet-illustration.svg" alt="Wallet Illustration" width="180" style="display:inline-block;border-radius:16px;">
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <tr>
+              <td class="padding-mobile" style="padding:0 48px 64px 48px;text-align:center;">
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="margin:0 auto;">
+                  <tr>
+                    <td style="border-radius:100px;background-color:#5c3bcf;text-align:center;box-shadow: 0 4px 14px rgba(92,59,207,0.25);">
+                      <a href="https://app.mymint.co.za" target="_blank" style="display:inline-block;padding:16px 40px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:100px;letter-spacing:0.5px;">
+                        Invest Now
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+          <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+            <tr>
+              <td style="padding:48px 24px;text-align:center;">
+                <p style="margin:0 0 16px 0;font-size:11px;color:#8e8eb2;line-height:18px;text-align:justify;">
+                  MINT (Pty) Ltd is an authorised Financial Services Provider (FSP 55118) regulated by the Financial Sector Conduct Authority and a registered Credit Provider (NCRCP22892) under the National Credit Act. All investment activity carries risk, including the possible loss of capital and liquidity constraints. Any information provided here is educational in nature, does not constitute personalised financial advice, and should not be relied on as a recommendation to buy or sell securities. Please consider whether investing is appropriate for your circumstances and consult an independent adviser where necessary.
+                </p>
+                <p style="margin:0;font-size:12px;color:#8e8eb2;line-height:22px;">
+                  &copy; 2026 MINT. All rights reserved. <br>
+                  Date: ${new Date().toLocaleDateString('en-ZA')} <br>
+                  <a href="https://www.mymint.co.za" style="color:#8e8eb2;text-decoration:underline;margin-top:8px;display:inline-block;">www.mymint.co.za</a>
+                </p>
+              </td>
+            </tr>
+          </table>
+        </div>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+      }
+    }
+
+    if (!to || !html) {
+      return sendJson(res, 400, { error: 'Missing to or html payload' });
     }
 
     const response = await fetch('https://api.resend.com/emails', {
