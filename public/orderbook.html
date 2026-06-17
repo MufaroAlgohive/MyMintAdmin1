@@ -1499,7 +1499,7 @@
                   <th>Side</th>
                   <th>Total QYT</th>
                   <th>Avg Fill</th>
-                  <th>Actual Fill</th>
+                  <th>Expected Fill</th>
                   <th>Live Price</th>
                   <th>Order Type</th>
                   <th>Settlement Account</th>
@@ -1639,6 +1639,13 @@
         _testUserIdSet = new Set(); // fail safe → behaves as live book (treats nobody as test)
       }
       return _testUserIdSet;
+    };
+    // True if a captured/archived order book belongs to test accounts (any of its
+    // rows is owned by a test user). Keeps UAT and live books — and their numbering
+    // — completely separate.
+    const bookIsTestBook = (book) => {
+      const ids = _testUserIdSet || new Set();
+      return (Array.isArray(book?.rows) ? book.rows : []).some((r) => ids.has(r.userId));
     };
     // Pinned fresh orders (sourceId = stock_holdings_c.id) — float to the top of
     // the live list. Loaded from orderbook_pins via the send-csv api.
@@ -2667,7 +2674,7 @@
                 <th>Side</th>
                 <th>Total QYT</th>
                 <th>Avg Fill</th>
-                <th>Actual Fill</th>
+                <th>Expected Fill</th>
                 <th>Live Price</th>
                 <th>Client PnL</th><th>MINT PnL</th>
               </tr>
@@ -3796,6 +3803,18 @@
       return maxExisting + 1;
     };
 
+    // UAT order books get their OWN sequence (starting at 01) so test numbering never
+    // mixes with the live book. Live mode keeps using activeOrderbookSequence as-is.
+    const getUatDisplaySequence = () => {
+      const maxTest = filledOrderbooksArchive.reduce((mx, b) => {
+        if (!bookIsTestBook(b)) return mx;
+        const seq = Number(b?.sequence);
+        return (Number.isFinite(seq) && seq > mx) ? seq : mx;
+      }, 0);
+      return maxTest + 1;
+    };
+    const currentDisplaySequence = () => orderbookUatMode ? getUatDisplaySequence() : activeOrderbookSequence;
+
     const getTodayOrderbookSequence = () => {
       const now = new Date();
       const dateKey = getArchiveDateKey(now);
@@ -3828,7 +3847,7 @@
     const updateOrderbookHeaderSequence = () => {
       activeOrderbookSequence = getTodayOrderbookSequence();
       if (!orderbookTitle) return;
-      orderbookTitle.textContent = `Orderbook :${String(activeOrderbookSequence).padStart(2, '0')}`;
+      orderbookTitle.textContent = `Orderbook :${String(currentDisplaySequence()).padStart(2, '0')}`;
     };
 
     const isPastFilledCutoff = (dateObj) => {
@@ -4741,9 +4760,7 @@
       // UAT mode), so classify each book by whether its rows belong to test accounts
       // and show only the set that matches the current mode — Live hides test books,
       // UAT shows only test books.
-      const _uatTestIds = _testUserIdSet || new Set();
-      const _bookIsTest = (book) => (Array.isArray(book.rows) ? book.rows : []).some((r) => _uatTestIds.has(r.userId));
-      const _modeBooks = filledOrderbooksArchive.filter((b) => orderbookUatMode ? _bookIsTest(b) : !_bookIsTest(b));
+      const _modeBooks = filledOrderbooksArchive.filter((b) => orderbookUatMode ? bookIsTestBook(b) : !bookIsTestBook(b));
 
       _modeBooks.forEach((book) => {
         const result = isBookFullyClosed(book);
@@ -4866,7 +4883,7 @@
                         <th>Side</th>
                         <th>Total QYT</th>
                         <th>Avg Fill</th>
-                        <th>Actual Fill</th>
+                        <th>Expected Fill</th>
                         <th>Live Price</th>
                         <th>Order Type</th>
                         <th>Settlement Account</th>
@@ -5071,7 +5088,7 @@
                       <th>Side</th>
                       <th>Total QYT</th>
                       <th>Avg Fill</th>
-                      <th>Actual Fill</th>
+                      <th>Expected Fill</th>
                       <th>Live Price</th>
                       <th>Order Type</th>
                       <th>Settlement Account</th>
@@ -5469,7 +5486,7 @@
     const applySearchFilter = () => {
       const pinnedBook = getPinnedTopBook();
       if (orderbookTitle) {
-        orderbookTitle.textContent = `Orderbook :${String(activeOrderbookSequence).padStart(2, '0')}`;
+        orderbookTitle.textContent = `Orderbook :${String(currentDisplaySequence()).padStart(2, '0')}`;
       }
 
       const query = orderbookSearch?.value?.trim().toLowerCase() || '';
