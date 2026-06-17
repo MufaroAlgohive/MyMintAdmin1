@@ -201,6 +201,8 @@
       .nav-icon.active svg {
         fill: #7c3aed;
       }
+      .nav-pending-count { margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: #ef4444; color: #fff; font-size: 10px; font-weight: 700; display: none; align-items: center; justify-content: center; flex-shrink: 0; line-height: 1; box-sizing: border-box; }
+      .nav-pending-count.visible { display: flex; }
 
       .sidebar-footer {
         border-top: 1px solid #f1f5f9;
@@ -767,6 +769,7 @@
         <a class="nav-icon" href="/eft.html" aria-label="EFT Payments">
           <svg viewBox="0 0 24 24"><path d="M20 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/></svg>
           EFT Payments
+          <span class="nav-pending-count" aria-hidden="true"></span>
         </a>
 <span class="sidebar-section-label">System</span>
 
@@ -5751,7 +5754,7 @@
           const sids = [...new Set(investRows.map(r => r.security_id).filter(Boolean))];
           const fmIds = [...new Set(investRows.map(r => r.family_member_id).filter(Boolean))];
           const fetches = [
-            supabaseClient.from('profiles').select('id, first_name, last_name, email').in('id', uids.length ? uids : ['_']),
+            supabaseClient.from('profiles').select('id, first_name, last_name, email, is_test').in('id', uids.length ? uids : ['_']),
             supabaseClient.from('transactions')
               .select('user_id, transaction_date')
               .in('user_id', uids.length ? uids : ['_'])
@@ -5764,6 +5767,9 @@
           ];
           const [{ data: profs }, { data: txnRows }, { data: fmRows }] = await Promise.all(fetches);
           if (profs) profs.forEach(p => { profiles[p.id] = p; });
+          /* Remove holdings that belong to test accounts */
+          const _testUids = new Set((profs || []).filter(p => p.is_test).map(p => p.id));
+          if (_testUids.size) investRows.splice(0, investRows.length, ...investRows.filter(r => !_testUids.has(r.user_id)));
           (fmRows || []).forEach((fm) => { familyMembers[fm.id] = fm; });
           (txnRows || []).forEach(t => {
             const d = t.transaction_date ? t.transaction_date.split('T')[0] : null;
@@ -5882,7 +5888,7 @@
         window.__dbgBreadcrumb('ovSelect:render-holdings');
         ovRenderHoldings(holdings, secMap, pendingRebalance);
         window.__dbgBreadcrumb('ovSelect:render-investors');
-        ovRenderInvestors(investRows, profiles, strat, analytics, txnInceptionMap, secPriceMap, pendingRebalance, familyMembers);
+        ovRenderInvestors(investRows, profiles, strat, analytics, txnInceptionMap, secPriceMap, pendingRebalance, familyMembers, residualByUid);
         fetchNewsInsights();
         window.__dbgBreadcrumb('ovSelect:done');
         } catch (err) {
@@ -6426,7 +6432,7 @@
         </tr></tfoot></table>`;
       };
 
-      const ovRenderInvestors = (investRows, profiles, strat, analytics, txnInceptionMap = {}, secPriceMap = {}, pendingRebalance = null, familyMembers = {}) => {
+      const ovRenderInvestors = (investRows, profiles, strat, analytics, txnInceptionMap = {}, secPriceMap = {}, pendingRebalance = null, familyMembers = {}, residualByUid = {}) => {
         const el = document.getElementById('ovInvestorsTable');
         const badge = document.getElementById('ovInvestorCountBadge');
         const aumLabel = document.getElementById('ovInvestorsTotalAUM');
@@ -6443,44 +6449,19 @@
               - user_id: distinguishes different investors
               - family_member_id: a parent who bought for two children gets one
                 card per child, plus a separate card for their own holdings
-              - created_at minute bucket: two separate buys of the same strategy
-                by the same account at different times surface separately
-              Holdings inside the same minute (one purchase fanning out across
-              N security rows) stay grouped &mdash; that's one event for the user. */
-        const minuteBucket = (iso) => String(iso || '').slice(0, 16); // YYYY-MM-DDTHH:mm
-
-        /* Rebalance-created BUY holdings (those with rebalance_batch_id) are
-           position swaps, NOT new client money. Merging them into their own
-           minute-bucket would show the client twice and inflate "Invested".
-           Fix: find the earliest non-rebalance bucket per (user, fm) and re-use
-           it for any rebalance holdings from the same owner, so they all appear
-           on one card. Exclude their fill price from the cost basis. */
-        const earliestBucketByOwner = {};
-        investRows.forEach(r => {
-          if (r.rebalance_batch_id) return; // skip rebalance holdings in first pass
-          const ownerKey = `${r.user_id}|${r.family_member_id || ''}`;
-          const b = minuteBucket(r.created_at);
-          if (!earliestBucketByOwner[ownerKey] || b < earliestBucketByOwner[ownerKey])
-            earliestBucketByOwner[ownerKey] = b;
-        });
-
+              All holdings for the same (user, family_member) are merged into
+              one card regardless of how many buy events they had. */
+        /* Group ALL holdings for the same (user, family_member) into one card,
+           regardless of how many separate buy events they made. */
         const byBatch = {};
         investRows.forEach(r => {
           const uid = r.user_id;
           const fmId = r.family_member_id || '';
-          const ownerKey = `${uid}|${fmId}`;
-          const isRebalance = !!r.rebalance_batch_id;
-          /* Use the original purchase bucket for rebalance holdings so they
-             group with the user's existing card, not as a new entry. */
-          const bucket = isRebalance
-            ? (earliestBucketByOwner[ownerKey] || minuteBucket(r.created_at))
-            : minuteBucket(r.created_at);
-          const key = `${uid}|${fmId}|${bucket}`;
+          const key = `${uid}|${fmId}`;
           if (!byBatch[key]) {
             byBatch[key] = {
               uid,
               familyMemberId: fmId || null,
-              bucket,
               costBasis: 0,
               currentVal: 0,
               inception: r.created_at,
@@ -6489,10 +6470,9 @@
           }
           const u = byBatch[key];
           const qty = Number(r.quantity) || 0;
-          /* Cost basis: include ALL active holdings (original + rebalance).
-             Rebalance holdings use avg_fill as their cost (the broker fill price
-             is their real cost, just funded internally from sell proceeds rather
-             than from the client's wallet). Expected_fill wins when set. */
+          /* Cost basis: sum across all holdings. Rebalance holdings use avg_fill
+             (broker fill price funded from sell proceeds, not new client cash).
+             Expected_fill wins when set. */
           const avgRands = (Number(r.avg_fill) || 0) / 100;
           const expectedRaw = Number(r.expected_fill) || 0;
           let fill = avgRands;
@@ -6500,25 +6480,25 @@
             fill = (avgRands > 0 && expectedRaw > avgRands * 5) ? expectedRaw / 100 : expectedRaw;
           }
           u.costBasis += (fill * qty);
-          /* Current value: include ALL holdings (original + rebalanced). */
+          /* Current value: all holdings at live price. */
           const lp = secPriceMap[r.security_id] || 0;
           if (lp > 0) u.currentVal += (qty * lp);
+          /* Track earliest inception across all their buys. */
           if (r.created_at && new Date(r.created_at) < new Date(u.inception))
             u.inception = r.created_at;
         });
 
-        /* ── Merge pending buy-side rebalance clients &mdash; pending events come
-              from one batch and don't carry a created_at on the event, so we
-              key them under a per-(user, family_member) 'pending' bucket. */
+        /* Merge pending buy-side rebalance events into the existing user card
+           (or create one if the user has no settled holdings yet). */
         if (pendingRebalance && pendingRebalance.events) {
           pendingRebalance.events
             .filter(ev => ev.trade_side === 'BUY' || ev.closed_reason === 'REBALANCE_EVENT_BUY' || ev.closed_reason === 'REBALANCE_EVENT_BUY_WALLET')
             .forEach(ev => {
               const uid = ev.user_id;
               const fmId = ev.family_member_id || '';
-              const key = `${uid}|${fmId}|pending`;
+              const key = `${uid}|${fmId}`;
               if (!byBatch[key]) {
-                byBatch[key] = { uid, familyMemberId: fmId || null, bucket: 'pending', costBasis: 0, currentVal: 0, inception: new Date().toISOString(), pending: true };
+                byBatch[key] = { uid, familyMemberId: fmId || null, costBasis: 0, currentVal: 0, inception: new Date().toISOString(), pending: true };
               }
               byBatch[key].pending = true;
             });
@@ -6564,12 +6544,7 @@
           const pnl        = currentVal - data.costBasis;
           const pending    = !!data.pending;
 
-          /* Per-batch buy time (display only &mdash; null for the pending bucket) */
-          const buyTime = (data.bucket && data.bucket !== 'pending')
-            ? data.bucket.replace('T', ' ')
-            : null;
-
-          return { uid, familyMemberId: data.familyMemberId, bucket: data.bucket, name, isMinor, invested: data.costBasis, currentVal, pnl, returnPct, days, inceptionDate, pending, buyTime };
+          return { uid, familyMemberId: data.familyMemberId, name, isMinor, invested: data.costBasis, currentVal, pnl, returnPct, days, inceptionDate, pending };
         }).sort((a, b) => b.currentVal - a.currentVal);
 
         if (badge) badge.textContent = rows.length;
@@ -6587,16 +6562,12 @@
           const pendingRowBg = r.pending ? 'background:#fffbeb;border-left:3px solid #f59e0b;' : '';
           const pendingBadge = r.pending ? '<span style="font-size:9px;font-weight:700;color:#92400e;background:#fef3c7;padding:2px 7px;border-radius:6px;text-transform:uppercase;letter-spacing:.04em;margin-left:6px;">Pending</span>' : '';
           const minorBadge = r.isMinor ? '<span style="font-size:9px;font-weight:700;color:#5b21b6;background:#ede9fe;padding:2px 7px;border-radius:6px;text-transform:uppercase;letter-spacing:.04em;margin-left:6px;">Minor</span>' : '';
-          /* Show buy time so two cards for the same user are distinguishable */
-          const buyTimeBadge = r.buyTime
-            ? `<span style="font-size:9px;font-weight:600;color:#7c3aed;background:#ede9fe;padding:2px 6px;border-radius:5px;margin-left:6px;font-family:ui-monospace,monospace;">${r.buyTime}</span>`
-            : '';
           return `
             <div data-inv-idx="${idx}" style="padding:11px 12px;border-bottom:1px solid #f1f5f9;cursor:pointer;${pendingRowBg}" class="investor-row-hover"
               onclick="ovShowInvestorPreview(${idx})">
               <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:7px;">
                 <div style="min-width:0;flex:1;overflow:hidden;">
-                  <div style="font-size:12px;font-weight:600;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${r.name}${minorBadge}${pendingBadge}${buyTimeBadge}</div>
+                  <div style="font-size:12px;font-weight:600;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${r.name}${minorBadge}${pendingBadge}</div>
                   <div style="font-size:10px;color:#94a3b8;margin-top:1px;">Since ${inceStr} &middot; ${r.days}d</div>
                 </div>
                 <div style="flex-shrink:0;padding-left:10px;padding-top:1px;">
@@ -10882,7 +10853,11 @@
         body.innerHTML = '<p class="text-xs text-slate-400 text-center py-6">Loading&hellip;</p>';
         modal.classList.remove("hidden");
 
-        const buyUniverse = await rebLoadBuySecurities();
+        const [buyUniverse, testWalletRes] = await Promise.all([
+          rebLoadBuySecurities(),
+          supabaseClient.from('wallets').select('user_id').eq('status', 'test'),
+        ]);
+        const testWalletUserIds = new Set((testWalletRes.data || []).map((r) => r.user_id).filter(Boolean));
         const strategyClients = rebClientsForStrategy();
         let selectedBuyId = null;
         let buyPerLot = 1;
@@ -10890,6 +10865,8 @@
 
         const render = () => {
           const totalWallet = strategyClients.reduce((s, c) => s + Number(rebWalletByClient[String(c.id)] || 0), 0);
+          const testParticipants = strategyClients.filter((c) => testWalletUserIds.has(String(c.id)));
+          const hasTestWallets = testParticipants.length > 0;
           const q = searchTerm.trim().toLowerCase();
           const filtered = q
             ? buyUniverse.filter((i) => `${i.code} ${i.fullSymbol} ${i.description}`.toLowerCase().includes(q))
@@ -10920,6 +10897,14 @@
 
           body.innerHTML = `
             <div class="space-y-4">
+              ${hasTestWallets ? `
+              <div class="rounded-xl border border-amber-200 bg-amber-50 p-3 flex items-start gap-2">
+                <span style="font-size:15px;line-height:1.2;">⚠️</span>
+                <div>
+                  <p class="text-[11px] font-semibold text-amber-700">${testParticipants.length} client${testParticipants.length !== 1 ? 's' : ''} ha${testParticipants.length !== 1 ? 've' : 's'} a test wallet</p>
+                  <p class="text-[10px] text-amber-600 mt-0.5">Orders for these clients will appear in the <strong>Test Wallet Orders</strong> tab of the orderbook, not the live book.</p>
+                </div>
+              </div>` : ''}
               <!-- Pool summary -->
               <div class="rounded-xl border border-violet-100 bg-violet-50 p-3">
                 <div class="flex items-baseline justify-between">
@@ -10943,17 +10928,21 @@
                       </tr>
                     </thead>
                     <tbody>
-                      ${perUserPlan.map((p) => `
+                      ${perUserPlan.map((p) => {
+                        const isTest = testWalletUserIds.has(String(p.client.id));
+                        return `
                         <tr class="${selectedInstrument && !p.afford && p.sharesNeeded > 0 ? 'bg-red-50' : 'hover:bg-slate-50'}">
-                          <td class="px-3 py-2 text-slate-800 truncate max-w-[180px]" title="${p.client.id}">${p.client.name}</td>
+                          <td class="px-3 py-2 text-slate-800 truncate max-w-[180px]" title="${p.client.id}">
+                            ${p.client.name}${isTest ? ' <span style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:9px;font-weight:700;letter-spacing:0.04em;background:#fef3c7;color:#d97706;vertical-align:middle;">TEST</span>' : ''}
+                          </td>
                           <td class="px-3 py-2 text-right font-mono text-slate-500">${p.lots.toLocaleString()}</td>
                           <td class="px-3 py-2 text-right font-mono ${p.walletR > 0 ? 'text-violet-700 font-semibold' : 'text-slate-400'}">${rebFmtZAR(p.walletR)}</td>
                           ${selectedInstrument ? `
                             <td class="px-3 py-2 text-right font-mono text-slate-600">${rebFmtZAR(p.cost)}</td>
                             <td class="px-3 py-2 text-right font-mono font-semibold ${p.afford ? 'text-green-700' : 'text-red-600'}">${rebFmtZAR(p.remaining)}</td>
                           ` : ''}
-                        </tr>
-                      `).join('') || '<tr><td colspan="3" class="text-center text-slate-400 py-4">No clients</td></tr>'}
+                        </tr>`;
+                      }).join('') || '<tr><td colspan="3" class="text-center text-slate-400 py-4">No clients</td></tr>'}
                     </tbody>
                   </table>
                 </div>
@@ -11363,6 +11352,30 @@
           }
         });
       });
+
+      (() => {
+        const eftNavLink = document.querySelector('.sidebar-nav a.nav-icon[href="/eft.html"]');
+        const refreshEftPendingBadge = async () => {
+          if (!eftNavLink) return;
+          const badge = eftNavLink.querySelector('.nav-pending-count');
+          if (!badge) return;
+          try {
+            const { data: sessionData } = await supabaseClient.auth.getSession();
+            if (!sessionData?.session) { badge.classList.remove('visible'); return; }
+            const tok = sessionData.session.access_token;
+            const resp = await fetch('/api/eft/pending-transactions', { headers: { Authorization: `Bearer ${tok}` } });
+            if (!resp.ok) throw new Error('non-ok');
+            const { transactions } = await resp.json();
+            const count = Array.isArray(transactions) ? transactions.length : 0;
+            badge.textContent = count > 99 ? '99+' : String(count);
+            badge.classList.toggle('visible', count > 0);
+            eftNavLink.setAttribute('aria-label', count > 0 ? `EFT Payments, ${count} pending` : 'EFT Payments');
+          } catch { badge.classList.remove('visible'); }
+        };
+        refreshEftPendingBadge();
+        setInterval(refreshEftPendingBadge, 60000);
+        document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshEftPendingBadge(); });
+      })();
     </script>
   <style>
     #pageSkeleton{position:fixed;left:220px;top:0;right:0;bottom:0;background:#f8fafc;z-index:50;padding:28px 32px;display:flex;flex-direction:column;gap:20px;pointer-events:none;transition:opacity 0.3s ease}

@@ -445,9 +445,14 @@
       });
     }
 
+    let currentUserEmail = '';
+    let currentUserSession = null;
+
     (async () => {
       const { data: { session } } = await supabaseClient.auth.getSession();
+      currentUserSession = session;
       const email = session?.user?.email || '';
+      currentUserEmail = email;
       const nameEl = document.getElementById('sidebarUserEmail');
       const avatarEl = document.getElementById('sidebarAvatarInitials');
       if (nameEl && email) nameEl.textContent = email;
@@ -582,17 +587,21 @@
 
       try {
         const walletStatus = document.getElementById('walletStatus').value || 'active';
+        const { data: { session: freshSession } } = await supabaseClient.auth.getSession();
         const response = await fetch('/api/send-eft-email?action=add-wallet', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${freshSession?.access_token}` },
           body: JSON.stringify({ user_id: clientId, amount, account_type: accountType, wallet_status: walletStatus }),
         });
 
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || 'Failed to add to wallet');
 
-        // Refresh table to get updated profile/wallet info for the email
-        addWalletSuccess.textContent = `Successfully added ${formatCurrency(amount)} to wallet`;
+        if (walletStatus === 'active') {
+          addWalletSuccess.textContent = `Wallet request submitted — ${formatCurrency(amount)} pending approval from Lonwabo`;
+        } else {
+          addWalletSuccess.textContent = `Successfully added ${formatCurrency(amount)} to test wallet`;
+        }
         addWalletSuccess.style.display = 'block';
 
         walletAmount.value = '';
@@ -640,10 +649,29 @@
         });
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || 'Failed to approve');
-        alert('Deposit approved successfully!');
+        showToast('Deposit approved successfully!');
         loadPaidEfts();
       } catch (err) {
-        alert(err.message);
+        showToast(err.message, 'error');
+      }
+    };
+
+    window.rejectPendingDeposit = async (transactionId, clientName, amount) => {
+      const reason = window.prompt(`Reject this deposit of ${amount} for ${clientName}?\n\nOptional reason (leave blank to skip):`, '');
+      if (reason === null) return;
+      try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        const response = await fetch('/api/send-eft-email?action=reject-deposit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+          body: JSON.stringify({ transaction_id: transactionId, reason: reason.trim() || null }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Failed to reject');
+        showToast('Deposit request rejected.');
+        loadPaidEfts();
+      } catch (err) {
+        showToast(err.message, 'error');
       }
     };
 
@@ -658,41 +686,39 @@
 
       try {
         if (currentEftFilter === 'pending') {
-          const { data: txns, error } = await supabaseClient
-            .from('wallet_transactions')
-            .select('id, user_id, amount, created_at, status')
-            .eq('status', 'pending')
-            .order('created_at', { ascending: false });
-
-          if (error) throw error;
+          const resp = await fetch('/api/eft/pending-transactions', {
+            headers: { Authorization: `Bearer ${session?.access_token}` }
+          });
+          if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.error || `Server error ${resp.status}`);
+          }
+          const { transactions: txns } = await resp.json();
 
           if (!txns || txns.length === 0) {
-            tableBody.innerHTML = '<tr><td colspan="4" class="empty-state">No pending approvals</td></tr>';
+            tableBody.innerHTML = '<tr><td colspan="5" class="empty-state">No pending approvals</td></tr>';
             totalWalletCount.textContent = '0';
             totalWalletAmount.textContent = formatCurrency(0);
             return;
-          }
-
-          const userIds = txns.map(t => t.user_id).filter(Boolean);
-          let profilesMap = {};
-          if (userIds.length > 0) {
-            const { data: profiles } = await supabaseClient
-              .from('profiles')
-              .select('id, first_name, last_name, mint_number, email')
-              .in('id', userIds);
-            if (profiles) profiles.forEach(p => { profilesMap[p.id] = p; });
           }
 
           const totalAmount = txns.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
           totalWalletCount.textContent = txns.length.toString();
           totalWalletAmount.textContent = formatCurrency(totalAmount);
 
+          const isApprover = (session?.user?.email || '').toLowerCase() === 'lonwabo@mymint.co.za';
+
           tableBody.innerHTML = txns.map(txn => {
-            const p = profilesMap[txn.user_id] || {};
+            const p = txn.profile || {};
             const dateStr = new Date(txn.created_at).toLocaleDateString('en-ZA');
-            const parentName = `${p.first_name || ''} ${p.last_name || ''}`;
-            const actionButton = currentUserId === '766494d0-048c-4156-b706-7ad7050508bd'
-              ? `<button class="btn btn-primary" style="padding:6px 12px;font-size:11px;background:#f59e0b;" onclick="approvePendingDeposit('${txn.id}')">Approve</button>`
+            const parentName = `${p.first_name || ''} ${p.last_name || ''}`.trim() || '—';
+            const safeClientName = parentName.replace(/'/g, "\\'");
+            const safeAmount = formatCurrency(txn.amount).replace(/'/g, "\\'");
+            const actionCell = isApprover
+              ? `<div style="display:flex;gap:6px;">
+                   <button class="btn btn-primary" style="padding:6px 12px;font-size:11px;background:#059669;" onclick="approvePendingDeposit('${txn.id}')">Approve</button>
+                   <button class="btn btn-primary" style="padding:6px 12px;font-size:11px;background:#ef4444;" onclick="rejectPendingDeposit('${txn.id}','${safeClientName}','${safeAmount}')">Reject</button>
+                 </div>`
               : `<span style="color:#f59e0b;font-weight:600;font-size:12px;">Pending</span>`;
 
             return `
@@ -701,7 +727,7 @@
                 <td style="font-weight:600;color:#1e293b;">${parentName}</td>
                 <td style="font-weight:700;color:#f59e0b;">+${formatCurrency(txn.amount)}</td>
                 <td style="font-family:monospace;color:#7c3aed;font-weight:600;">Pending Deposit</td>
-                <td>${actionButton}</td>
+                <td>${actionCell}</td>
               </tr>
             `;
           }).join('');

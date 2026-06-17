@@ -59,6 +59,8 @@
     .nav-icon:hover svg { fill: #7c3aed; }
     .nav-icon.active { background: #ede9fe; color: #5b21b6; font-weight: 600; }
     .nav-icon.active svg { fill: #7c3aed; }
+    .nav-pending-count { margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: #ef4444; color: #fff; font-size: 10px; font-weight: 700; display: none; align-items: center; justify-content: center; flex-shrink: 0; line-height: 1; box-sizing: border-box; }
+    .nav-pending-count.visible { display: flex; }
     .sidebar-footer { border-top: 1px solid #f1f5f9; padding: 12px; }
     .sidebar-user { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; margin-bottom: 4px; }
     .sidebar-avatar { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #7c3aed, #a855f7); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #fff; flex-shrink: 0; }
@@ -1433,6 +1435,7 @@
       <a class="nav-icon" href="/eft.html" aria-label="EFT Payments">
         <svg viewBox="0 0 24 24"><path d="M20 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/></svg>
         EFT Payments
+        <span class="nav-pending-count" aria-hidden="true"></span>
       </a>
 <span class="sidebar-section-label">System</span>
 
@@ -1641,12 +1644,17 @@
     const getTestUserIdSet = async () => {
       if (_testUserIdSet) return _testUserIdSet;
       try {
-        const { data, error } = await supabaseClient.from('profiles').select('id').eq('is_test', true);
-        if (error) throw error;
-        _testUserIdSet = new Set((data || []).map((r) => r.id));
+        const [profilesRes, walletsRes] = await Promise.all([
+          supabaseClient.from('profiles').select('id').eq('is_test', true),
+          supabaseClient.from('wallets').select('user_id').eq('status', 'test'),
+        ]);
+        if (profilesRes.error) throw profilesRes.error;
+        const profileIds = (profilesRes.data || []).map((r) => r.id);
+        const walletUserIds = (walletsRes.data || []).map((r) => r.user_id).filter(Boolean);
+        _testUserIdSet = new Set([...profileIds, ...walletUserIds]);
       } catch (err) {
         console.error('[UAT] could not load test accounts:', err?.message || err);
-        _testUserIdSet = new Set(); // fail safe → behaves as live book (treats nobody as test)
+        _testUserIdSet = new Set();
       }
       return _testUserIdSet;
     };
@@ -7548,13 +7556,13 @@
 
     if (orderbookUatToggle) {
       const paintUatToggle = () => {
-        orderbookUatToggle.textContent = orderbookUatMode ? 'UAT: test orders' : 'Live orders';
+        orderbookUatToggle.textContent = orderbookUatMode ? 'Test Wallet Orders' : 'Live orders';
         orderbookUatToggle.style.background = orderbookUatMode ? '#f59e0b' : '';
         orderbookUatToggle.style.color = orderbookUatMode ? '#fff' : '';
         orderbookUatToggle.style.borderColor = orderbookUatMode ? '#f59e0b' : '';
         orderbookUatToggle.title = orderbookUatMode
-          ? 'Showing UAT test-account orders only — click to return to the live book'
-          : 'Toggle between live (real) orders and UAT test-account orders';
+          ? 'Showing test wallet orders only (users with a test wallet) — click to return to the live book'
+          : 'Toggle to view orders placed using test wallets';
       };
       paintUatToggle();
       orderbookUatToggle.addEventListener('click', () => {
@@ -8102,6 +8110,30 @@
     });
 
     startOrderbookTimer();
+
+    (() => {
+      const eftNavLink = document.querySelector('.sidebar-nav a.nav-icon[href="/eft.html"]');
+      const refreshEftPendingBadge = async () => {
+        if (!eftNavLink) return;
+        const badge = eftNavLink.querySelector('.nav-pending-count');
+        if (!badge) return;
+        try {
+          const { data: sessionData } = await supabaseClient.auth.getSession();
+          if (!sessionData?.session) { badge.classList.remove('visible'); return; }
+          const tok = sessionData.session.access_token;
+          const resp = await fetch('/api/eft/pending-transactions', { headers: { Authorization: `Bearer ${tok}` } });
+          if (!resp.ok) throw new Error('non-ok');
+          const { transactions } = await resp.json();
+          const count = Array.isArray(transactions) ? transactions.length : 0;
+          badge.textContent = count > 99 ? '99+' : String(count);
+          badge.classList.toggle('visible', count > 0);
+          eftNavLink.setAttribute('aria-label', count > 0 ? `EFT Payments, ${count} pending` : 'EFT Payments');
+        } catch { badge.classList.remove('visible'); }
+      };
+      refreshEftPendingBadge();
+      setInterval(refreshEftPendingBadge, 60000);
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshEftPendingBadge(); });
+    })();
   </script>
   <style>
     #pageSkeleton{position:fixed;left:220px;top:0;right:0;bottom:0;background:#f8fafc;z-index:50;padding:28px 32px;display:flex;flex-direction:column;gap:20px;pointer-events:none;transition:opacity 0.3s ease}
