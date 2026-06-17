@@ -5754,7 +5754,7 @@
           const sids = [...new Set(investRows.map(r => r.security_id).filter(Boolean))];
           const fmIds = [...new Set(investRows.map(r => r.family_member_id).filter(Boolean))];
           const fetches = [
-            supabaseClient.from('profiles').select('id, first_name, last_name, email').in('id', uids.length ? uids : ['_']),
+            supabaseClient.from('profiles').select('id, first_name, last_name, email, is_test').in('id', uids.length ? uids : ['_']),
             supabaseClient.from('transactions')
               .select('user_id, transaction_date')
               .in('user_id', uids.length ? uids : ['_'])
@@ -5767,6 +5767,9 @@
           ];
           const [{ data: profs }, { data: txnRows }, { data: fmRows }] = await Promise.all(fetches);
           if (profs) profs.forEach(p => { profiles[p.id] = p; });
+          /* Remove holdings that belong to test accounts */
+          const _testUids = new Set((profs || []).filter(p => p.is_test).map(p => p.id));
+          if (_testUids.size) investRows.splice(0, investRows.length, ...investRows.filter(r => !_testUids.has(r.user_id)));
           (fmRows || []).forEach((fm) => { familyMembers[fm.id] = fm; });
           (txnRows || []).forEach(t => {
             const d = t.transaction_date ? t.transaction_date.split('T')[0] : null;
