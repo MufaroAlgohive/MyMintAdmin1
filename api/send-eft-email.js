@@ -153,7 +153,7 @@ const handleAddWallet = async (req, res, token) => {
   return sendJson(res, 200, { success: true, amountAdded: numericAmount, newBalance: newWalletBalance, walletId, pending: wallet_status === 'active' });
 };
 
-const APPROVER_EMAIL = 'lonwabo@mymint.co.za';
+const APPROVER_EMAILS = ['lonwabo@mymint.co.za', 'mufaro.ncube@mymint.co.za'];
 
 const sendApprovalNotification = async (userId, amount) => {
   const resendApiKey = process.env.RESEND_API_KEY;
@@ -196,7 +196,7 @@ const sendApprovalNotification = async (userId, amount) => {
     await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${resendApiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: fromAddress, to: [APPROVER_EMAIL], subject: `Wallet Request — ${clientName} (${zarAmount})`, html }),
+      body: JSON.stringify({ from: fromAddress, to: APPROVER_EMAILS, subject: `Wallet Request — ${clientName} (${zarAmount})`, html }),
     });
   } catch (e) {
     console.error('Approval notification email failed:', e.message);
@@ -204,7 +204,7 @@ const sendApprovalNotification = async (userId, amount) => {
 };
 
 const handleApproveDeposit = async (req, res, user) => {
-  if ((user.email || '').toLowerCase() !== APPROVER_EMAIL) {
+  if (!APPROVER_EMAILS.includes((user.email || '').toLowerCase())) {
     return sendJson(res, 403, { error: 'Unauthorized to approve deposits' });
   }
 
@@ -252,7 +252,7 @@ const handleApproveDeposit = async (req, res, user) => {
 };
 
 const handleRejectDeposit = async (req, res, user) => {
-  if ((user.email || '').toLowerCase() !== APPROVER_EMAIL) {
+  if (!APPROVER_EMAILS.includes((user.email || '').toLowerCase())) {
     return sendJson(res, 403, { error: 'Unauthorized to reject deposits' });
   }
 
