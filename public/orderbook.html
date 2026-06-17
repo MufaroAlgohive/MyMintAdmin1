@@ -5054,7 +5054,6 @@
         t += `<tr><td colspan="3" style="background:#f5f3ff;color:#4c1d95;font-weight:bold;font-size:12pt;">${esc(u.name)}</td></tr>`;
         [...u.buys.entries()].forEach(([tk, q]) => { t += `<tr><td style="color:#15803d;font-weight:bold;">BUY</td><td>${instLabel(u, tk)}</td><td align="right">${q}</td></tr>`; });
         [...u.sells.entries()].forEach(([tk, q]) => { t += `<tr><td style="color:#b91c1c;font-weight:bold;">SELL</td><td>${instLabel(u, tk)}</td><td align="right">${q}</td></tr>`; });
-        [...u.net.entries()].filter(([, q]) => q > 0).forEach(([tk, q]) => { t += `<tr><td style="color:#1d4ed8;font-weight:bold;">HOLDING</td><td>${instLabel(u, tk)}</td><td align="right">${q}</td></tr>`; });
       });
       t += `</table>`;
       const full = `<html><head><meta charset="utf-8"></head><body>${t}</body></html>`;
