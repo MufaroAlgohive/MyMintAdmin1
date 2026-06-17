@@ -5046,8 +5046,10 @@
           const bnd = Array.isArray(h.bndRows) ? h.bndRows : [];
           if (bnd.length) {
             bnd.forEach((b) => addLine(b.userId, b.familyMemberId, b.clientName, b.side || h.side || row.side, b.ticker || h.ticker, b.instrumentName || h.instrumentName, qtyOf(b)));
-          } else if (!row.isStrategy && (h.userId || h.clientName)) {
-            addLine(h.userId, h.familyMemberId, h.clientName, h.side, h.ticker, h.instrumentName, qtyOf(h));
+          } else if (h.userId || h.clientName) {
+            // No bndRows (e.g. a manually swapped-in holding like ABG) — the holding row
+            // itself is per-user, so use it directly so nothing is dropped.
+            addLine(h.userId, h.familyMemberId, h.clientName, h.side || row.side, h.ticker, h.instrumentName, qtyOf(h));
           }
         });
       });
@@ -5056,7 +5058,7 @@
       const title = (typeof formatBookTitle === 'function') ? formatBookTitle(book) : ('Order Book ' + (book.sequence || ''));
       const instLabel = (u, t) => esc((u.instr.get(t) ? u.instr.get(t) + ' ' : '') + '(' + t + ')');
       let t = `<table border="1" cellspacing="0" cellpadding="5" style="border-collapse:collapse;font-family:Calibri,Arial,sans-serif;font-size:11pt;">`;
-      t += `<tr><td colspan="3" style="background:#4c1d95;color:#fff;font-weight:bold;font-size:13pt;">${esc(title)} — Buys / Sells / Holdings per client</td></tr>`;
+      t += `<tr><td colspan="3" style="background:#4c1d95;color:#fff;font-weight:bold;font-size:13pt;">${esc(title)} — Buys / Sells per client</td></tr>`;
       t += `<tr style="background:#ede9fe;font-weight:bold;"><td>Action</td><td>Instrument (Ticker)</td><td align="right">Qty</td></tr>`;
       [...byUser.values()].sort((a, b) => a.name.localeCompare(b.name)).forEach((u) => {
         t += `<tr><td colspan="3" style="background:#f5f3ff;color:#4c1d95;font-weight:bold;font-size:12pt;">${esc(u.name)}</td></tr>`;
