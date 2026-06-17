@@ -15,6 +15,9 @@ SUPABASE_URL = "https://mfxnghmuccevsxwcetej.supabase.co"
 ORDERBOOK_EMAIL_FROM = "noreply@mymint.co.za"
 MINT_APP_URL_DEV = "https://mint-development.vercel.app/"
 MINT_APP_URL_LIVE = "https://app.mymint.co.za/"
+ORDERBOOK_EMAIL_TO = "orderbook@mymint.co.za"
+ORDERBOOK_ENABLE_INTERVAL_SCHEDULER = "false"
+CRON_SECRET = "995cd376-b8e1-4ef2-a252-50b4b081b8f6"
 
 
 [workflows]
