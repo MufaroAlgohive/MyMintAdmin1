@@ -5013,22 +5013,34 @@
       if (!book) { alert('Order book not found.'); return; }
       const rows = Array.isArray(book.rows) ? book.rows : [];
       const byUser = new Map();
+      const nameByUser = {};
+      const qtyOf = (o) => Math.abs(Number(o.quantityValue != null ? o.quantityValue : parseFloat(o.quantity != null ? o.quantity : o.totalQuantity)) || 0);
+      const addLine = (userId, famId, fallbackName, side, ticker, instr, qty) => {
+        if (!qty || !ticker) return;
+        const key = `${userId || ''}|${famId || ''}`;
+        if (!byUser.has(key)) byUser.set(key, { name: fallbackName || 'Unknown client', instr: new Map(), buys: new Map(), sells: new Map(), net: new Map() });
+        const u = byUser.get(key);
+        if (nameByUser[key]) u.name = nameByUser[key];
+        u.instr.set(ticker, instr || u.instr.get(ticker) || '');
+        if (String(side || '').toUpperCase() === 'SELL') { u.sells.set(ticker, (u.sells.get(ticker) || 0) + qty); u.net.set(ticker, (u.net.get(ticker) || 0) - qty); }
+        else { u.buys.set(ticker, (u.buys.get(ticker) || 0) + qty); u.net.set(ticker, (u.net.get(ticker) || 0) + qty); }
+      };
       rows.forEach((row) => {
-        const rowSide = String(row.side || '').toUpperCase();
-        const bnd = buildBndRowsForOrder(row) || [];
-        bnd.forEach((b) => {
-          const key = `${b.userId || ''}|${b.familyMemberId || ''}|${(b.clientNameFull || b.clientName || '')}`;
-          const name = b.clientNameFull || b.clientName || 'Unknown client';
-          const ticker = b.ticker || row.ticker || '-';
-          const instr = b.instrumentName || row.instrumentName || '';
-          const qty = Math.abs(Number(b.quantityValue != null ? b.quantityValue : parseFloat(b.quantity)) || 0);
-          if (!qty) return;
-          const side = String(b.side || rowSide).toUpperCase();
-          if (!byUser.has(key)) byUser.set(key, { name, instr: new Map(), buys: new Map(), sells: new Map(), net: new Map() });
-          const u = byUser.get(key);
-          u.instr.set(ticker, instr);
-          if (side === 'SELL') { u.sells.set(ticker, (u.sells.get(ticker) || 0) + qty); u.net.set(ticker, (u.net.get(ticker) || 0) - qty); }
-          else { u.buys.set(ticker, (u.buys.get(ticker) || 0) + qty); u.net.set(ticker, (u.net.get(ticker) || 0) + qty); }
+        // Full client names come from strategyUsers (bndRows carry only the short form).
+        (Array.isArray(row.strategyUsers) ? row.strategyUsers : []).forEach((su) => {
+          if (su.userId) nameByUser[`${su.userId}|${su.familyMemberId || ''}`] = su.clientName || nameByUser[`${su.userId}|${su.familyMemberId || ''}`] || '';
+        });
+        // Strategy rows keep per-investor orders in strategyHoldings[].bndRows (one bndRow
+        // per investor per underlying security, with its own side/ticker/qty). Plain BND
+        // rows keep them in row.bndRows. Fall back to the row itself for flat per-user rows.
+        const holdings = (row.isStrategy && Array.isArray(row.strategyHoldings)) ? row.strategyHoldings : [row];
+        holdings.forEach((h) => {
+          const bnd = Array.isArray(h.bndRows) ? h.bndRows : [];
+          if (bnd.length) {
+            bnd.forEach((b) => addLine(b.userId, b.familyMemberId, b.clientName, b.side || h.side || row.side, b.ticker || h.ticker, b.instrumentName || h.instrumentName, qtyOf(b)));
+          } else if (!row.isStrategy && (h.userId || h.clientName)) {
+            addLine(h.userId, h.familyMemberId, h.clientName, h.side, h.ticker, h.instrumentName, qtyOf(h));
+          }
         });
       });
       if (!byUser.size) { alert('No per-investor allocations found in this book.'); return; }
@@ -5130,9 +5142,12 @@
             <summary class="filled-orderbook-summary">
               <span>${escapeHtml(formatBookTitle(book))}</span>
               <span class="filled-orderbook-meta">
-                <button class="orderbook-export-btn" style="padding:3px 10px;height:26px;font-size:11px;"
+                <button type="button" class="pin-order-btn"
+                  style="width:24px;height:24px;padding:0;display:inline-flex;align-items:center;justify-content:center;"
                   onclick="event.preventDefault();event.stopPropagation();downloadClosedBookByUser('${escapeHtml(String(book.id))}')"
-                  title="Download per-client buys, sells &amp; holdings (Excel)">⬇ Per-client</button>
+                  title="Download per-client buys, sells &amp; holdings (Excel)">
+                  <svg viewBox="0 0 24 24" fill="currentColor" style="width:13px;height:13px;"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-7 4h14v-2H5v2z"/></svg>
+                </button>
                 <span style="background:#ecfdf3;color:#166534;border:1px solid #86efac;border-radius:999px;padding:3px 8px;font-size:0.72rem;font-weight:700;">Closed</span>
                 <span>Last fill: ${escapeHtml(fillDateLabel)}</span>
                 <span>${escapeHtml(book.dateLabel || '-')}</span>
