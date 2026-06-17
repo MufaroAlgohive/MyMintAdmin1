@@ -6449,44 +6449,19 @@
               - user_id: distinguishes different investors
               - family_member_id: a parent who bought for two children gets one
                 card per child, plus a separate card for their own holdings
-              - created_at minute bucket: two separate buys of the same strategy
-                by the same account at different times surface separately
-              Holdings inside the same minute (one purchase fanning out across
-              N security rows) stay grouped &mdash; that's one event for the user. */
-        const minuteBucket = (iso) => String(iso || '').slice(0, 16); // YYYY-MM-DDTHH:mm
-
-        /* Rebalance-created BUY holdings (those with rebalance_batch_id) are
-           position swaps, NOT new client money. Merging them into their own
-           minute-bucket would show the client twice and inflate "Invested".
-           Fix: find the earliest non-rebalance bucket per (user, fm) and re-use
-           it for any rebalance holdings from the same owner, so they all appear
-           on one card. Exclude their fill price from the cost basis. */
-        const earliestBucketByOwner = {};
-        investRows.forEach(r => {
-          if (r.rebalance_batch_id) return; // skip rebalance holdings in first pass
-          const ownerKey = `${r.user_id}|${r.family_member_id || ''}`;
-          const b = minuteBucket(r.created_at);
-          if (!earliestBucketByOwner[ownerKey] || b < earliestBucketByOwner[ownerKey])
-            earliestBucketByOwner[ownerKey] = b;
-        });
-
+              All holdings for the same (user, family_member) are merged into
+              one card regardless of how many buy events they had. */
+        /* Group ALL holdings for the same (user, family_member) into one card,
+           regardless of how many separate buy events they made. */
         const byBatch = {};
         investRows.forEach(r => {
           const uid = r.user_id;
           const fmId = r.family_member_id || '';
-          const ownerKey = `${uid}|${fmId}`;
-          const isRebalance = !!r.rebalance_batch_id;
-          /* Use the original purchase bucket for rebalance holdings so they
-             group with the user's existing card, not as a new entry. */
-          const bucket = isRebalance
-            ? (earliestBucketByOwner[ownerKey] || minuteBucket(r.created_at))
-            : minuteBucket(r.created_at);
-          const key = `${uid}|${fmId}|${bucket}`;
+          const key = `${uid}|${fmId}`;
           if (!byBatch[key]) {
             byBatch[key] = {
               uid,
               familyMemberId: fmId || null,
-              bucket,
               costBasis: 0,
               currentVal: 0,
               inception: r.created_at,
@@ -6495,10 +6470,9 @@
           }
           const u = byBatch[key];
           const qty = Number(r.quantity) || 0;
-          /* Cost basis: include ALL active holdings (original + rebalance).
-             Rebalance holdings use avg_fill as their cost (the broker fill price
-             is their real cost, just funded internally from sell proceeds rather
-             than from the client's wallet). Expected_fill wins when set. */
+          /* Cost basis: sum across all holdings. Rebalance holdings use avg_fill
+             (broker fill price funded from sell proceeds, not new client cash).
+             Expected_fill wins when set. */
           const avgRands = (Number(r.avg_fill) || 0) / 100;
           const expectedRaw = Number(r.expected_fill) || 0;
           let fill = avgRands;
@@ -6506,25 +6480,25 @@
             fill = (avgRands > 0 && expectedRaw > avgRands * 5) ? expectedRaw / 100 : expectedRaw;
           }
           u.costBasis += (fill * qty);
-          /* Current value: include ALL holdings (original + rebalanced). */
+          /* Current value: all holdings at live price. */
           const lp = secPriceMap[r.security_id] || 0;
           if (lp > 0) u.currentVal += (qty * lp);
+          /* Track earliest inception across all their buys. */
           if (r.created_at && new Date(r.created_at) < new Date(u.inception))
             u.inception = r.created_at;
         });
 
-        /* ── Merge pending buy-side rebalance clients &mdash; pending events come
-              from one batch and don't carry a created_at on the event, so we
-              key them under a per-(user, family_member) 'pending' bucket. */
+        /* Merge pending buy-side rebalance events into the existing user card
+           (or create one if the user has no settled holdings yet). */
         if (pendingRebalance && pendingRebalance.events) {
           pendingRebalance.events
             .filter(ev => ev.trade_side === 'BUY' || ev.closed_reason === 'REBALANCE_EVENT_BUY' || ev.closed_reason === 'REBALANCE_EVENT_BUY_WALLET')
             .forEach(ev => {
               const uid = ev.user_id;
               const fmId = ev.family_member_id || '';
-              const key = `${uid}|${fmId}|pending`;
+              const key = `${uid}|${fmId}`;
               if (!byBatch[key]) {
-                byBatch[key] = { uid, familyMemberId: fmId || null, bucket: 'pending', costBasis: 0, currentVal: 0, inception: new Date().toISOString(), pending: true };
+                byBatch[key] = { uid, familyMemberId: fmId || null, costBasis: 0, currentVal: 0, inception: new Date().toISOString(), pending: true };
               }
               byBatch[key].pending = true;
             });
@@ -6570,12 +6544,7 @@
           const pnl        = currentVal - data.costBasis;
           const pending    = !!data.pending;
 
-          /* Per-batch buy time (display only &mdash; null for the pending bucket) */
-          const buyTime = (data.bucket && data.bucket !== 'pending')
-            ? data.bucket.replace('T', ' ')
-            : null;
-
-          return { uid, familyMemberId: data.familyMemberId, bucket: data.bucket, name, isMinor, invested: data.costBasis, currentVal, pnl, returnPct, days, inceptionDate, pending, buyTime };
+          return { uid, familyMemberId: data.familyMemberId, name, isMinor, invested: data.costBasis, currentVal, pnl, returnPct, days, inceptionDate, pending };
         }).sort((a, b) => b.currentVal - a.currentVal);
 
         if (badge) badge.textContent = rows.length;
@@ -6593,16 +6562,12 @@
           const pendingRowBg = r.pending ? 'background:#fffbeb;border-left:3px solid #f59e0b;' : '';
           const pendingBadge = r.pending ? '<span style="font-size:9px;font-weight:700;color:#92400e;background:#fef3c7;padding:2px 7px;border-radius:6px;text-transform:uppercase;letter-spacing:.04em;margin-left:6px;">Pending</span>' : '';
           const minorBadge = r.isMinor ? '<span style="font-size:9px;font-weight:700;color:#5b21b6;background:#ede9fe;padding:2px 7px;border-radius:6px;text-transform:uppercase;letter-spacing:.04em;margin-left:6px;">Minor</span>' : '';
-          /* Show buy time so two cards for the same user are distinguishable */
-          const buyTimeBadge = r.buyTime
-            ? `<span style="font-size:9px;font-weight:600;color:#7c3aed;background:#ede9fe;padding:2px 6px;border-radius:5px;margin-left:6px;font-family:ui-monospace,monospace;">${r.buyTime}</span>`
-            : '';
           return `
             <div data-inv-idx="${idx}" style="padding:11px 12px;border-bottom:1px solid #f1f5f9;cursor:pointer;${pendingRowBg}" class="investor-row-hover"
               onclick="ovShowInvestorPreview(${idx})">
               <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:7px;">
                 <div style="min-width:0;flex:1;overflow:hidden;">
-                  <div style="font-size:12px;font-weight:600;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${r.name}${minorBadge}${pendingBadge}${buyTimeBadge}</div>
+                  <div style="font-size:12px;font-weight:600;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${r.name}${minorBadge}${pendingBadge}</div>
                   <div style="font-size:10px;color:#94a3b8;margin-top:1px;">Since ${inceStr} &middot; ${r.days}d</div>
                 </div>
                 <div style="flex-shrink:0;padding-left:10px;padding-top:1px;">
