@@ -342,11 +342,13 @@
       flex-wrap: wrap;
     }
 
-    /* CEO preference: hide the Live Price column on the LIVE book (the UAT toggle
-       re-shows it). Scoped to the MAIN orderbook table's 9th column only — header
-       + data rows — so Client PnL / MINT PnL and all detail tables are untouched. */
-    .orderbook-table.ob-hide-liveprice > thead > tr > th:nth-child(9),
-    .orderbook-table.ob-hide-liveprice > tbody > tr.orderbook-main-row > td:nth-child(9) {
+    /* CEO preference: hide the Live Price column on the LIVE book (UAT re-shows it).
+       Applies to EVERY orderbook-table (main book, Active Order Books snapshots, and
+       the pinned book) — column 9 only, header + data rows — via a body-level toggle
+       so dynamically rendered tables are covered too. Direct-child selectors keep
+       nested detail tables and Client PnL / MINT PnL untouched. */
+    body.ob-hide-liveprice .orderbook-table > thead > tr > th:nth-child(9),
+    body.ob-hide-liveprice .orderbook-table > tbody > tr > td:nth-child(9) {
       display: none;
     }
 
@@ -5493,8 +5495,9 @@
 
     const applySearchFilter = () => {
       // CEO: hide the Live Price column on the live book; show it only in UAT.
-      const _mainTable = document.querySelector('table.orderbook-table');
-      if (_mainTable) _mainTable.classList.toggle('ob-hide-liveprice', !orderbookUatMode);
+      // Body-level class so EVERY orderbook-table (main + Active Order Books + pinned)
+      // follows, including ones rendered later by renderFilledOrderbooks.
+      document.body.classList.toggle('ob-hide-liveprice', !orderbookUatMode);
       const pinnedBook = getPinnedTopBook();
       if (orderbookTitle) {
         orderbookTitle.textContent = `Orderbook :${String(currentDisplaySequence()).padStart(2, '0')}`;
