@@ -5038,20 +5038,29 @@
         (Array.isArray(row.strategyUsers) ? row.strategyUsers : []).forEach((su) => {
           if (su.userId) nameByUser[`${su.userId}|${su.familyMemberId || ''}`] = su.clientName || nameByUser[`${su.userId}|${su.familyMemberId || ''}`] || '';
         });
-        // Strategy rows keep per-investor orders in strategyHoldings[].bndRows (one bndRow
-        // per investor per underlying security, with its own side/ticker/qty). Plain BND
-        // rows keep them in row.bndRows. Fall back to the row itself for flat per-user rows.
-        const holdings = (row.isStrategy && Array.isArray(row.strategyHoldings)) ? row.strategyHoldings : [row];
-        holdings.forEach((h) => {
-          const bnd = Array.isArray(h.bndRows) ? h.bndRows : [];
-          if (bnd.length) {
-            bnd.forEach((b) => addLine(b.userId, b.familyMemberId, b.clientName, b.side || h.side || row.side, b.ticker || h.ticker, b.instrumentName || h.instrumentName, qtyOf(b)));
-          } else if (h.userId || h.clientName) {
-            // No bndRows (e.g. a manually swapped-in holding like ABG) — the holding row
-            // itself is per-user, so use it directly so nothing is dropped.
-            addLine(h.userId, h.familyMemberId, h.clientName, h.side || row.side, h.ticker, h.instrumentName, qtyOf(h));
-          }
-        });
+        if (row.isStrategy && Array.isArray(row.strategyHoldings)) {
+          // GUARD (so this can't recur): strategyUsers is the book's authoritative investor
+          // list. Only those users may ever appear in the export — any holding/bndRow owned
+          // by someone NOT in strategyUsers is cross-book/stale noise and is ignored.
+          const validIds = new Set((row.strategyUsers || []).map((su) => su.userId).filter(Boolean));
+          // Each strategyHolding is ONE (user, security). Its bndRows are a per-SECURITY
+          // breakdown that can include OTHER users, so attribute the holding to its OWNER
+          // (h.userId) via the matching bndRow only — that carries the correct side
+          // (e.g. rebalance SELL) and the owner's qty. If there is no matching bndRow
+          // (e.g. a manually swapped-in holding like ABG with empty bndRows), use the
+          // holding row itself so nothing is dropped.
+          row.strategyHoldings.forEach((h) => {
+            if (validIds.size && !validIds.has(h.userId)) return; // not a real investor in this book
+            const own = (Array.isArray(h.bndRows) ? h.bndRows : []).find((b) => String(b.userId || '') === String(h.userId || ''));
+            if (own) addLine(h.userId, h.familyMemberId, own.clientName || h.clientName, own.side || h.side || row.side, own.ticker || h.ticker, own.instrumentName || h.instrumentName, qtyOf(own));
+            else if (h.userId || h.clientName) addLine(h.userId, h.familyMemberId, h.clientName, h.side || row.side, h.ticker, h.instrumentName, qtyOf(h));
+          });
+        } else {
+          // Plain (non-strategy) BND row = one security; per-investor breakdown in bndRows.
+          const bnd = Array.isArray(row.bndRows) ? row.bndRows : [];
+          if (bnd.length) bnd.forEach((b) => addLine(b.userId, b.familyMemberId, b.clientName, b.side || row.side, b.ticker || row.ticker, b.instrumentName || row.instrumentName, qtyOf(b)));
+          else if (row.userId || row.clientName) addLine(row.userId, row.familyMemberId, row.clientName, row.side, row.ticker, row.instrumentName, qtyOf(row));
+        }
       });
       if (!byUser.size) { alert('No per-investor allocations found in this book.'); return; }
       const esc = (s) => String(s == null ? '' : s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
