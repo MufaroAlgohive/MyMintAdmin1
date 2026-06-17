@@ -252,6 +252,39 @@ const handleApproveDeposit = async (req, res, user) => {
   }
 };
 
+const handleRejectDeposit = async (req, res, user) => {
+  if ((user.email || '').toLowerCase() !== APPROVER_EMAIL) {
+    return sendJson(res, 403, { error: 'Unauthorized to reject deposits' });
+  }
+
+  let body;
+  try {
+    body = (req.body && typeof req.body === 'object') ? req.body : await readJsonBody(req);
+  } catch (e) {
+    return sendJson(res, 400, { error: 'body-parse: ' + e.message });
+  }
+
+  const { transaction_id, reason } = body;
+  if (!transaction_id) return sendJson(res, 400, { error: 'Missing transaction_id' });
+
+  try {
+    const txns = await fetchSupabaseJson(`/rest/v1/wallet_transactions?id=eq.${encodeURIComponent(transaction_id)}&limit=1`);
+    if (!txns || txns.length === 0) return sendJson(res, 404, { error: 'Transaction not found' });
+    const txn = txns[0];
+    if (txn.status !== 'pending') return sendJson(res, 400, { error: 'Transaction is not pending' });
+
+    await requestSupabaseJson(`/rest/v1/wallet_transactions?id=eq.${encodeURIComponent(txn.id)}`, {
+      method: 'PATCH',
+      useServiceRoleAuth: true,
+      body: { status: 'rejected', notes: reason || null },
+    });
+
+    return sendJson(res, 200, { success: true });
+  } catch (e) {
+    return sendJson(res, 500, { error: 'rejection-failed: ' + e.message });
+  }
+};
+
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
     return sendJson(res, 405, { error: 'Method not allowed' });
@@ -268,12 +301,16 @@ module.exports = async (req, res) => {
     let action = (req.query && req.query.action);
     if (!action && (req.url || '').includes('action=add-wallet')) action = 'add-wallet';
     if (!action && (req.url || '').includes('action=approve-deposit')) action = 'approve-deposit';
+    if (!action && (req.url || '').includes('action=reject-deposit')) action = 'reject-deposit';
 
     if (action === 'add-wallet') {
       return handleAddWallet(req, res, token);
     }
     if (action === 'approve-deposit') {
       return handleApproveDeposit(req, res, user);
+    }
+    if (action === 'reject-deposit') {
+      return handleRejectDeposit(req, res, user);
     }
 
     const body = typeof req.body === 'object' ? req.body : await readJsonBody(req);

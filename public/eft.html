@@ -649,10 +649,29 @@
         });
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || 'Failed to approve');
-        alert('Deposit approved successfully!');
+        showToast('Deposit approved successfully!');
         loadPaidEfts();
       } catch (err) {
-        alert(err.message);
+        showToast(err.message, 'error');
+      }
+    };
+
+    window.rejectPendingDeposit = async (transactionId, clientName, amount) => {
+      const reason = window.prompt(`Reject this deposit of ${amount} for ${clientName}?\n\nOptional reason (leave blank to skip):`, '');
+      if (reason === null) return;
+      try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        const response = await fetch('/api/send-eft-email?action=reject-deposit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+          body: JSON.stringify({ transaction_id: transactionId, reason: reason.trim() || null }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Failed to reject');
+        showToast('Deposit request rejected.');
+        loadPaidEfts();
+      } catch (err) {
+        showToast(err.message, 'error');
       }
     };
 
@@ -701,9 +720,14 @@
           tableBody.innerHTML = txns.map(txn => {
             const p = profilesMap[txn.user_id] || {};
             const dateStr = new Date(txn.created_at).toLocaleDateString('en-ZA');
-            const parentName = `${p.first_name || ''} ${p.last_name || ''}`;
-            const actionButton = isApprover
-              ? `<button class="btn btn-primary" style="padding:6px 12px;font-size:11px;background:#f59e0b;" onclick="approvePendingDeposit('${txn.id}')">Approve</button>`
+            const parentName = `${p.first_name || ''} ${p.last_name || ''}`.trim() || '—';
+            const safeClientName = parentName.replace(/'/g, "\\'");
+            const safeAmount = formatCurrency(txn.amount).replace(/'/g, "\\'");
+            const actionCell = isApprover
+              ? `<div style="display:flex;gap:6px;">
+                   <button class="btn btn-primary" style="padding:6px 12px;font-size:11px;background:#059669;" onclick="approvePendingDeposit('${txn.id}')">Approve</button>
+                   <button class="btn btn-primary" style="padding:6px 12px;font-size:11px;background:#ef4444;" onclick="rejectPendingDeposit('${txn.id}','${safeClientName}','${safeAmount}')">Reject</button>
+                 </div>`
               : `<span style="color:#f59e0b;font-weight:600;font-size:12px;">Pending</span>`;
 
             return `
@@ -712,7 +736,7 @@
                 <td style="font-weight:600;color:#1e293b;">${parentName}</td>
                 <td style="font-weight:700;color:#f59e0b;">+${formatCurrency(txn.amount)}</td>
                 <td style="font-family:monospace;color:#7c3aed;font-weight:600;">Pending Deposit</td>
-                <td>${actionButton}</td>
+                <td>${actionCell}</td>
               </tr>
             `;
           }).join('');
