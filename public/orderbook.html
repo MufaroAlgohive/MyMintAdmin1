@@ -1546,7 +1546,13 @@
 
       <div class="orderbook-tab-panel" id="closedBooksPanel" role="tabpanel" aria-labelledby="closedBooksTab">
         <div class="closed-books-card">
-          <h2 class="closed-books-title">Closed Books</h2>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+            <h2 class="closed-books-title" style="margin-bottom:0;">Closed Books</h2>
+            <button class="ob-sort-btn" id="closedBooksSortBtn" title="Change sort order">
+              <svg viewBox="0 0 24 24"><path d="M3 18h6v-2H3v2zm0-5h12v-2H3v2zm0-7v2h18V6H3z"/></svg>
+              <span id="closedBooksSortLabel">Newest first</span>
+            </button>
+          </div>
           <p class="closed-books-subtitle">Books move here once every holding has a fill date.</p>
           <div class="filled-orderbooks-list" id="closedBooksList">
             <div class="filled-orderbook-empty">No closed books yet.</div>
@@ -1717,6 +1723,7 @@
     let isArchiveBooksLoading = true;
     let rebalanceBatchesForStandaloneList = [];
     let activeBooksSortOrder = 'newest'; // 'newest' | 'oldest' | 'as-is'
+    let closedBooksSortOrder = 'newest'; // 'newest' | 'oldest'
     let cleanupMode = false;
     let cleanupVerified = false;
 
@@ -5121,8 +5128,9 @@
       const sorted = closedBooks.slice().sort((a, b) => {
         const aDate = a.closedAt || a.createdAt;
         const bDate = b.closedAt || b.createdAt;
-        if (aDate && bDate) return new Date(bDate).getTime() - new Date(aDate).getTime();
-        return (b.sequence || 0) - (a.sequence || 0);
+        const dir = closedBooksSortOrder === 'oldest' ? 1 : -1;
+        if (aDate && bDate) return dir * (new Date(aDate).getTime() - new Date(bDate).getTime());
+        return dir * ((a.sequence || 0) - (b.sequence || 0));
       });
 
       closedBooksList.innerHTML = sorted.map((book) => {
@@ -6253,6 +6261,19 @@
         const idx = sortCycle.indexOf(activeBooksSortOrder);
         activeBooksSortOrder = sortCycle[(idx + 1) % sortCycle.length];
         if (obSortLabel) obSortLabel.textContent = sortLabels[activeBooksSortOrder];
+        renderFilledOrderbooks();
+      });
+    }
+
+    const closedBooksSortBtn = document.getElementById('closedBooksSortBtn');
+    const closedBooksSortLabel = document.getElementById('closedBooksSortLabel');
+    const closedSortCycle = ['newest', 'oldest'];
+    const closedSortLabels = { newest: 'Newest first', oldest: 'Oldest first' };
+    if (closedBooksSortBtn) {
+      closedBooksSortBtn.addEventListener('click', () => {
+        const idx = closedSortCycle.indexOf(closedBooksSortOrder);
+        closedBooksSortOrder = closedSortCycle[(idx + 1) % closedSortCycle.length];
+        if (closedBooksSortLabel) closedBooksSortLabel.textContent = closedSortLabels[closedBooksSortOrder];
         renderFilledOrderbooks();
       });
     }
