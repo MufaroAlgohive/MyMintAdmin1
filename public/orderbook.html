@@ -5118,7 +5118,12 @@
         return;
       }
 
-      const sorted = closedBooks.slice().sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      const sorted = closedBooks.slice().sort((a, b) => {
+        const aDate = a.closedAt || a.createdAt;
+        const bDate = b.closedAt || b.createdAt;
+        if (aDate && bDate) return new Date(bDate).getTime() - new Date(aDate).getTime();
+        return (b.sequence || 0) - (a.sequence || 0);
+      });
 
       closedBooksList.innerHTML = sorted.map((book) => {
         const rows = Array.isArray(book.rows) ? book.rows : [];
