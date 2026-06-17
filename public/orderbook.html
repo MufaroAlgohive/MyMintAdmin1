@@ -342,6 +342,14 @@
       flex-wrap: wrap;
     }
 
+    /* CEO preference: hide the Live Price column on the LIVE book (the UAT toggle
+       re-shows it). Scoped to the MAIN orderbook table's 9th column only — header
+       + data rows — so Client PnL / MINT PnL and all detail tables are untouched. */
+    .orderbook-table.ob-hide-liveprice > thead > tr > th:nth-child(9),
+    .orderbook-table.ob-hide-liveprice > tbody > tr.orderbook-main-row > td:nth-child(9) {
+      display: none;
+    }
+
     .orderbook-count {
       color: var(--text-muted);
       font-size: 0.85rem;
@@ -5484,6 +5492,9 @@
     };
 
     const applySearchFilter = () => {
+      // CEO: hide the Live Price column on the live book; show it only in UAT.
+      const _mainTable = document.querySelector('table.orderbook-table');
+      if (_mainTable) _mainTable.classList.toggle('ob-hide-liveprice', !orderbookUatMode);
       const pinnedBook = getPinnedTopBook();
       if (orderbookTitle) {
         orderbookTitle.textContent = `Orderbook :${String(currentDisplaySequence()).padStart(2, '0')}`;
