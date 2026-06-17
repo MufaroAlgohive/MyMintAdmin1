@@ -275,7 +275,7 @@ const handleRejectDeposit = async (req, res, user) => {
     await requestSupabaseJson(`/rest/v1/wallet_transactions?id=eq.${encodeURIComponent(txn.id)}`, {
       method: 'PATCH',
       useServiceRoleAuth: true,
-      body: { status: 'rejected', notes: reason || null },
+      body: { status: 'rejected', reference: reason || null },
     });
 
     return sendJson(res, 200, { success: true });
