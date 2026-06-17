@@ -9,6 +9,7 @@ const teamHandler = require('./api/team');
 const mintMorningsHandler = require('./api/mint-mornings');
 const webhooksHandler = require('./api/webhooks');
 const cyberComplianceHandler = require('./api/cyber-compliance');
+const sendEftEmailHandler = require('./api/send-eft-email');
 const { runHealthCheck } = require('./api/monitor/_health-check');
 
 const port = process.env.PORT || 3000;
@@ -1950,69 +1951,16 @@ const server = http.createServer((req, res) => {
   }
 
   if (req.url.startsWith('/api/send-eft-email') && req.method === 'POST') {
-    const token = parseBearerToken(req.headers.authorization);
-    if (!token) {
-      sendJson(res, 401, { error: 'Missing Authorization bearer token' });
-      return;
-    }
-
     (async () => {
       try {
-        await fetchSupabaseJson('/auth/v1/user', token, false);
-        const body = await readJsonBody(req);
-        const { to, subject, html, walletId } = body;
-
-        if (!to || !html) {
-          sendJson(res, 400, { error: 'Missing to or html payload' });
-          return;
+        const urlObj = new URL(req.url, 'http://x');
+        req.query = Object.fromEntries(urlObj.searchParams.entries());
+        if (req.method !== 'GET' && req.method !== 'HEAD') {
+          req.body = await readJsonBody(req).catch(() => ({}));
         }
-
-        if (!resendApiKey || !orderbookEmailFrom) {
-          sendJson(res, 500, { error: 'Email service not configured. Set RESEND_API_KEY and ORDERBOOK_EMAIL_FROM' });
-          return;
-        }
-
-        const response = await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${resendApiKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            from: orderbookEmailFrom,
-            to: [to],
-            subject: subject || 'Funds Allocated - Mint',
-            html: html
-          })
-        });
-
-        let payload = null;
-        try { payload = await response.json(); } catch { payload = null; }
-
-        if (!response.ok) {
-          const message = payload?.message || payload?.error || `Resend request failed with ${response.status}`;
-          throw new Error(message);
-        }
-
-        if (walletId) {
-          const sbHeaders = {
-            apikey: supabaseServiceRoleKey,
-            Authorization: `Bearer ${supabaseServiceRoleKey}`,
-            'Content-Type': 'application/json'
-          };
-          await fetch(`${supabaseUrl}/rest/v1/wallets?id=eq.${encodeURIComponent(walletId)}`, {
-            method: 'PATCH',
-            headers: sbHeaders,
-            body: JSON.stringify({ mailer: 'sent' })
-          });
-        }
-
-        sendJson(res, 200, { ok: true, message: 'Email sent successfully' });
-      } catch (error) {
-        sendJson(res, 500, {
-          error: 'Could not send EFT email',
-          details: error?.message || 'Unknown error'
-        });
+        await sendEftEmailHandler(req, res);
+      } catch (err) {
+        if (!res.headersSent) sendJson(res, 500, { error: err.message });
       }
     })();
     return;
