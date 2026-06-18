@@ -9,7 +9,7 @@
 --    'master' = Master Approver — can review and authorize requests
 --    null     = Lower-level staff — approval workflows enforced
 ALTER TABLE public.admin_team
-  ADD COLUMN IF NOT EXISTS approver_tier TEXT CHECK (approver_tier IN ('def', 'master'));
+  ADD COLUMN IF NOT EXISTS approver_tier TEXT CHECK (approver_tier IN ('dev', 'master'));
 
 -- 2. Add granular permissions JSONB column to admin_team
 ALTER TABLE public.admin_team

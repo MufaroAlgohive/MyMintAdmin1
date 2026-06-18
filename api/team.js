@@ -227,16 +227,27 @@ module.exports = async (req, res) => {
       const baseUrl = baseUrlFromReq(req);
       const redirectTo = `${baseUrl}/signup.html`;
 
-      const [updated] = await supabaseRequest(`/rest/v1/admin_team?id=eq.${id}`, {
-        method: 'PATCH',
-        extraHeaders: { 'Prefer': 'return=representation' },
-        body: {
-          invited_by: result.user.id,
-          updated_at: new Date().toISOString(),
-          invite_token: null,
-          invite_token_expires_at: null
-        }
-      });
+      // Attempt to clear legacy invite_token columns if they exist; fall back gracefully if not.
+      let updated;
+      try {
+        [updated] = await supabaseRequest(`/rest/v1/admin_team?id=eq.${id}`, {
+          method: 'PATCH',
+          extraHeaders: { 'Prefer': 'return=representation' },
+          body: {
+            invited_by: result.user.id,
+            updated_at: new Date().toISOString(),
+            invite_token: null,
+            invite_token_expires_at: null
+          }
+        });
+      } catch (patchErr) {
+        // invite_token columns may not exist — retry without them
+        [updated] = await supabaseRequest(`/rest/v1/admin_team?id=eq.${id}`, {
+          method: 'PATCH',
+          extraHeaders: { 'Prefer': 'return=representation' },
+          body: { invited_by: result.user.id, updated_at: new Date().toISOString() }
+        });
+      }
 
       // Try Supabase invite first; if user already exists fall back to a magic link via Resend.
       let emailRes = await inviteUserViaSupabase(member.email, redirectTo, member.full_name);
@@ -309,18 +320,34 @@ module.exports = async (req, res) => {
       const member = rows && rows[0];
       if (!member) return sendJson(res, 404, { error: 'No team membership found for this email. Ask an admin to invite you.' });
 
-      const [updated] = await supabaseRequest(`/rest/v1/admin_team?id=eq.${member.id}`, {
-        method: 'PATCH',
-        extraHeaders: { 'Prefer': 'return=representation' },
-        body: {
-          status: 'active',
-          user_id: auth.user.id,
-          full_name: full_name || member.full_name,
-          invite_token: null,
-          invite_token_expires_at: null,
-          updated_at: new Date().toISOString()
-        }
-      });
+      // Attempt to clear legacy invite_token columns if they exist; fall back gracefully if not.
+      let updated;
+      try {
+        [updated] = await supabaseRequest(`/rest/v1/admin_team?id=eq.${member.id}`, {
+          method: 'PATCH',
+          extraHeaders: { 'Prefer': 'return=representation' },
+          body: {
+            status: 'active',
+            user_id: auth.user.id,
+            full_name: full_name || member.full_name,
+            invite_token: null,
+            invite_token_expires_at: null,
+            updated_at: new Date().toISOString()
+          }
+        });
+      } catch (patchErr) {
+        // invite_token columns may not exist — retry without them
+        [updated] = await supabaseRequest(`/rest/v1/admin_team?id=eq.${member.id}`, {
+          method: 'PATCH',
+          extraHeaders: { 'Prefer': 'return=representation' },
+          body: {
+            status: 'active',
+            user_id: auth.user.id,
+            full_name: full_name || member.full_name,
+            updated_at: new Date().toISOString()
+          }
+        });
+      }
 
       await writeAudit({
         action: 'signup',
