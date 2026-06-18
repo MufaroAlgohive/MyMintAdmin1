@@ -974,6 +974,26 @@
         alert(data.error || 'Could not resolve approval');
         return;
       }
+
+      // For trade_confirmation approvals: auto-send the email after approval
+      if (decision === 'approved' && data.approval) {
+        const approval = data.approval;
+        if (approval.type === 'trade_confirmation' && approval.payload?.holdingId) {
+          if (triggerBtn) triggerBtn.textContent = 'Sending email…';
+          try {
+            const sendRes = await fetch('/api/orderbook/send-csv?action=trade-confirmation', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentToken}` },
+              body: JSON.stringify({ holdingId: approval.payload.holdingId, bndReference: approval.payload.bndReference || '', forceResend: false })
+            });
+            const sendData = await sendRes.json().catch(() => ({}));
+            if (sendData.error) console.warn('[Approvals] Trade confirm send after approval:', sendData.error);
+          } catch (err) {
+            console.warn('[Approvals] Trade confirm send failed:', err.message);
+          }
+        }
+      }
+
       await loadApprovals();
     };
 

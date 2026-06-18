@@ -872,6 +872,12 @@
       border-color: #fdba74;
     }
 
+    .filled-status-pill.is-pending-approval {
+      background: #fefce8;
+      color: #854d0e;
+      border-color: #fde047;
+    }
+
     .filled-orderbook-details {
       padding: 0 12px 12px;
     }
@@ -4824,11 +4830,18 @@
 
               // --- Email Actions Logic for Active Snapshot Books ---
               const emailStatus = row.notificationStatus || 'pending';
+              // Check for pending approval submitted by this session
+              const _pa1 = getPendingApprovals();
+              if (emailStatus === 'sent') clearPendingApproval(row.sourceId);
+              const effectiveStatus1 = (emailStatus !== 'sent' && _pa1[row.sourceId]) ? 'pending_approval' : emailStatus;
               let pillClass, pillLabel;
-              if (emailStatus === 'sent') {
+              if (effectiveStatus1 === 'sent') {
                 pillClass = 'filled-status-pill is-filled';
                 pillLabel = 'SENT';
-              } else if (emailStatus === 'failed') {
+              } else if (effectiveStatus1 === 'pending_approval') {
+                pillClass = 'filled-status-pill is-pending-approval';
+                pillLabel = 'PENDING ⏳';
+              } else if (effectiveStatus1 === 'failed') {
                 pillClass = 'filled-status-pill';
                 pillLabel = 'FAILED';
               } else {
@@ -4839,13 +4852,15 @@
               // Only show the Send Confirm button if there's an actual fill price
               let actionsHtml = '';
               if (row.avgFillNumber != null && row.avgFillNumber > 0) {
+                const isApprovalPending1 = effectiveStatus1 === 'pending_approval';
                 actionsHtml = `
                   <div style="display:flex;align-items:center;gap:8px;white-space:nowrap;">
-                    <span class="${pillClass}"${emailStatus === 'failed' ? ' style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;"' : ''}>${pillLabel}</span>
+                    <span class="${pillClass}"${effectiveStatus1 === 'failed' ? ' style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;"' : ''}>${pillLabel}</span>
                     <button class="orderbook-export-btn"
-                      style="padding:4px 10px;height:28px;font-size:11px;"
+                      style="padding:4px 10px;height:28px;font-size:11px;${isApprovalPending1 ? 'opacity:.55;cursor:not-allowed;' : ''}"
+                      ${isApprovalPending1 ? 'disabled' : ''}
                       onclick="sendTradeConfirmation(event, '${escapeHtml(row.sourceId)}', '${escapeHtml(row.bndReference || '')}', '${emailStatus}')">
-                      ${emailStatus === 'sent' ? 'Resend' : 'Send Confirm'}
+                      ${effectiveStatus1 === 'sent' ? 'Resend' : isApprovalPending1 ? 'Awaiting Approval' : 'Send Confirm'}
                     </button>
                   </div>`;
               } else {
@@ -5144,25 +5159,33 @@
 
             // --- Email Actions Logic for Closed Books ---
             const emailStatus = row.notificationStatus || 'pending';
+            const _pa2 = getPendingApprovals();
+            if (emailStatus === 'sent') clearPendingApproval(row.sourceId);
+            const effectiveStatus2 = (emailStatus !== 'sent' && _pa2[row.sourceId]) ? 'pending_approval' : emailStatus;
             let pillClass, pillLabel;
-            if (emailStatus === 'sent') {
+            if (effectiveStatus2 === 'sent') {
               pillClass = 'filled-status-pill is-filled';
               pillLabel = 'SENT';
-            } else if (emailStatus === 'failed') {
+            } else if (effectiveStatus2 === 'pending_approval') {
+              pillClass = 'filled-status-pill is-pending-approval';
+              pillLabel = 'PENDING ⏳';
+            } else if (effectiveStatus2 === 'failed') {
               pillClass = 'filled-status-pill';
               pillLabel = 'FAILED';
             } else {
               pillClass = 'filled-status-pill is-open';
               pillLabel = 'PENDING';
             }
+            const isApprovalPending2 = effectiveStatus2 === 'pending_approval';
 
             const actionsHtml = `
               <div style="display:flex;align-items:center;gap:8px;white-space:nowrap;">
-                <span class="${pillClass}"${emailStatus === 'failed' ? ' style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;"' : ''}>${pillLabel}</span>
+                <span class="${pillClass}"${effectiveStatus2 === 'failed' ? ' style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;"' : ''}>${pillLabel}</span>
                 <button class="orderbook-export-btn"
-                  style="padding:4px 10px;height:28px;font-size:11px;"
+                  style="padding:4px 10px;height:28px;font-size:11px;${isApprovalPending2 ? 'opacity:.55;cursor:not-allowed;' : ''}"
+                  ${isApprovalPending2 ? 'disabled' : ''}
                   onclick="sendTradeConfirmation(event, '${escapeHtml(row.sourceId)}', '${escapeHtml(row.bndReference || '')}', '${emailStatus}')">
-                  ${emailStatus === 'sent' ? 'Resend' : 'Send Confirm'}
+                  ${effectiveStatus2 === 'sent' ? 'Resend' : isApprovalPending2 ? 'Awaiting Approval' : 'Send Confirm'}
                 </button>
               </div>`;
             // ---------------------------------------------------
@@ -5380,10 +5403,29 @@
       setInterval(renderOrderbookTimer, 1000);
     };
 
+    // ── Pending-approval localStorage tracker ────────────────────────────────
+    // Tracks holdingIds for which an approval has been submitted so the pill
+    // stays amber (PENDING ⏳) even before the next full reload.
+    const PA_KEY = 'mintcrm_pending_approvals';
+    const getPendingApprovals = () => {
+      try { return JSON.parse(localStorage.getItem(PA_KEY) || '{}'); }
+      catch { return {}; }
+    };
+    const setPendingApproval = (holdingId, approvalId) => {
+      try { const p = getPendingApprovals(); p[holdingId] = approvalId || true; localStorage.setItem(PA_KEY, JSON.stringify(p)); }
+      catch {}
+    };
+    const clearPendingApproval = (holdingId) => {
+      try { const p = getPendingApprovals(); delete p[holdingId]; localStorage.setItem(PA_KEY, JSON.stringify(p)); }
+      catch {}
+    };
+
     window.sendTradeConfirmation = async (evt, holdingId, bndReference, emailStatus) => {
-      // Grab button reference and update UI BEFORE any await &mdash; prevents evt.currentTarget becoming null
+      // Grab button reference BEFORE any await — prevents evt.currentTarget becoming null
       const btn = evt.currentTarget || evt.target.closest('button');
       const originalText = btn.textContent;
+      const statusContainer = btn.closest('div');
+      const pill = statusContainer ? statusContainer.querySelector('.filled-status-pill') : null;
 
       btn.textContent = 'Sending...';
       btn.disabled = true;
@@ -5398,36 +5440,73 @@
           return alert('No session token');
         }
 
-        // Use the emailStatus passed from the rendered row &mdash; more reliable than button text
+        // ── Permission check ─────────────────────────────────────────────────
+        // mintCan is set by access-guard.js. Default to 'full' for admins/unset.
+        const sendPerm = (typeof window.mintCan === 'function')
+          ? window.mintCan('orderbook', 'send_confirmation')
+          : true;
+
+        // 'false' means blocked
+        if (sendPerm === false) {
+          btn.textContent = originalText;
+          btn.disabled = false;
+          return alert('You do not have permission to send trade confirmations. Contact an admin.');
+        }
+
+        // 'test_only' routes to approval instead of live send
+        if (sendPerm === 'test_only') {
+          const approvalRes = await fetch('/api/team?action=submit-approval', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({
+              type: 'trade_confirmation',
+              payload: { holdingId, bndReference: bndReference || '' },
+              notes: `Trade confirmation requested for holding ${holdingId}`
+            })
+          });
+          const approvalData = await approvalRes.json().catch(() => ({}));
+          btn.textContent = originalText;
+          btn.disabled = false;
+          if (approvalRes.ok && approvalData.ok) {
+            // Track in localStorage so pill stays amber until email is confirmed sent
+            setPendingApproval(holdingId, approvalData.approval?.id || 'pending');
+            // Optimistically update pill → PENDING ⏳
+            if (pill) {
+              pill.textContent = 'PENDING ⏳';
+              pill.className = 'filled-status-pill is-pending-approval';
+              pill.removeAttribute('style');
+            }
+            btn.textContent = 'Approval Sent';
+            btn.disabled = true;
+            btn.style.opacity = '0.6';
+          } else {
+            alert(`Could not submit approval: ${approvalData.error || 'Unknown error'}\n\nNote: Run scripts/db-migration-permissions.sql in your Supabase SQL editor if this is the first time.`);
+          }
+          return;
+        }
+
+        // ── Direct send (full / true / Def bypass) ───────────────────────────
         const isResend = emailStatus === 'sent';
 
         const res = await fetch('/api/orderbook/send-csv?action=trade-confirmation', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify({ holdingId, bndReference, forceResend: isResend })
         });
 
         btn.textContent = originalText;
         btn.disabled = false;
 
-        const result = await res.json().catch(()=>({}));
+        const result = await res.json().catch(() => ({}));
         if (res.ok) {
-          // Optimistically update the clicked button/pill immediately
+          // Clear any stale pending-approval marker
+          clearPendingApproval(holdingId);
+          // Optimistically update pill → SENT
           btn.textContent = 'Resend';
-          btn.disabled = false;
-          const statusContainer = btn.closest('div');
-          if (statusContainer) {
-            const pill = statusContainer.querySelector('.filled-status-pill');
-            if (pill) {
-              pill.textContent = 'SENT';
-              pill.className = 'filled-status-pill is-filled';
-              pill.style.background = '';
-              pill.style.color = '';
-              pill.style.borderColor = '';
-            }
+          if (pill) {
+            pill.textContent = 'SENT';
+            pill.className = 'filled-status-pill is-filled';
+            pill.removeAttribute('style');
           }
           // Full reload so Active/Closed Books snapshots also update
           await loadOrderbook();
@@ -5505,32 +5584,40 @@
           const hasFillPrice = row.avgFillNumber != null && row.avgFillNumber > 0;
           // notificationStatus is populated from investor_trade_confirmations via orderEmailsMap
           const emailStatus = row.notificationStatus || 'pending';
+          // Check for pending approval submitted by this session
+          const _pa3 = getPendingApprovals();
+          if (emailStatus === 'sent') clearPendingApproval(row.sourceId);
+          const effectiveStatus3 = (emailStatus !== 'sent' && _pa3[row.sourceId]) ? 'pending_approval' : emailStatus;
 
           let pillClass, pillLabel;
-          if (emailStatus === 'sent') {
+          if (effectiveStatus3 === 'sent') {
             pillClass = 'filled-status-pill is-filled';
             pillLabel = 'SENT';
-          } else if (emailStatus === 'failed') {
+          } else if (effectiveStatus3 === 'pending_approval') {
+            pillClass = 'filled-status-pill is-pending-approval';
+            pillLabel = 'PENDING ⏳';
+          } else if (effectiveStatus3 === 'failed') {
             pillClass = 'filled-status-pill';
             pillLabel = 'FAILED';
-            // inline style for red &mdash; reuses existing side-badge-sell colors
           } else {
             pillClass = 'filled-status-pill is-open';
             pillLabel = 'PENDING';
           }
+          const isApprovalPending3 = effectiveStatus3 === 'pending_approval';
 
           if (hasFillPrice) {
             actionsHtml = `
               <div style="display:flex;align-items:center;gap:8px;white-space:nowrap;">
-                <span class="${pillClass}"${emailStatus === 'failed' ? ' style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;"' : ''}>${pillLabel}</span>
+                <span class="${pillClass}"${effectiveStatus3 === 'failed' ? ' style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;"' : ''}>${pillLabel}</span>
                 <button class="orderbook-export-btn"
-                  style="padding:4px 10px;height:28px;font-size:11px;"
+                  style="padding:4px 10px;height:28px;font-size:11px;${isApprovalPending3 ? 'opacity:.55;cursor:not-allowed;' : ''}"
+                  ${isApprovalPending3 ? 'disabled' : ''}
                   onclick="sendTradeConfirmation(event, '${escapeHtml(row.sourceId)}', '${escapeHtml(row.bndReference || '')}', '${emailStatus}')">
-                  ${emailStatus === 'sent' ? 'Resend' : 'Send Confirm'}
+                  ${effectiveStatus3 === 'sent' ? 'Resend' : isApprovalPending3 ? 'Awaiting Approval' : 'Send Confirm'}
                 </button>
               </div>`;
           } else {
-            // No fill price set yet &mdash; can't send a confirmation
+            // No fill price set yet — can't send a confirmation
             actionsHtml = `<span class="filled-status-pill is-open" style="background:#f3f4f6;color:#6b7280;border-color:#d1d5db;font-size:0.7rem;">No price set</span>`;
           }
         }
