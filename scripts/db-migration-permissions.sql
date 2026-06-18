@@ -49,7 +49,7 @@ BEGIN
       p.full_name,
       'admin',
       'active',
-      COALESCE(p.page_access, '{}'),
+      COALESCE(p.page_permissions, '{}'),
       NOW(),
       NOW()
     FROM public.admin_profiles p
