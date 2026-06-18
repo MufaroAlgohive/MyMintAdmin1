@@ -1170,6 +1170,36 @@
       } catch (e) { }
     })();
   </script>
+<script>
+window.addEventListener('access-guard:ready', function() {
+  if (typeof window.mintCan !== 'function') return;
+
+  // Manage Strategies — gate create/save form
+  if (!window.mintCan('strategies', 'manage_strategies')) {
+    var submitBtn = document.querySelector('#strategyForm button[type="submit"]');
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.title = 'You do not have permission to create or edit strategies';
+      submitBtn.style.opacity = '0.4';
+      submitBtn.style.cursor = 'not-allowed';
+    }
+    var addHoldingBtn = document.getElementById('addHoldingBtn');
+    if (addHoldingBtn) { addHoldingBtn.disabled = true; addHoldingBtn.style.opacity = '0.4'; }
+  }
+
+  // Change Visibility — gate the Public checkbox
+  var visPerm = window.mintCan('strategies', 'change_visibility');
+  if (!visPerm || visPerm === 'pending') {
+    var pubCheck = document.getElementById('strategyIsPublic');
+    if (pubCheck) {
+      pubCheck.disabled = true;
+      pubCheck.title = visPerm === 'pending'
+        ? 'Making a strategy public requires approver sign-off'
+        : 'You do not have permission to change strategy visibility';
+    }
+  }
+});
+</script>
 <script>window.PAGE_ACCESS_KEY = "strategies";</script>
 <script src="/js/access-guard.js"></script>
 </body>

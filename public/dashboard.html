@@ -1914,7 +1914,7 @@
         if (factsheetsBtn) factsheetsBtn.style.display = "flex";
         const showRebalance = strat && !!strat.is_public && strategyInvestedIds.has(String(strat.id));
         if (editBtn) editBtn.style.display = showRebalance ? "none" : "flex";
-        if (rebBtn)  rebBtn.style.display  = showRebalance ? "flex" : "none";
+        if (rebBtn)  rebBtn.style.display  = (showRebalance && !window._rebPermBlocked) ? "flex" : "none";
       };
 
       let _browsePanelLoaded = false;
@@ -11521,6 +11521,37 @@
       document.body.style.overflow = '';
     };
   </script>
+<script>
+window.addEventListener('access-guard:ready', function() {
+  if (typeof window.mintCan !== 'function') return;
+
+  // Sync Market Data button
+  const syncBtn = document.getElementById('syncFundamentalsBtn');
+  if (syncBtn && !window.mintCan('dashboard', 'sync_fundamentals')) {
+    syncBtn.style.display = 'none';
+  }
+
+  // Commit Rebalance button — false = blocked entirely
+  const rebPerm = window.mintCan('dashboard', 'commit_rebalance');
+  if (rebPerm === false) {
+    window._rebPermBlocked = true;
+    const rebNavBtn = document.getElementById('rebalanceNavBtn');
+    if (rebNavBtn) rebNavBtn.style.display = 'none';
+    ['rebCommitBtn','rebBuyCommitBtn','rebWalletBuyCommitBtn'].forEach(function(id) {
+      var btn = document.getElementById(id);
+      if (btn) { btn.disabled = true; btn.title = 'You do not have permission to commit rebalances'; btn.style.opacity = '0.4'; }
+    });
+  }
+
+  // View Financials — hide AUM chip if blocked
+  if (!window.mintCan('dashboard', 'view_financials')) {
+    ['ovAUM'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) { el.textContent = '—'; el.title = 'Financial data restricted'; }
+    });
+  }
+});
+</script>
 <script>window.PAGE_ACCESS_KEY = "dashboard";</script>
 <script src="/js/access-guard.js"></script>
 </body>

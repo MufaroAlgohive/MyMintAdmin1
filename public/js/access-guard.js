@@ -99,13 +99,14 @@
     window.mintMe = { role, pageAccess, approverTier, permissions, email: me.email };
 
     if (PAGE_KEY) {
-      const allowed = role === 'admin' || pageAccess.includes(PAGE_KEY);
+      // '__admin_only__' = only role=admin can access; all staff are redirected
+      const allowed = PAGE_KEY === '__admin_only__'
+        ? role === 'admin'
+        : role === 'admin' || pageAccess.includes(PAGE_KEY);
       if (!allowed) {
-        const fallback = role === 'admin'
-          ? '/index.html'
-          : (pageAccess[0]
-              ? Object.keys(NAV_PAGE_MAP).find(p => NAV_PAGE_MAP[p] === pageAccess[0]) || '/signin.html?reason=no-access'
-              : '/signin.html?reason=no-access');
+        const fallback = pageAccess[0]
+          ? Object.keys(NAV_PAGE_MAP).find(p => NAV_PAGE_MAP[p] === pageAccess[0]) || '/signin.html?reason=no-access'
+          : '/signin.html?reason=no-access';
         window.location.replace(fallback);
         return;
       }

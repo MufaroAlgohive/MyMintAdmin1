@@ -707,7 +707,11 @@
           totalWalletAmount.textContent = formatCurrency(totalAmount);
 
           const userEmail = (session?.user?.email || '').toLowerCase();
-          const isApprover = userEmail === 'lonwabo@mymint.co.za' || userEmail === 'mufaro.ncube@mymint.co.za';
+          // Use granular permission from access-guard (falls back to admin check if guard not loaded)
+          const _approvePerm = (typeof window.mintCan === 'function')
+            ? window.mintCan('eft', 'approve_deposits')
+            : (window.mintMe?.role === 'admin');
+          const isApprover = !!_approvePerm;
 
           tableBody.innerHTML = txns.map(txn => {
             const p = txn.profile || {};
