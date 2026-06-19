@@ -4847,6 +4847,30 @@
       orderbookNavLink.setAttribute('aria-label', hasOrders ? 'Order Book, new orders' : 'Order Book');
     };
 
+    // Test/UAT accounts (profiles.is_test=true or wallets.status='test'). Their
+    // purchases must NOT light up the orderbook notification dot — it only fires
+    // for real client orders. Cached, but NEVER caches an empty set on failure (an
+    // empty Set is truthy and would never retry — the same trap that leaked test
+    // orders into the live orderbook); a transient failure just skips suppression
+    // for that cycle (fail-safe toward showing real orders).
+    let _orderbookTestUserIds = null;
+    const getOrderbookTestUserIds = async () => {
+      if (_orderbookTestUserIds) return _orderbookTestUserIds;
+      try {
+        const [profilesRes, walletsRes] = await Promise.all([
+          supabaseClient.from('profiles').select('id').eq('is_test', true),
+          supabaseClient.from('wallets').select('user_id').eq('status', 'test'),
+        ]);
+        const profileIds = (profilesRes.data || []).map((r) => r.id).filter(Boolean);
+        const walletUserIds = (walletsRes.data || []).map((r) => r.user_id).filter(Boolean);
+        if (profilesRes.error && walletsRes.error) return new Set();
+        _orderbookTestUserIds = new Set([...profileIds, ...walletUserIds]);
+      } catch {
+        return new Set();
+      }
+      return _orderbookTestUserIds;
+    };
+
     const getArchivedOrderbookSourceIds = () => {
       try {
         const parsed = JSON.parse(localStorage.getItem(FILLED_ARCHIVE_KEY) || '[]');
@@ -4881,14 +4905,16 @@
 
         const { data, error } = await supabaseClient
           .from('stock_holdings_c')
-          .select('id, is_active, trade_side, rebalance_batch_id')
+          .select('id, user_id, is_active, trade_side, rebalance_batch_id')
           .order('updated_at', { ascending: false })
           .limit(1000);
 
         if (error) throw error;
 
         const archivedSourceIds = getArchivedOrderbookSourceIds();
+        const testUserIds = await getOrderbookTestUserIds();
         const hasOpenOrders = (data || []).some((row) => {
+          if (row?.user_id && testUserIds.has(row.user_id)) return false; // test/UAT order — never notify
           if (row?.id && archivedSourceIds.has(String(row.id))) return false;
           if (row?.rebalance_batch_id) return false;
 
