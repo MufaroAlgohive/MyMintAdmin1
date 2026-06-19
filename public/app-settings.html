@@ -210,7 +210,7 @@
       }
     });
 
-    document.getElementById('signOutBtn').addEventListener('click', async () => {
+    document.getElementById('signOutBtn')?.addEventListener('click', async () => {
       await supabaseClient.auth.signOut();
       window.location.href = '/signin.html';
     });

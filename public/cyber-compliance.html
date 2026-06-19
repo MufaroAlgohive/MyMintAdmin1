@@ -1751,7 +1751,7 @@ window.addEventListener('access-guard:ready', (e) => {
   document.getElementById('sidebarAvatarInitials').textContent = (email || 'A')[0].toUpperCase();
   document.getElementById('sidebarUserRole').textContent = role === 'admin' ? 'Administrator' : 'Staff';
 });
-document.getElementById('signOutBtn').addEventListener('click', async () => {
+document.getElementById('signOutBtn')?.addEventListener('click', async () => {
   try {
     const k = Object.keys(localStorage).find(k => k.startsWith('sb-') && k.endsWith('-auth-token'));
     if (k) localStorage.removeItem(k);

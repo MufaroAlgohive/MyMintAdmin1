@@ -246,8 +246,6 @@
         const { data: { session } } = await supabaseClient.auth.getSession();
         if (!session) { window.location.href = '/signin.html'; return; }
         const email = session?.user?.email || '';
-        document.getElementById('sidebarUserEmail').textContent = email || 'Admin';
-        document.getElementById('sidebarAvatarInitials').textContent = email ? email[0].toUpperCase() : 'A';
         document.querySelector('html').style.opacity = '1';
         // Load clients immediately on page load
         await loadClientsInStrategies();
@@ -262,7 +260,7 @@
         window.location.href = '/signin.html';
       }
 
-      document.getElementById('signOutBtn').addEventListener('click', signOut);
+      document.getElementById('signOutBtn')?.addEventListener('click', signOut);
 
       document.getElementById('frameToggle').addEventListener('change', e => {
         previewStage.classList.toggle('frame-off', !e.target.checked);
