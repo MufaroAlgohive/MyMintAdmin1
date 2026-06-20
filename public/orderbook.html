@@ -1176,6 +1176,38 @@
       cursor: not-allowed;
     }
     .reverse-investor-btn svg { width: 14px; height: 14px; }
+    /* Upload-broker-fills button (green) per investor row */
+    .upload-fills-col { width: 36px; text-align: center; }
+    .upload-fills-btn {
+      background: none;
+      border: none;
+      width: 26px;
+      height: 26px;
+      border-radius: 8px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: #059669;
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+    }
+    .upload-fills-btn:hover {
+      background: #ecfdf5;
+      color: #047857;
+      transform: translateY(-1px);
+    }
+    .upload-fills-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .upload-fills-btn svg { width: 15px; height: 15px; }
+    /* Broker-fills preview modal table */
+    .broker-fills-preview-table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+    .broker-fills-preview-table th, .broker-fills-preview-table td { padding: 6px 8px; text-align: left; border-bottom: 1px solid #f1f5f9; white-space: nowrap; }
+    .broker-fills-preview-table th { color: #64748b; font-weight: 600; background: #f8fafc; position: sticky; top: 0; }
+    .broker-fills-preview-table td.r, .broker-fills-preview-table th.r { text-align: right; }
+    .bf-status { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 5px; letter-spacing: .02em; }
+    .bf-status-ok { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+    .bf-status-warn { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
+    .bf-status-skip { background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; }
+    .bf-row-skip td { opacity: .55; }
     /* Pin-to-top button (blue) on fresh orders */
     .ob-actions-wrap { display: inline-flex; align-items: center; gap: 6px; }
     .pin-order-btn {
@@ -1424,6 +1456,9 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- SheetJS (xlsx parsing) — used by the broker-fills uploader to read the
+       basket Excel the broker returns, so the CEO doesn't pencil each price. -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script>
     const SUPABASE_URL = 'https://mfxnghmuccevsxwcetej.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1meG5naG11Y2NldnN4d2NldGVqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg4NTI1ODAsImV4cCI6MjA4NDQyODU4MH0.lktfglzBMaHd79hLFDRH1HHSwsEwZ56Tv6e287kQiFg';
@@ -2596,6 +2631,27 @@
                 </button>
               </td>`
             : '';
+          /* Upload-broker-fills button — scoped to THIS investor's purchase.
+             Carries the user's sourceIds so the uploader can resolve each
+             holding's ticker/qty/current fill from the DB and apply the
+             broker's per-security prices to exactly this client's rows.
+             Shown only on editable (open) books, never on closed snapshots. */
+          const uploadFillsCell = (editable && !cleanup && !!row.strategyId)
+            ? `<td class="upload-fills-col">
+                <button type="button" class="upload-fills-btn" data-upload-fills
+                  data-strategy-id="${escapeHtml(String(row.strategyId || ''))}"
+                  data-strategy-name="${escapeHtml(row.strategyName || '')}"
+                  data-user-id="${escapeHtml(String(u.userId || ''))}"
+                  data-user-name="${escapeHtml(u.clientName || '')}"
+                  data-family-member-id="${escapeHtml(String(u.familyMemberId || ''))}"
+                  data-transaction-id="${escapeHtml(String(u.transactionId || ''))}"
+                  data-created-at-bucket="${escapeHtml(String(u.createdAtBucket || ''))}"
+                  data-source-ids="${escapeHtml(encodeEditSourceIds(u.sourceIds || []))}"
+                  title="Upload broker fills (Excel) for ${escapeHtml(u.clientName || 'this investor')}">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 12 15 15"/></svg>
+                </button>
+              </td>`
+            : '';
           const investorKey = buildInvestorKey(u);
           const isSelected = selectedInvestorKey === investorKey;
           const showPin = !!bookIdForPin && !options.hidePin;
@@ -2616,6 +2672,7 @@
             <td>${escapeHtml(maskIdentifier(u.clientIdRegNo || '-'))}</td>
             <td>${escapeHtml(formatMoney(u.totalMarketValue))}</td>
             <td>${escapeHtml(String(u.holdingsCount))}</td>
+            ${uploadFillsCell}
             ${pinCell}
             ${deleteCell}
             ${reverseCell}
@@ -2623,6 +2680,7 @@
         `;
         }).join('');
 
+        const uploadHeader = (editable && !cleanup && !!row.strategyId) ? '<th class="upload-fills-col" title="Upload broker fills">Fills</th>' : '';
         const pinHeader = (bookIdForPin && !options.hidePin) ? '<th class="pin-investor-col" aria-label="Pin"></th>' : '';
         const deleteHeader = cleanup ? '<th class="cleanup-delete-col" aria-label="Remove"></th>' : '';
         const reverseHeader = allowReverse ? '<th class="reverse-investor-col" aria-label="Reverse"></th>' : '';
@@ -2639,6 +2697,7 @@
                   <th>ID / Reg No</th>
                   <th>Live Price</th>
                   <th>Holdings</th>
+                  ${uploadHeader}
                   ${pinHeader}
                   ${deleteHeader}
                   ${reverseHeader}
@@ -7922,7 +7981,7 @@
       const investorRow = event.target.closest('[data-investor-row]');
       if (!investorRow) return;
       /* Ignore clicks on action buttons inside the row */
-      if (event.target.closest('.reverse-investor-btn, .cleanup-delete-btn')) return;
+      if (event.target.closest('.reverse-investor-btn, .cleanup-delete-btn, .upload-fills-btn, .pin-order-btn')) return;
       event.stopPropagation();
 
       const key = investorRow.dataset.investorKey || '';
@@ -8130,6 +8189,325 @@
           priceModalConfirm.disabled = false;
           priceModalConfirm.textContent = 'Update Price';
         }
+    });
+
+    /* ─── Broker fills uploader ───────────────────────────────────────────────
+       The broker returns a basket Excel (one row per security: side, equity
+       code, nominal qty, price in cents). Instead of pencilling each price, the
+       CEO clicks the file icon on an investor row, picks the Excel, reviews a
+       preview (matched securities, qty check, current → broker fill), then
+       confirms. Each matched security's avg_fill is written to that investor's
+       stock_holdings_c rows via the same /api/orderbook/update-price path the
+       pencil uses — so permission checks + buffer reconciliation are reused. */
+    let brokerFillsCtx = null;   // { strategyName, userName, sourceIds, excelRows }
+    let brokerFillsRows = null;  // preview rows ready to apply
+
+    // Broker codes come back bare ("CLI"); our securities carry an exchange
+    // suffix ("CLI.JO"). Normalise both sides so they compare cleanly.
+    const normalizeFillTicker = (t) =>
+      String(t || '').trim().toUpperCase().replace(/\s+/g, '').split('.')[0];
+
+    const getBrokerFillsEls = () => ({
+      modal: document.getElementById('brokerFillsModal'),
+      fileInput: document.getElementById('brokerFillsFileInput'),
+      subtitle: document.getElementById('brokerFillsSubtitle'),
+      summary: document.getElementById('brokerFillsSummary'),
+      preview: document.getElementById('brokerFillsPreview'),
+      password: document.getElementById('brokerFillsPassword'),
+      confirm: document.getElementById('brokerFillsConfirm'),
+    });
+
+    const closeBrokerFillsModal = () => {
+      const { modal, password } = getBrokerFillsEls();
+      if (modal) modal.classList.remove('is-active');
+      if (password) password.value = '';
+      brokerFillsRows = null;
+    };
+
+    // Parse the broker workbook into [{ side, code, nominal, priceCents }].
+    const parseBrokerFillsWorkbook = async (file) => {
+      if (typeof XLSX === 'undefined') throw new Error('Spreadsheet reader failed to load. Check your connection and refresh.');
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      if (!ws) throw new Error('The workbook has no sheets.');
+      const grid = XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: false, defval: '' });
+      if (!grid.length) throw new Error('The sheet is empty.');
+
+      const findCol = (cells, ...needles) =>
+        cells.findIndex((c) => {
+          const v = String(c || '').toLowerCase();
+          return needles.some((n) => v.includes(n));
+        });
+      let headerIdx = -1, cols = null;
+      for (let i = 0; i < Math.min(grid.length, 15); i++) {
+        const cells = (grid[i] || []).map((c) => String(c || ''));
+        const priceCol = findCol(cells, 'price');
+        const codeCol = findCol(cells, 'code', 'equity', 'ticker', 'symbol');
+        if (priceCol !== -1 && codeCol !== -1) {
+          headerIdx = i;
+          cols = {
+            side: findCol(cells, 'buy', 'sell', 'side'),
+            code: codeCol,
+            nominal: findCol(cells, 'nominal', 'qty', 'quantity', 'shares'),
+            price: priceCol,
+          };
+          break;
+        }
+      }
+      if (headerIdx === -1) throw new Error('Could not find the column headers (need at least an Equity Code and a Price column).');
+
+      const out = [];
+      for (let i = headerIdx + 1; i < grid.length; i++) {
+        const r = grid[i] || [];
+        const code = normalizeFillTicker(r[cols.code]);
+        if (!code) continue;
+        const priceCents = Math.round(Number(String(r[cols.price]).replace(/[^0-9.\-]/g, '')));
+        if (!Number.isFinite(priceCents) || priceCents <= 0) continue;
+        const nominalRaw = cols.nominal !== -1 ? Number(String(r[cols.nominal]).replace(/[^0-9.\-]/g, '')) : NaN;
+        const side = cols.side !== -1 ? String(r[cols.side] || '').trim().toUpperCase() : '';
+        out.push({ side, code, nominal: Number.isFinite(nominalRaw) ? nominalRaw : null, priceCents });
+      }
+      if (!out.length) throw new Error('No priced securities found in the sheet.');
+      return out;
+    };
+
+    // Load the selected investor's holdings (authoritative ticker/qty/current
+    // fill) straight from the DB by sourceId — works for both live rows and
+    // Active-Order-Book snapshots.
+    const loadInvestorHoldingsForFill = async (sourceIds) => {
+      const ids = (sourceIds || []).map(String).filter(Boolean);
+      if (!ids.length) return [];
+      const { data: holdings, error } = await supabaseClient
+        .from('stock_holdings_c')
+        .select('id, quantity, avg_fill, trade_side, security_id')
+        .in('id', ids);
+      if (error) throw new Error(error.message || 'Could not load this investor\'s holdings.');
+      const secIds = [...new Set((holdings || []).map((h) => h.security_id).filter(Boolean))];
+      const secMap = {};
+      if (secIds.length) {
+        const { data: secs } = await supabaseClient
+          .from('securities_c').select('id, symbol, name').in('id', secIds);
+        (secs || []).forEach((s) => { secMap[String(s.id)] = s; });
+      }
+      return (holdings || []).map((h) => {
+        const sec = secMap[String(h.security_id)] || {};
+        const qty = Number(h.quantity || 0);
+        const cents = Number(h.avg_fill || 0);
+        const explicit = String(h.trade_side || '').trim().toUpperCase();
+        return {
+          sourceId: String(h.id),
+          ticker: sec.symbol || '',
+          instrumentName: sec.name || sec.symbol || '',
+          quantity: qty,
+          side: (explicit === 'BUY' || explicit === 'SELL') ? explicit : (qty < 0 ? 'SELL' : 'BUY'),
+          currentFillCents: Number.isFinite(cents) && cents > 0 ? cents : null,
+        };
+      });
+    };
+
+    const randFromCents = (c) => (c == null ? '-' : `R ${(c / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+
+    const renderBrokerFillsPreview = (matched) => {
+      const { subtitle, summary, preview, confirm } = getBrokerFillsEls();
+      const applyCount = matched.filter((m) => m.willApply).length;
+      const skipCount = matched.length - applyCount;
+      const warnCount = matched.filter((m) => m.willApply && m.warn).length;
+
+      if (subtitle) subtitle.innerHTML = `Applying broker fills to <strong>${escapeHtml(brokerFillsCtx.userName || 'investor')}</strong> &middot; ${escapeHtml(brokerFillsCtx.strategyName || 'strategy')}`;
+      if (summary) {
+        summary.innerHTML = `
+          <span class="bf-status bf-status-ok">${applyCount} will fill</span>
+          ${warnCount ? `<span class="bf-status bf-status-warn" style="margin-left:6px;">${warnCount} with warnings</span>` : ''}
+          ${skipCount ? `<span class="bf-status bf-status-skip" style="margin-left:6px;">${skipCount} skipped</span>` : ''}`;
+      }
+      if (preview) {
+        const body = matched.map((m) => `
+          <tr class="${m.willApply ? '' : 'bf-row-skip'}">
+            <td>${escapeHtml(m.instrumentName || m.ticker || '-')}</td>
+            <td>${escapeHtml(m.ticker || '-')}</td>
+            <td>${escapeHtml(m.side || '-')}</td>
+            <td class="r">${escapeHtml(String(m.quantity))}</td>
+            <td class="r">${m.nominal == null ? '-' : escapeHtml(String(m.nominal))}</td>
+            <td class="r">${randFromCents(m.currentFillCents)}</td>
+            <td class="r"><strong>${m.priceCents == null ? '-' : randFromCents(m.priceCents)}</strong></td>
+            <td>${m.statusHtml}</td>
+          </tr>`).join('');
+        preview.innerHTML = `
+          <table class="broker-fills-preview-table">
+            <thead><tr>
+              <th>Instrument</th><th>Ticker</th><th>Side</th>
+              <th class="r">Book Qty</th><th class="r">Broker Qty</th>
+              <th class="r">Current Fill</th><th class="r">Broker Fill</th><th>Status</th>
+            </tr></thead>
+            <tbody>${body}</tbody>
+          </table>`;
+      }
+      brokerFillsRows = matched.filter((m) => m.willApply);
+      if (confirm) {
+        confirm.disabled = applyCount === 0;
+        confirm.textContent = applyCount ? `Confirm & apply ${applyCount} fill${applyCount !== 1 ? 's' : ''}` : 'Nothing to apply';
+      }
+    };
+
+    const buildBrokerFillsPreview = async () => {
+      const { modal } = getBrokerFillsEls();
+      const holdings = await loadInvestorHoldingsForFill(brokerFillsCtx.sourceIds);
+      const excel = brokerFillsCtx.excelRows || [];
+      const excelByTicker = new Map();
+      excel.forEach((e) => { if (!excelByTicker.has(e.code)) excelByTicker.set(e.code, e); });
+
+      const usedCodes = new Set();
+      const matched = holdings.map((h) => {
+        const key = normalizeFillTicker(h.ticker);
+        const ex = excelByTicker.get(key);
+        const warnings = [];
+        let willApply = false, priceCents = null, nominal = null;
+        if (!ex) {
+          warnings.push('No broker price');
+        } else {
+          usedCodes.add(key);
+          priceCents = ex.priceCents;
+          nominal = ex.nominal;
+          willApply = true;
+          if (ex.nominal != null && Math.abs(ex.nominal) !== Math.abs(h.quantity)) warnings.push('Qty mismatch');
+          if (ex.side && h.side && ex.side !== h.side) warnings.push(`Side ${ex.side}≠${h.side}`);
+        }
+        const warn = willApply && warnings.length > 0;
+        const statusHtml = willApply
+          ? (warn ? `<span class="bf-status bf-status-warn">${escapeHtml(warnings.join(', '))}</span>` : '<span class="bf-status bf-status-ok">Ready</span>')
+          : `<span class="bf-status bf-status-skip">${escapeHtml(warnings.join(', ') || 'Skipped')}</span>`;
+        return { ...h, priceCents, nominal, willApply, warn, statusHtml };
+      });
+
+      // Broker rows that didn't match any of this investor's holdings (info only).
+      excel.forEach((e) => {
+        if (usedCodes.has(e.code)) return;
+        matched.push({
+          sourceId: null, ticker: e.code, instrumentName: e.code, side: e.side || '-',
+          quantity: '-', nominal: e.nominal, currentFillCents: null, priceCents: e.priceCents,
+          willApply: false, warn: false,
+          statusHtml: '<span class="bf-status bf-status-skip">Not in this basket</span>',
+        });
+      });
+
+      renderBrokerFillsPreview(matched);
+      if (modal) modal.classList.add('is-active');
+    };
+
+    // File icon click → remember which investor, open the file picker.
+    document.addEventListener('click', (event) => {
+      const btn = event.target.closest('[data-upload-fills]');
+      if (!btn) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const { fileInput } = getBrokerFillsEls();
+      if (!fileInput) return;
+      brokerFillsCtx = {
+        strategyId: btn.dataset.strategyId || '',
+        strategyName: btn.dataset.strategyName || '',
+        userId: btn.dataset.userId || '',
+        userName: btn.dataset.userName || '',
+        sourceIds: decodeEditSourceIds(btn.dataset.sourceIds),
+        excelRows: null,
+      };
+      if (!brokerFillsCtx.sourceIds.length) {
+        alert('No holdings found for this investor to apply fills to.');
+        return;
+      }
+      fileInput.value = '';
+      fileInput.click();
+    });
+
+    // File chosen → parse + show preview. Delegated on document because the
+    // file <input> is declared further down the page than this script runs.
+    document.addEventListener('change', async (event) => {
+      if (!event.target || event.target.id !== 'brokerFillsFileInput') return;
+      const file = event.target.files && event.target.files[0];
+      if (!file || !brokerFillsCtx) return;
+      try {
+        brokerFillsCtx.excelRows = await parseBrokerFillsWorkbook(file);
+        await buildBrokerFillsPreview();
+      } catch (err) {
+        console.error('Broker fills parse failed:', err);
+        alert('Could not read the broker file: ' + (err.message || 'Unknown error'));
+      }
+    });
+
+    // Modal close / cancel / confirm.
+    document.addEventListener('click', async (event) => {
+      if (event.target.closest('#brokerFillsClose') || event.target.closest('#brokerFillsCancel')) {
+        closeBrokerFillsModal();
+        return;
+      }
+      const confirmBtn = event.target.closest('#brokerFillsConfirm');
+      if (!confirmBtn) return;
+      event.preventDefault();
+      if (!brokerFillsRows || !brokerFillsRows.length) return;
+      const { password } = getBrokerFillsEls();
+
+      confirmBtn.disabled = true;
+      const origText = confirmBtn.textContent;
+      confirmBtn.textContent = 'Verifying...';
+      try {
+        await verifyModalPassword(password ? password.value : '');
+
+        const fillPricePerm = (typeof window.mintCan === 'function')
+          ? window.mintCan('orderbook', 'edit_fill_price') : true;
+        if (fillPricePerm === false) throw new Error('You do not have permission to edit fill prices. Contact your admin.');
+
+        const { data: sessionData } = await supabaseClient.auth.getSession();
+        const accessToken = sessionData?.session?.access_token;
+        if (!accessToken) throw new Error('Your session has expired. Please sign in again.');
+
+        const nowIso = new Date().toISOString();
+        const fillDateStr = nowIso.split('T')[0];
+        let applied = 0, pending = 0;
+
+        for (const m of brokerFillsRows) {
+          if (!m.sourceId) continue;
+          const side = String(m.side || '').toUpperCase();
+          const dbPayload = { avg_fill: m.priceCents, "Fill_date": fillDateStr, updated_at: nowIso, as_of_date: fillDateStr };
+          if (side === 'SELL') { dbPayload.avg_exit = m.priceCents; dbPayload["Exit_date"] = fillDateStr; }
+
+          confirmBtn.textContent = `Applying ${applied + pending + 1}/${brokerFillsRows.length}...`;
+
+          if (fillPricePerm === 'pending') {
+            const resp = await fetch('/api/team?action=submit-approval', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
+              body: JSON.stringify({
+                type: 'fill_price',
+                payload: { ids: [m.sourceId], dbPayload, instrument: m.instrumentName || '', ticker: m.ticker || '', newPriceRand: m.priceCents / 100, side },
+                notes: `Broker fill R${(m.priceCents / 100).toFixed(2)} for ${m.instrumentName || m.ticker} (${side}) — ${brokerFillsCtx.userName || 'investor'}`,
+              }),
+            });
+            const d = await resp.json().catch(() => ({}));
+            if (!resp.ok || !d.ok) throw new Error(d.error || `Could not submit ${m.ticker} for approval.`);
+            pending++;
+          } else {
+            const resp = await fetch('/api/orderbook/update-price', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
+              body: JSON.stringify({ ids: [m.sourceId], payload: dbPayload }),
+            });
+            const d = await resp.json().catch(() => ({}));
+            if (!resp.ok || !d.updatedCount) throw new Error(d?.details || d?.error || `Price update failed for ${m.ticker}.`);
+            applied++;
+          }
+        }
+
+        closeBrokerFillsModal();
+        if (pending) alert(`${pending} broker fill${pending !== 1 ? 's' : ''} submitted for approval.\nA Master Approver will verify against the broker statement before they commit.`);
+        else alert(`Applied ${applied} broker fill${applied !== 1 ? 's' : ''} to ${brokerFillsCtx.userName || 'the investor'}.`);
+        await loadOrderbook();
+      } catch (err) {
+        console.error('Broker fills apply failed:', err);
+        alert('Failed to apply broker fills: ' + (err.message || 'Unknown error'));
+      } finally {
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = origText;
+      }
     });
 
     filledOrderbooksArchive = readFilledArchive();
@@ -8384,6 +8762,31 @@
     </div>
   </div>
 </div>
+
+<!-- Broker Fills Upload (Excel) Modal -->
+<input type="file" id="brokerFillsFileInput" accept=".xlsx,.xls,.csv" style="display:none;">
+<div id="brokerFillsModal" class="price-modal-backdrop">
+  <div class="price-modal-content" style="max-width:860px;width:94vw;">
+    <div class="price-modal-header">
+      <h3 class="price-modal-title">Upload broker fills</h3>
+      <button id="brokerFillsClose" style="background:none;border:none;color:#94a3b8;cursor:pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="price-modal-body">
+      <div id="brokerFillsSubtitle" style="font-size:12.5px;color:#64748b;margin-bottom:10px;"></div>
+      <div id="brokerFillsSummary" style="font-size:12px;margin-bottom:10px;"></div>
+      <div id="brokerFillsPreview" style="max-height:46vh;overflow:auto;border:1px solid #e2e8f0;border-radius:10px;"></div>
+      <div class="price-input-group" style="margin-top:12px;">
+        <label class="price-input-label" for="brokerFillsPassword">Confirm Password</label>
+        <input type="password" id="brokerFillsPassword" class="price-input" placeholder="Enter your password to authorize" autocomplete="current-password">
+      </div>
+    </div>
+    <div class="price-modal-footer">
+      <button id="brokerFillsCancel" class="price-modal-btn price-btn-cancel">Cancel</button>
+      <button id="brokerFillsConfirm" class="price-modal-btn price-btn-confirm">Confirm &amp; apply fills</button>
+    </div>
+  </div>
+</div>
+
 <script>
 (function(){
   var link=document.getElementById("teamNavLink");
