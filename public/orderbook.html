@@ -1573,11 +1573,14 @@
     // If any snapshot is pinned, the most recent pinned book's rows are shown
     // up top (instead of the live active rows) until it is unpinned.
     const getPinnedTopBook = () => {
-      if (orderbookUatMode) return null; // UAT view shows only the filtered live test orders
       if (!orderbookPins || !orderbookPins.size) return null;
       const pinned = (filledOrderbooksArchive || []).filter((b) => orderbookPins.has(String(b.id)));
-      if (!pinned.length) return null;
-      return pinned.slice().sort((a, b) => (b.sequence || 0) - (a.sequence || 0))[0];
+      // A pinned book floats to the top only within its OWN view: test books stay
+      // in UAT, real books stay in Live. So pinning in UAT keeps it in UAT, and a
+      // pinned test book never leaks into the live orderbook.
+      const modeMatched = pinned.filter((b) => orderbookUatMode ? bookIsTestBook(b) : !bookIsTestBook(b));
+      if (!modeMatched.length) return null;
+      return modeMatched.slice().sort((a, b) => (b.sequence || 0) - (a.sequence || 0))[0];
     };
     let holdingFillDateById = new Map();
     /* Per-holding execution economics for the MINT PnL column, keyed by

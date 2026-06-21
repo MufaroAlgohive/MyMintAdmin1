@@ -1,9 +1,11 @@
 /**
  * api/webhooks.js
- * Handles POST /api/webhooks/supabase — Supabase Database Webhook receiver.
+ * Handles POST /api/webhooks — Supabase Database Webhook receiver.
+ * (The file is api/webhooks.js, so the route is /api/webhooks — NOT
+ *  /api/webhooks/supabase, which 404s: there is no such sub-path/rewrite.)
  *
  * Setup in Supabase Dashboard → Database → Webhooks:
- *   URL:    https://<your-domain>/api/webhooks/supabase
+ *   URL:    https://<your-domain>/api/webhooks
  *   Method: POST
  *   Secret: set SUPABASE_WEBHOOK_SECRET env var and add it as the webhook secret
  */
@@ -325,7 +327,7 @@ const buildOrderAlertHtml = ({ headerLabel = 'New order received', clientName, a
 <tr><td style="padding:8px 36px 28px;">
   <table role="presentation" cellspacing="0" cellpadding="0" border="0">
     <tr><td style="border-radius:999px;background:#5c3bcf;box-shadow:0 4px 14px rgba(92,59,207,.3);">
-      <a href="https://mymintadmin.vercel.app/orderbook.html" style="display:inline-block;padding:13px 30px;font-size:14px;font-weight:700;color:#fff;text-decoration:none;border-radius:999px;">Open Order Book</a>
+      <a href="https://my-mint-admin.vercel.app/orderbook.html" style="display:inline-block;padding:13px 30px;font-size:14px;font-weight:700;color:#fff;text-decoration:none;border-radius:999px;">Open Order Book</a>
     </td></tr>
   </table>
 </td></tr>
@@ -390,7 +392,7 @@ async function handleOrderAlert(record, trigger) {
 
   // UAT/test exclusion (overridable for testing).
   const includeTest = String(process.env.ORDERBOOK_ALERT_INCLUDE_TEST || '').toLowerCase() === 'true';
-  const prof = await sbGet(`/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=email,first_name,last_name,full_name,is_test&limit=1`);
+  const prof = await sbGet(`/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=email,first_name,last_name,is_test&limit=1`);
   const profile = Array.isArray(prof) ? prof[0] : null;
   let isTest = profile?.is_test === true;
   if (!isTest) {
@@ -403,7 +405,7 @@ async function handleOrderAlert(record, trigger) {
 
   // WHO
   let clientName = [profile?.first_name, profile?.last_name].filter(Boolean).join(' ').trim()
-    || profile?.full_name || profile?.email || 'Unknown client';
+    || profile?.email || 'Unknown client';
   let accountNote = '';
   if (familyMemberId) {
     try {
