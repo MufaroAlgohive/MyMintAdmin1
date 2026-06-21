@@ -272,18 +272,32 @@ const buildWalletFundedHtml = ({ firstName, amount, walletId }) => {
 </body></html>`;
 };
 
-// Internal alert to the desk when a real order comes in: who / what / when.
-const buildOrderAlertHtml = ({ clientName, accountNote, what, kind, amountRands, whenText }) => {
+// Internal alert to the desk when a real order/gift comes in: who / what / when.
+const buildOrderAlertHtml = ({ headerLabel = 'New order received', clientName, accountNote, what, kind, recipientName, amountRands, whenText, securities }) => {
   const fmt = (n) => 'R ' + Number(n).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const kindBg = kind === 'Gift' ? '#fdf2f8' : '#f5f3ff';
+  const kindColor = kind === 'Gift' ? '#db2777' : '#7c3aed';
+  const recipientRow = recipientName
+    ? `<tr>
+      <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;font-size:12px;color:#94a3b8;">To</td>
+      <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;font-size:14px;color:#0f172a;font-weight:600;">${recipientName}</td>
+    </tr>`
+    : '';
+  const securitiesRow = (Array.isArray(securities) && securities.length)
+    ? `<tr>
+      <td style="padding:10px 0;font-size:12px;color:#94a3b8;vertical-align:top;">Securities</td>
+      <td style="padding:10px 0;font-size:13px;color:#0f172a;">${securities.map((s) => `<div style="padding:2px 0;"><span style="font-weight:700;">${s.symbol || s.name || '-'}</span>${(s.name && s.symbol) ? ` <span style="color:#94a3b8;">${s.name}</span>` : ''}${s.qty ? ` <span style="color:#64748b;">&times; ${s.qty}</span>` : ''}</div>`).join('')}</td>
+    </tr>`
+    : '';
   return `<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>New order</title></head>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${headerLabel}</title></head>
 <body style="margin:0;padding:0;background:#f4f4f7;font-family:${F};">
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f4f4f7;">
 <tr><td align="center" style="padding:32px 16px;">
 <table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0" style="max-width:600px;background:#fff;border-radius:18px;overflow:hidden;box-shadow:0 8px 32px rgba(15,23,42,.07);">
 <tr><td style="background:linear-gradient(135deg,#31005e 0%,#5b21b6 50%,#7c3aed 100%);padding:32px 36px 26px;">
   <div style="display:inline-block;width:34px;height:34px;background:#fff;border-radius:9px;text-align:center;line-height:34px;font-weight:700;color:#7c3aed;font-size:17px;font-family:${F};">M</div>
-  <div style="margin-top:16px;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#d8b4fe;">New order received</div>
+  <div style="margin-top:16px;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#d8b4fe;">${headerLabel}</div>
   <h1 style="margin:6px 0 0;color:#fff;font-size:24px;font-weight:800;letter-spacing:-.5px;">${clientName}</h1>
 </td></tr>
 <tr><td style="padding:28px 36px 8px;">
@@ -292,18 +306,20 @@ const buildOrderAlertHtml = ({ clientName, accountNote, what, kind, amountRands,
       <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;font-size:12px;color:#94a3b8;width:120px;">Who</td>
       <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;font-size:14px;color:#0f172a;font-weight:600;">${clientName}${accountNote ? `<div style="font-size:11px;color:#7c3aed;font-weight:500;margin-top:2px;">${accountNote}</div>` : ''}</td>
     </tr>
+    ${recipientRow}
     <tr>
-      <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;font-size:12px;color:#94a3b8;">Bought</td>
-      <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;font-size:14px;color:#0f172a;font-weight:600;"><span style="display:inline-block;background:#f5f3ff;color:#7c3aed;font-size:10px;font-weight:700;padding:2px 7px;border-radius:5px;margin-right:6px;">${kind}</span>${what}</td>
+      <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;font-size:12px;color:#94a3b8;">${kind === 'Gift' ? 'Gifted' : 'Bought'}</td>
+      <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;font-size:14px;color:#0f172a;font-weight:600;"><span style="display:inline-block;background:${kindBg};color:${kindColor};font-size:10px;font-weight:700;padding:2px 7px;border-radius:5px;margin-right:6px;">${kind}</span>${what}</td>
     </tr>
     <tr>
       <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;font-size:12px;color:#94a3b8;">Amount</td>
       <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;font-size:16px;color:#0f172a;font-weight:800;">${fmt(amountRands)}</td>
     </tr>
     <tr>
-      <td style="padding:10px 0;font-size:12px;color:#94a3b8;">When</td>
-      <td style="padding:10px 0;font-size:14px;color:#0f172a;font-weight:600;">${whenText}</td>
+      <td style="padding:10px 0;${securitiesRow ? 'border-bottom:1px solid #f1f5f9;' : ''}font-size:12px;color:#94a3b8;">When</td>
+      <td style="padding:10px 0;${securitiesRow ? 'border-bottom:1px solid #f1f5f9;' : ''}font-size:14px;color:#0f172a;font-weight:600;">${whenText}</td>
     </tr>
+    ${securitiesRow}
   </table>
 </td></tr>
 <tr><td style="padding:8px 36px 28px;">
@@ -328,12 +344,45 @@ const buildOrderAlertHtml = ({ clientName, accountNote, what, kind, amountRands,
    amount, and when (created_at) — so there's no race with the holdings insert.
    Set ORDERBOOK_ALERT_INCLUDE_TEST=true to also alert on test accounts while
    testing; ORDERBOOK_ALERT_TO overrides the recipient (defaults to the desk). */
+// Fetch the securities filled under a strategy buy. The transactions INSERT can
+// land a touch before the holdings loop finishes, so retry briefly before giving
+// up (the email still sends with the strategy name even if the list is empty).
+async function fetchTxnSecurities(transactionId) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    let holds = [];
+    try {
+      holds = await sbGet(`/rest/v1/stock_holdings_c?transaction_id=eq.${encodeURIComponent(transactionId)}&select=quantity,security_id`);
+    } catch { holds = []; }
+    if (Array.isArray(holds) && holds.length) {
+      const secIds = [...new Set(holds.map((h) => h.security_id).filter(Boolean))];
+      const secMap = {};
+      if (secIds.length) {
+        try {
+          const secs = await sbGet(`/rest/v1/securities_c?id=in.(${secIds.map(encodeURIComponent).join(',')})&select=id,symbol,name`);
+          (secs || []).forEach((s) => { secMap[String(s.id)] = s; });
+        } catch { /* securities lookup is best-effort */ }
+      }
+      return holds.map((h) => {
+        const s = secMap[String(h.security_id)] || {};
+        return { symbol: s.symbol || '', name: s.name || '', qty: Number(h.quantity || 0) };
+      });
+    }
+    if (attempt < 2) await new Promise((r) => setTimeout(r, 800)); // holdings may lag the txn insert
+  }
+  return [];
+}
+
 async function handleOrderAlert(record, trigger) {
   const name = String(record?.name || '');
+  const storeRef = String(record?.store_reference || '');
   const isStrategy = /^Strategy Investment:/i.test(name);
   const isStock = /^Purchased /i.test(name);
-  const isBuy = String(record?.direction || '').toLowerCase() === 'debit' && (isStrategy || isStock);
-  if (!isBuy) { console.log('[Webhook] order_alert: not an investment buy — skipping'); return; }
+  const isGift = /^Investment Gift/i.test(name) || /^GIFT/i.test(storeRef);
+  const isDebit = String(record?.direction || '').toLowerCase() === 'debit';
+  if (!isDebit || !(isStrategy || isStock || isGift)) {
+    console.log('[Webhook] order_alert: not an investment buy or gift — skipping');
+    return;
+  }
 
   const userId = record.user_id;
   const familyMemberId = record.family_member_id || null;
@@ -368,22 +417,41 @@ async function handleOrderAlert(record, trigger) {
     } catch { /* family lookup is best-effort */ }
   }
 
-  // WHAT / amount / when
-  const what = name.replace(/^Strategy Investment:\s*/i, '').replace(/^Purchased\s*/i, '').trim() || 'an investment';
-  const kind = isStrategy ? 'Strategy' : 'Stock';
   const amountRands = Number(record.amount || 0) / 100;
   const whenIso = record.created_at || record.transaction_date || new Date().toISOString();
   const whenText = new Date(whenIso).toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg', dateStyle: 'medium', timeStyle: 'short' });
-
   const to = process.env.ORDERBOOK_ALERT_TO || process.env.ORDERBOOK_EMAIL_TO || 'lulamasw@gmail.com';
+
+  // ── Gift ──────────────────────────────────────────────────────────────────
+  if (isGift) {
+    const what = name.replace(/^Investment Gift\s*[—-]\s*/i, '').trim() || 'an investment';
+    // Recipient parsed from "Gift to {name} — reserved until claimed".
+    let recipientName = '';
+    const mRec = String(record?.description || '').match(/Gift to\s+(.+?)\s*[—-]/i);
+    if (mRec) recipientName = mRec[1].trim();
+    await sendEmail({
+      to,
+      subject: `New gift — ${clientName} → ${recipientName || 'recipient'}: ${what}`,
+      html: buildOrderAlertHtml({ headerLabel: 'New gift sent', clientName, accountNote, kind: 'Gift', what, recipientName, amountRands, whenText }),
+      emailType: 'order_alert',
+      metadata: { transaction_id: record.id, user_id: userId, kind: 'gift', amount_cents: record.amount, is_test: isTest },
+    });
+    console.log(`[Webhook] order_alert (gift) sent to ${to} for ${clientName}`);
+    return;
+  }
+
+  // ── Investment buy ────────────────────────────────────────────────────────
+  const what = name.replace(/^Strategy Investment:\s*/i, '').replace(/^Purchased\s*/i, '').trim() || 'an investment';
+  const kind = isStrategy ? 'Strategy' : 'Stock';
+  const securities = record.id ? await fetchTxnSecurities(record.id) : [];
   await sendEmail({
     to,
     subject: `New order — ${clientName}: ${kind} · ${what}`,
-    html: buildOrderAlertHtml({ clientName, accountNote, what, kind, amountRands, whenText }),
+    html: buildOrderAlertHtml({ headerLabel: 'New order received', clientName, accountNote, kind, what, amountRands, whenText, securities }),
     emailType: 'order_alert',
-    metadata: { transaction_id: record.id, user_id: userId, family_member_id: familyMemberId, amount_cents: record.amount, is_test: isTest },
+    metadata: { transaction_id: record.id, user_id: userId, family_member_id: familyMemberId, kind: 'buy', amount_cents: record.amount, is_test: isTest, securities_count: securities.length },
   });
-  console.log(`[Webhook] order_alert email sent to ${to} for ${clientName}`);
+  console.log(`[Webhook] order_alert (buy) sent to ${to} for ${clientName} — ${securities.length} securities`);
 }
 
 async function handleWelcome(record, trigger) {
@@ -474,9 +542,14 @@ module.exports = async (req, res) => {
         to,
         subject: 'New order — Test Client: Strategy · Yield',
         html: buildOrderAlertHtml({
-          clientName: 'Test Client', accountNote: '', what: 'Yield', kind: 'Strategy',
+          headerLabel: 'New order received', clientName: 'Test Client', accountNote: '', what: 'Yield', kind: 'Strategy',
           amountRands: 5000,
           whenText: new Date().toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg', dateStyle: 'medium', timeStyle: 'short' }),
+          securities: [
+            { symbol: 'EXX.JO', name: 'Exxaro Resources', qty: 5 },
+            { symbol: 'ABG.JO', name: 'Absa Group', qty: 3 },
+            { symbol: 'NED.JO', name: 'Nedbank Group', qty: 2 },
+          ],
         }),
         emailType: 'order_alert',
         metadata: { test: true },
