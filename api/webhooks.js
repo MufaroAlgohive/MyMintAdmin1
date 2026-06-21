@@ -272,7 +272,119 @@ const buildWalletFundedHtml = ({ firstName, amount, walletId }) => {
 </body></html>`;
 };
 
+// Internal alert to the desk when a real order comes in: who / what / when.
+const buildOrderAlertHtml = ({ clientName, accountNote, what, kind, amountRands, whenText }) => {
+  const fmt = (n) => 'R ' + Number(n).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>New order</title></head>
+<body style="margin:0;padding:0;background:#f4f4f7;font-family:${F};">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f4f4f7;">
+<tr><td align="center" style="padding:32px 16px;">
+<table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0" style="max-width:600px;background:#fff;border-radius:18px;overflow:hidden;box-shadow:0 8px 32px rgba(15,23,42,.07);">
+<tr><td style="background:linear-gradient(135deg,#31005e 0%,#5b21b6 50%,#7c3aed 100%);padding:32px 36px 26px;">
+  <div style="display:inline-block;width:34px;height:34px;background:#fff;border-radius:9px;text-align:center;line-height:34px;font-weight:700;color:#7c3aed;font-size:17px;font-family:${F};">M</div>
+  <div style="margin-top:16px;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#d8b4fe;">New order received</div>
+  <h1 style="margin:6px 0 0;color:#fff;font-size:24px;font-weight:800;letter-spacing:-.5px;">${clientName}</h1>
+</td></tr>
+<tr><td style="padding:28px 36px 8px;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+    <tr>
+      <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;font-size:12px;color:#94a3b8;width:120px;">Who</td>
+      <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;font-size:14px;color:#0f172a;font-weight:600;">${clientName}${accountNote ? `<div style="font-size:11px;color:#7c3aed;font-weight:500;margin-top:2px;">${accountNote}</div>` : ''}</td>
+    </tr>
+    <tr>
+      <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;font-size:12px;color:#94a3b8;">Bought</td>
+      <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;font-size:14px;color:#0f172a;font-weight:600;"><span style="display:inline-block;background:#f5f3ff;color:#7c3aed;font-size:10px;font-weight:700;padding:2px 7px;border-radius:5px;margin-right:6px;">${kind}</span>${what}</td>
+    </tr>
+    <tr>
+      <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;font-size:12px;color:#94a3b8;">Amount</td>
+      <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;font-size:16px;color:#0f172a;font-weight:800;">${fmt(amountRands)}</td>
+    </tr>
+    <tr>
+      <td style="padding:10px 0;font-size:12px;color:#94a3b8;">When</td>
+      <td style="padding:10px 0;font-size:14px;color:#0f172a;font-weight:600;">${whenText}</td>
+    </tr>
+  </table>
+</td></tr>
+<tr><td style="padding:8px 36px 28px;">
+  <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+    <tr><td style="border-radius:999px;background:#5c3bcf;box-shadow:0 4px 14px rgba(92,59,207,.3);">
+      <a href="https://mymintadmin.vercel.app/orderbook.html" style="display:inline-block;padding:13px 30px;font-size:14px;font-weight:700;color:#fff;text-decoration:none;border-radius:999px;">Open Order Book</a>
+    </td></tr>
+  </table>
+</td></tr>
+<tr><td style="padding:16px 36px 26px;border-top:1px solid #f0f0f3;">
+  <p style="margin:0;font-size:10px;color:#94a3b8;">Internal desk alert · MINT (Pty) Ltd · FSP 55118 · &copy; ${new Date().getFullYear()} MINT</p>
+</td></tr>
+</table></td></tr></table>
+</body></html>`;
+};
+
 // ── Email action dispatchers ───────────────────────────────────────────────────
+
+/* Desk alert when a REAL order comes in (mirrors the orderbook red dot: skips
+   UAT/test accounts). Fires off the transactions INSERT — the row itself carries
+   who (user_id), what (name = "Strategy Investment: …" / "Purchased …"), the
+   amount, and when (created_at) — so there's no race with the holdings insert.
+   Set ORDERBOOK_ALERT_INCLUDE_TEST=true to also alert on test accounts while
+   testing; ORDERBOOK_ALERT_TO overrides the recipient (defaults to the desk). */
+async function handleOrderAlert(record, trigger) {
+  const name = String(record?.name || '');
+  const isStrategy = /^Strategy Investment:/i.test(name);
+  const isStock = /^Purchased /i.test(name);
+  const isBuy = String(record?.direction || '').toLowerCase() === 'debit' && (isStrategy || isStock);
+  if (!isBuy) { console.log('[Webhook] order_alert: not an investment buy — skipping'); return; }
+
+  const userId = record.user_id;
+  const familyMemberId = record.family_member_id || null;
+  if (!userId) throw new Error('No user_id on transactions record');
+
+  // UAT/test exclusion (overridable for testing).
+  const includeTest = String(process.env.ORDERBOOK_ALERT_INCLUDE_TEST || '').toLowerCase() === 'true';
+  const prof = await sbGet(`/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=email,first_name,last_name,full_name,is_test&limit=1`);
+  const profile = Array.isArray(prof) ? prof[0] : null;
+  let isTest = profile?.is_test === true;
+  if (!isTest) {
+    try {
+      const w = await sbGet(`/rest/v1/wallets?user_id=eq.${encodeURIComponent(userId)}&select=status&limit=1`);
+      if (Array.isArray(w) && w[0]?.status === 'test') isTest = true;
+    } catch { /* wallets lookup is best-effort */ }
+  }
+  if (isTest && !includeTest) { console.log('[Webhook] order_alert: UAT/test account — skipping'); return; }
+
+  // WHO
+  let clientName = [profile?.first_name, profile?.last_name].filter(Boolean).join(' ').trim()
+    || profile?.full_name || profile?.email || 'Unknown client';
+  let accountNote = '';
+  if (familyMemberId) {
+    try {
+      const fm = await sbGet(`/rest/v1/family_members?id=eq.${encodeURIComponent(familyMemberId)}&select=first_name,last_name,relationship&limit=1`);
+      const m = Array.isArray(fm) ? fm[0] : null;
+      if (m) {
+        const childName = [m.first_name, m.last_name].filter(Boolean).join(' ').trim();
+        accountNote = `Child account${m.relationship ? ' · ' + m.relationship : ''} · parent ${clientName}`;
+        if (childName) clientName = childName;
+      }
+    } catch { /* family lookup is best-effort */ }
+  }
+
+  // WHAT / amount / when
+  const what = name.replace(/^Strategy Investment:\s*/i, '').replace(/^Purchased\s*/i, '').trim() || 'an investment';
+  const kind = isStrategy ? 'Strategy' : 'Stock';
+  const amountRands = Number(record.amount || 0) / 100;
+  const whenIso = record.created_at || record.transaction_date || new Date().toISOString();
+  const whenText = new Date(whenIso).toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg', dateStyle: 'medium', timeStyle: 'short' });
+
+  const to = process.env.ORDERBOOK_ALERT_TO || process.env.ORDERBOOK_EMAIL_TO || 'lulamasw@gmail.com';
+  await sendEmail({
+    to,
+    subject: `New order — ${clientName}: ${kind} · ${what}`,
+    html: buildOrderAlertHtml({ clientName, accountNote, what, kind, amountRands, whenText }),
+    emailType: 'order_alert',
+    metadata: { transaction_id: record.id, user_id: userId, family_member_id: familyMemberId, amount_cents: record.amount, is_test: isTest },
+  });
+  console.log(`[Webhook] order_alert email sent to ${to} for ${clientName}`);
+}
 
 async function handleWelcome(record, trigger) {
   const email = record.email;
@@ -321,6 +433,7 @@ const EMAIL_DISPATCHERS = {
   welcome:              handleWelcome,
   wallet_funded:        handleWalletFunded,
   trade_confirmation:   handleTradeConfirmation,
+  order_alert:          handleOrderAlert,
 };
 
 // ── Main handler ──────────────────────────────────────────────────────────────
@@ -350,6 +463,28 @@ module.exports = async (req, res) => {
     payload = JSON.parse(raw);
   } catch {
     return sendJson(res, 400, { error: 'Invalid JSON body' });
+  }
+
+  // Manual test: POST { "test_email": "order_alert" } (with the webhook secret)
+  // to preview the desk order-alert email immediately — no real purchase needed.
+  if (payload?.test_email === 'order_alert') {
+    try {
+      const to = process.env.ORDERBOOK_ALERT_TO || process.env.ORDERBOOK_EMAIL_TO || 'lulamasw@gmail.com';
+      await sendEmail({
+        to,
+        subject: 'New order — Test Client: Strategy · Yield',
+        html: buildOrderAlertHtml({
+          clientName: 'Test Client', accountNote: '', what: 'Yield', kind: 'Strategy',
+          amountRands: 5000,
+          whenText: new Date().toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg', dateStyle: 'medium', timeStyle: 'short' }),
+        }),
+        emailType: 'order_alert',
+        metadata: { test: true },
+      });
+      return sendJson(res, 200, { ok: true, test: true, to });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message });
+    }
   }
 
   const { type: eventType, table: tableName, record, old_record } = payload;
