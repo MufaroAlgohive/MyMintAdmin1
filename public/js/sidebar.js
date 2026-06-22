@@ -24,6 +24,9 @@
     '.sidebar-section{display:grid;grid-template-rows:1fr;transition:grid-template-rows 0.2s ease;}',
     '.sidebar-section.collapsed{grid-template-rows:0fr;}',
     '.sidebar-section>div{overflow:hidden;min-height:0;display:flex;flex-direction:column;gap:2px;}',
+    '.sidebar-section-label .sec-right{margin-left:auto;display:flex;align-items:center;gap:6px;}',
+    '.sidebar-section-label .sec-dot{width:7px;height:7px;border-radius:999px;background:#ef4444;box-shadow:0 0 0 2px #fff;display:none;flex-shrink:0;}',
+    '.sidebar-section-label.has-alert .sec-dot{display:block;}',
     '.nav-icon{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;cursor:pointer;transition:all 0.15s ease;text-decoration:none;color:#64748b;font-size:13px;font-weight:500;white-space:nowrap;}',
     '.nav-icon svg{width:18px;height:18px;fill:#94a3b8;transition:fill 0.15s ease;flex-shrink:0;}',
     '.nav-icon:hover{background:#f5f3ff;color:#5b21b6;}',
@@ -48,8 +51,9 @@
     '#viewSwitcherDropdown>div{overflow:hidden;}',
   ].join('');
 
-  /* Chevron shown on each collapsible section label. */
-  var SEC_CHEV = '<svg class="sec-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>';
+  /* Right-side of each section label: a red alert dot (shown when collapsed AND
+     something inside has an alert) + the collapse chevron. */
+  var SEC_CHEV = '<span class="sec-right"><span class="sec-dot" aria-hidden="true"></span><svg class="sec-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg></span>';
 
   /* ── HTML ────────────────────────────────────────────────────────────── */
   var HTML = ''
@@ -216,6 +220,7 @@
     var st = readSectionState();
     st[key] = collapsed;
     try { localStorage.setItem(SECTIONS_KEY, JSON.stringify(st)); } catch (_) {}
+    updateSectionAlerts();
   };
 
   /* Apply saved collapse state. Default: collapsed, EXCEPT the section holding
@@ -236,6 +241,40 @@
       sec.classList.toggle('collapsed', collapsed);
       if (lbl) lbl.classList.toggle('collapsed', collapsed);
     });
+    updateSectionAlerts();
+  }
+
+  /* Does this section contain a live alert? Covers all three nav alert types:
+     the Order Book red dot (.nav-icon.has-notification), the EFT pending count
+     (.nav-pending-count.visible), and the Cyber Compliance badge (#ccBadge). */
+  function sectionHasAlert(sec) {
+    if (sec.querySelector('.nav-icon.has-notification')) return true;
+    if (sec.querySelector('.nav-pending-count.visible')) return true;
+    var cc = sec.querySelector('#ccBadge');
+    if (cc && cc.style.display && cc.style.display !== 'none') return true;
+    return false;
+  }
+
+  /* Bubble inner alerts up to the section header — but only while the section is
+     COLLAPSED, so a minimized section never hides a notification. When expanded
+     the inner dots are visible, so the header dot is redundant. */
+  function updateSectionAlerts() {
+    document.querySelectorAll('aside.sidebar .sidebar-section').forEach(function (sec) {
+      var key = sec.getAttribute('data-section');
+      var lbl = document.querySelector('.sidebar-section-label[data-section="' + key + '"]');
+      if (!lbl) return;
+      lbl.classList.toggle('has-alert', sec.classList.contains('collapsed') && sectionHasAlert(sec));
+    });
+  }
+
+  /* Inner alerts update asynchronously (polling, cc-badge.js, etc.). Watch the
+     nav for class/style changes and re-evaluate the section dots whenever one flips. */
+  function observeSectionAlerts() {
+    var nav = document.querySelector('aside.sidebar .sidebar-nav');
+    if (!nav || nav._alertObserver) return;
+    var obs = new MutationObserver(function () { updateSectionAlerts(); });
+    obs.observe(nav, { subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
+    nav._alertObserver = obs;
   }
 
   /* ── Helpers ─────────────────────────────────────────────────────────── */
@@ -309,6 +348,8 @@
   function onReady() {
     markActive();
     setupSignOut();
+    observeSectionAlerts();
+    updateSectionAlerts();
 
     window.addEventListener('access-guard:ready', function (e) {
       updateUser(e.detail.email, e.detail.role);
