@@ -8,91 +8,95 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
   <style>
     * { box-sizing: border-box; }
-    body { margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif; background:#f6f5fb; color:#0f172a; }
-    .main-content { margin-left:220px; min-height:100vh; padding:32px 36px 48px; }
+    :root {
+      --bg:#eef1f5; --card:#ffffff; --line:#e3e8ef; --line-soft:#eef1f5;
+      --ink:#0f1b2d; --muted:#5b6776; --faint:#94a0b0;
+      --accent:#3949ab; --accent-soft:#eef0f8;
+      --pos:#0f7b53; --neg:#b42318;
+    }
+    body { margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif; background:var(--bg); color:var(--ink); -webkit-font-smoothing:antialiased; }
+    .main-content { margin-left:220px; min-height:100vh; padding:26px 30px 44px; }
 
-    /* Hero */
-    .fin-hero { position:relative; overflow:hidden; border-radius:22px; padding:26px 30px; background:linear-gradient(135deg,#3b0764 0%,#6d28d9 48%,#9333ea 100%); color:#fff; margin-bottom:24px; box-shadow:0 18px 40px rgba(109,40,217,.28); display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap; }
-    .fin-hero::after { content:""; position:absolute; right:-40px; top:-50px; width:240px; height:240px; background:radial-gradient(circle,rgba(255,255,255,.16),transparent 70%); pointer-events:none; }
-    .fin-hero h1 { margin:0; font-size:26px; font-weight:800; letter-spacing:-.02em; display:flex; align-items:center; gap:10px; }
-    .fin-hero p { margin:8px 0 0; font-size:13.5px; color:#e9d5ff; max-width:560px; line-height:1.5; }
-    .live-pill { display:inline-flex; align-items:center; gap:7px; font-size:12px; font-weight:600; color:#fff; background:rgba(255,255,255,.14); border:1px solid rgba(255,255,255,.25); border-radius:999px; padding:6px 13px; position:relative; z-index:2; }
-    .live-dot { width:7px; height:7px; border-radius:50%; background:#34d399; box-shadow:0 0 0 3px rgba(52,211,153,.3); animation:pulse 2s infinite; }
-    @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.35;} }
+    /* Header — corporate navy band */
+    .fin-hero { position:relative; border-radius:10px; padding:22px 26px; background:linear-gradient(180deg,#16263f 0%,#0f1b2d 100%); border:1px solid #0b1524; color:#fff; margin-bottom:20px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+    .fin-hero::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--accent); border-radius:10px 0 0 10px; }
+    .fin-hero h1 { margin:0; font-size:21px; font-weight:700; letter-spacing:-.01em; display:flex; align-items:center; gap:11px; }
+    .fin-hero h1 i { color:#9fb0ff; font-size:18px; }
+    .fin-hero p { margin:7px 0 0; font-size:12.5px; color:#9fb1c6; max-width:560px; line-height:1.5; }
+    .asof { text-align:right; font-size:11px; color:#8395ab; line-height:1.6; }
+    .asof strong { display:block; color:#fff; font-size:12.5px; font-weight:600; }
 
     /* Stat cards */
-    .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin:-44px 4px 22px; position:relative; z-index:2; }
-    .stat-card { background:#fff; border:1px solid #efe9fb; border-radius:16px; padding:18px; box-shadow:0 8px 24px rgba(15,23,42,.05); position:relative; overflow:hidden; transition:transform .15s ease, box-shadow .15s ease; }
-    .stat-card:hover { transform:translateY(-2px); box-shadow:0 14px 30px rgba(15,23,42,.09); }
-    .stat-card::after { content:""; position:absolute; top:0; left:0; right:0; height:3px; }
-    .stat-card.c-purple::after { background:#7c3aed; } .stat-card.c-green::after { background:#059669; }
-    .stat-card.c-violet::after { background:#8b5cf6; } .stat-card.c-amber::after { background:#d97706; }
-    .stat-icon { width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:17px; margin-bottom:13px; }
-    .stat-label { font-size:10.5px; color:#94a3b8; text-transform:uppercase; letter-spacing:.06em; font-weight:700; margin-bottom:6px; }
-    .stat-value { font-size:25px; font-weight:800; letter-spacing:-.02em; line-height:1; }
-    .stat-value .cur { font-size:15px; font-weight:600; color:#94a3b8; }
-    .stat-sub { font-size:11px; color:#94a3b8; margin-top:8px; }
+    .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:13px; margin-bottom:16px; }
+    .stat-card { background:var(--card); border:1px solid var(--line); border-radius:9px; padding:16px 18px; position:relative; }
+    .stat-card::before { content:""; position:absolute; left:0; top:13px; bottom:13px; width:3px; border-radius:0 3px 3px 0; background:var(--bar,#3949ab); }
+    .stat-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+    .stat-icon { width:30px; height:30px; border-radius:7px; display:flex; align-items:center; justify-content:center; font-size:13px; background:#f2f4f8; }
+    .stat-label { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.07em; font-weight:600; }
+    .stat-value { font-size:23px; font-weight:700; letter-spacing:-.01em; line-height:1.1; color:var(--ink); }
+    .stat-value .cur { font-size:13px; font-weight:500; color:var(--faint); }
+    .stat-sub { font-size:10.5px; color:var(--faint); margin-top:7px; }
 
     /* Cards */
-    .card { background:#fff; border:1px solid #efe9fb; border-radius:18px; padding:20px 22px; box-shadow:0 10px 30px rgba(15,23,42,.05); margin-bottom:16px; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px 20px; margin-bottom:14px; }
     .card:last-child { margin-bottom:0; }
     .card-head { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:16px; gap:10px; }
-    .card-title { font-size:14.5px; font-weight:700; }
-    .card-sub { font-size:11.5px; color:#94a3b8; margin-top:2px; }
+    .card-title { font-size:13.5px; font-weight:700; letter-spacing:-.01em; }
+    .card-sub { font-size:11px; color:var(--faint); margin-top:3px; }
 
     /* Fees */
-    .fees-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; }
-    .fee-card { border:1px solid #f1ecfb; border-radius:14px; padding:14px 16px; background:#faf9fe; }
-    .fee-top { display:flex; align-items:center; gap:9px; margin-bottom:8px; }
-    .fee-ic { width:30px; height:30px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:14px; background:#f5f3ff; color:#7c3aed; }
-    .fee-name { font-size:12px; font-weight:700; color:#475569; }
-    .fee-val { font-size:19px; font-weight:800; letter-spacing:-.01em; }
-    .fee-bar { height:5px; border-radius:4px; background:#ece7f9; margin-top:9px; overflow:hidden; }
-    .fee-bar > div { height:5px; border-radius:4px; background:linear-gradient(90deg,#7c3aed,#a855f7); }
-    .fee-share { font-size:10.5px; color:#94a3b8; margin-top:5px; }
+    .fees-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; }
+    .fee-card { border:1px solid var(--line); border-radius:9px; padding:14px 15px; background:#fafbfc; }
+    .fee-top { display:flex; align-items:center; gap:9px; margin-bottom:9px; }
+    .fee-ic { width:28px; height:28px; border-radius:7px; display:flex; align-items:center; justify-content:center; font-size:12px; background:var(--accent-soft); color:var(--accent); }
+    .fee-name { font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+    .fee-val { font-size:18px; font-weight:700; letter-spacing:-.01em; }
+    .fee-bar { height:4px; border-radius:3px; background:var(--line-soft); margin-top:9px; overflow:hidden; }
+    .fee-bar > div { height:4px; border-radius:3px; background:var(--accent); }
+    .fee-share { font-size:10.5px; color:var(--faint); margin-top:5px; }
 
-    .grid-2 { display:grid; grid-template-columns:1fr 320px; gap:16px; }
+    .grid-2 { display:grid; grid-template-columns:1fr 320px; gap:14px; }
     @media (max-width:1150px){ .stats{grid-template-columns:repeat(2,1fr);} .grid-2{grid-template-columns:1fr;} }
 
     .chart-wrap { position:relative; width:100%; height:240px; }
-    .legend { display:flex; gap:18px; margin-top:14px; font-size:12px; color:#64748b; }
+    .legend { display:flex; gap:18px; margin-top:14px; font-size:11.5px; color:var(--muted); }
     .legend-item { display:flex; align-items:center; gap:6px; }
-    .legend-sw { width:11px; height:11px; border-radius:3px; }
+    .legend-sw { width:10px; height:10px; border-radius:2px; }
 
     /* Strategy list */
-    .strat-row { display:grid; grid-template-columns:18px 8px 1fr 110px 52px 64px; align-items:center; gap:11px; padding:9px 0; border-top:1px solid #f4f1fb; }
+    .strat-row { display:grid; grid-template-columns:18px 8px 1fr 110px 50px 64px; align-items:center; gap:11px; padding:10px 0; border-top:1px solid var(--line-soft); }
     .strat-row:first-child { border-top:none; }
-    .strat-rank { font-size:11px; color:#cbd5e1; text-align:center; font-weight:700; }
-    .strat-dot { width:8px; height:8px; border-radius:50%; }
+    .strat-rank { font-size:11px; color:var(--faint); text-align:center; font-weight:700; }
+    .strat-dot { width:8px; height:8px; border-radius:2px; }
     .strat-name { font-size:13px; font-weight:600; }
-    .strat-meta { font-size:11px; color:#94a3b8; }
-    .bar-bg { height:5px; border-radius:4px; background:#ece7f9; overflow:hidden; }
-    .bar-fill { height:5px; border-radius:4px; }
-    .bar-label { font-size:10px; color:#94a3b8; margin-top:3px; text-align:right; }
+    .strat-meta { font-size:11px; color:var(--faint); }
+    .bar-bg { height:4px; border-radius:3px; background:var(--line-soft); overflow:hidden; }
+    .bar-fill { height:4px; border-radius:3px; }
+    .bar-label { font-size:10px; color:var(--faint); margin-top:3px; text-align:right; }
     .strat-pct { font-size:12.5px; font-weight:600; text-align:right; }
-    .strat-roi { font-size:12px; font-weight:700; text-align:right; }
-    .pos { color:#059669; } .neg { color:#dc2626; }
-    .hot-pill { font-size:9.5px; font-weight:700; background:#f5f3ff; color:#7c3aed; border:1px solid #ddd6fe; border-radius:999px; padding:2px 7px; white-space:nowrap; }
+    .strat-roi { font-size:12px; font-weight:600; text-align:right; }
+    .pos { color:var(--pos); } .neg { color:var(--neg); }
+    .hot-pill { font-size:9px; font-weight:700; background:var(--accent-soft); color:var(--accent); border-radius:4px; padding:3px 7px; white-space:nowrap; text-transform:uppercase; letter-spacing:.05em; }
 
     /* Investors */
-    .inv-row { display:flex; align-items:center; gap:11px; padding:10px 0; border-top:1px solid #f4f1fb; }
+    .inv-row { display:flex; align-items:center; gap:11px; padding:11px 0; border-top:1px solid var(--line-soft); }
     .inv-row:first-child { border-top:none; }
-    .avatar { width:34px; height:34px; border-radius:50%; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; color:#fff; background:linear-gradient(135deg,#7c3aed,#a855f7); }
+    .avatar { width:34px; height:34px; border-radius:7px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; color:#fff; background:#334155; }
     .inv-info { flex:1; min-width:0; }
     .inv-name { font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .inv-strat { font-size:11px; color:#94a3b8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .inv-strat { font-size:11px; color:var(--faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .inv-nums { text-align:right; }
     .inv-amt { font-size:13px; font-weight:700; }
     .inv-roi { font-size:11px; font-weight:600; }
 
     /* Summary */
-    .sum-row { display:flex; align-items:center; justify-content:space-between; padding:9px 0; border-top:1px solid #f4f1fb; }
+    .sum-row { display:flex; align-items:center; justify-content:space-between; padding:10px 0; border-top:1px solid var(--line-soft); }
     .sum-row:first-child { border-top:none; }
-    .sum-label { font-size:12px; color:#64748b; display:flex; align-items:center; gap:8px; }
-    .sum-label i { width:16px; text-align:center; color:#7c3aed; }
+    .sum-label { font-size:12px; color:var(--muted); display:flex; align-items:center; gap:9px; }
+    .sum-label i { width:15px; text-align:center; color:var(--faint); }
     .sum-val { font-size:13px; font-weight:700; }
 
-    .muted { color:#94a3b8; }
+    .muted { color:var(--faint); }
     .skeleton { color:#cbd5e1; }
   </style>
   <script src="/js/cc-badge.js" defer></script>
@@ -104,10 +108,10 @@
   <main class="main-content">
     <div class="fin-hero">
       <div>
-        <h1><i class="fas fa-chart-pie"></i> Finances</h1>
-        <p>The money view — what's invested, what MINT earns, what investors earn, and where it's all coming from.</p>
+        <h1><i class="fas fa-money-bill-trend-up"></i> Finances</h1>
+        <p>Capital invested, MINT revenue, investor returns and fee income — across all real accounts.</p>
       </div>
-      <span class="live-pill"><span class="live-dot"></span> Live · real accounts only</span>
+      <div class="asof"><strong id="asOf">—</strong>Real accounts · live prices</div>
     </div>
 
     <div class="stats" id="finStats"></div>
@@ -136,8 +140,8 @@
           </div>
           <div class="chart-wrap"><canvas id="stratChart"></canvas></div>
           <div class="legend">
-            <div class="legend-item"><span class="legend-sw" style="background:#7c3aed;"></span> Investors</div>
-            <div class="legend-item"><span class="legend-sw" style="background:#059669;"></span> Avg ROI %</div>
+            <div class="legend-item"><span class="legend-sw" style="background:#3949ab;"></span> Investors</div>
+            <div class="legend-item"><span class="legend-sw" style="background:#0f7b53;"></span> Avg ROI %</div>
           </div>
         </div>
 
@@ -186,7 +190,7 @@
     const money0 = (rands) => 'R ' + Math.round(Number(rands || 0)).toLocaleString('en-ZA');
     const pct = (n) => (n >= 0 ? '+' : '') + Number(n || 0).toFixed(1) + '%';
     const initials = (name) => { const p = String(name||'').trim().split(/\s+/).filter(Boolean); return p.length ? ((p[0][0]||'') + (p.length>1?p[p.length-1][0]:'')).toUpperCase() : '?'; };
-    const DOTS = ['#7c3aed','#059669','#8b5cf6','#d97706','#0ea5e9','#db2777','#64748b'];
+    const DOTS = ['#3949ab','#0f7b53','#0f766e','#b45309','#475569','#1d4ed8','#64748b'];
 
     // Client cost basis per share (rands): Expected_fill preferred (legacy-cents
     // guard), else avg_fill/100 — mirrors /api/investors/data + the cost-basis
@@ -340,15 +344,17 @@
 
     const renderStats = (d) => {
       const cards = [
-        { cls: 'c-purple', ic: 'fa-coins', bg: '#f5f3ff', col: '#7c3aed', label: 'Total invested', val: `<span class="cur">R </span>${Math.round(d.totalInvested).toLocaleString('en-ZA')}`, sub: 'Client cost basis, active positions' },
-        { cls: 'c-green', ic: 'fa-building-columns', bg: '#ecfdf5', col: '#059669', label: 'MINT profit', val: `<span class="cur">R </span>${Math.round(d.mintPnl).toLocaleString('en-ZA')}`, sub: 'Execution spread, net of shortfall' },
-        { cls: 'c-violet', ic: 'fa-arrow-trend-up', bg: '#f5f3ff', col: '#8b5cf6', label: 'Investor profit', val: `<span class="cur">R </span>${Math.round(d.totalClientPnl).toLocaleString('en-ZA')}`, sub: 'Unrealised P&L, live prices' },
-        { cls: 'c-amber', ic: 'fa-user-check', bg: '#fffbeb', col: '#d97706', label: 'Active investors', val: String(d.activeInvestors), sub: 'Real accounts holding positions' },
+        { ic: 'fa-coins', col: '#3949ab', label: 'Total invested', val: `<span class="cur">R </span>${Math.round(d.totalInvested).toLocaleString('en-ZA')}`, sub: 'Client cost basis, active positions' },
+        { ic: 'fa-money-bill-trend-up', col: '#0f7b53', label: 'MINT profit', val: `<span class="cur">R </span>${Math.round(d.mintPnl).toLocaleString('en-ZA')}`, sub: 'Execution spread, net of shortfall' },
+        { ic: 'fa-arrow-trend-up', col: '#0f766e', label: 'Investor profit', val: `<span class="cur">R </span>${Math.round(d.totalClientPnl).toLocaleString('en-ZA')}`, sub: 'Unrealised P&L, live prices' },
+        { ic: 'fa-user-check', col: '#b45309', label: 'Active investors', val: String(d.activeInvestors), sub: 'Real accounts holding positions' },
       ];
       document.getElementById('finStats').innerHTML = cards.map((c) => `
-        <div class="stat-card ${c.cls}">
-          <div class="stat-icon" style="background:${c.bg};color:${c.col};"><i class="fas ${c.ic}"></i></div>
-          <div class="stat-label">${c.label}</div>
+        <div class="stat-card" style="--bar:${c.col};">
+          <div class="stat-top">
+            <div class="stat-label">${c.label}</div>
+            <div class="stat-icon" style="color:${c.col};"><i class="fas ${c.ic}"></i></div>
+          </div>
           <div class="stat-value">${c.val}</div>
           <div class="stat-sub">${esc(c.sub)}</div>
         </div>`).join('');
@@ -375,8 +381,8 @@
       chartInstance = new Chart(ctx, {
         type: 'bar',
         data: { labels: top.map((s) => s.name), datasets: [
-          { label: 'Investors', data: top.map((s) => s.investors), backgroundColor: 'rgba(124,58,237,.8)', borderRadius: 6, yAxisID: 'y' },
-          { label: 'Avg ROI %', data: top.map((s) => Number(s.roi.toFixed(1))), backgroundColor: 'rgba(5,150,105,.8)', borderRadius: 6, yAxisID: 'y1' },
+          { label: 'Investors', data: top.map((s) => s.investors), backgroundColor: 'rgba(57,73,171,.88)', borderRadius: 4, maxBarThickness: 26, yAxisID: 'y' },
+          { label: 'Avg ROI %', data: top.map((s) => Number(s.roi.toFixed(1))), backgroundColor: 'rgba(15,123,83,.88)', borderRadius: 4, maxBarThickness: 26, yAxisID: 'y1' },
         ] },
         options: {
           responsive: true, maintainAspectRatio: false,
@@ -438,6 +444,8 @@
     };
 
     (async () => {
+      const asOfEl = document.getElementById('asOf');
+      if (asOfEl) asOfEl.textContent = new Date().toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg', dateStyle: 'medium', timeStyle: 'short' });
       const { data } = await supabaseClient.auth.getSession();
       if (!data.session) { window.location.href = '/signin.html'; return; }
       try { await load(); }
