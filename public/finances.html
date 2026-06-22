@@ -188,146 +188,120 @@
     const initials = (name) => { const p = String(name||'').trim().split(/\s+/).filter(Boolean); return p.length ? ((p[0][0]||'') + (p.length>1?p[p.length-1][0]:'')).toUpperCase() : '?'; };
     const DOTS = ['#7c3aed','#059669','#8b5cf6','#d97706','#0ea5e9','#db2777','#64748b'];
 
-    // Expected_fill legacy guard (mirrors the orderbook): rands, but some legacy
-    // rows stored cents — divide if it's >5× the avg-fill-in-rands.
-    const guardExpected = (expRaw, avgRands) => {
-      let e = Number(expRaw);
-      if (!Number.isFinite(e) || e <= 0) return null;
-      if (avgRands > 0 && e > avgRands * 5) e = e / 100;
-      return e;
+    // Client cost basis per share (rands): Expected_fill preferred (legacy-cents
+    // guard), else avg_fill/100 — mirrors /api/investors/data + the cost-basis
+    // convention so Finances agrees with the Investors tab to the cent.
+    const costBasisR = (h) => {
+      const avgR = (Number(h.avg_fill) || 0) > 0 ? Number(h.avg_fill) / 100 : 0;
+      const expRaw = Number(h.expected_fill) || 0;
+      if (expRaw > 0) return (avgR > 0 && expRaw > avgR * 5) ? expRaw / 100 : expRaw;
+      return avgR;
     };
 
     const load = async () => {
-      // ── Test/UAT accounts to exclude ──────────────────────────────────────
-      const testIds = new Set();
-      try {
-        const [pf, wl] = await Promise.all([
-          supabaseClient.from('profiles').select('id').eq('is_test', true),
-          supabaseClient.from('wallets').select('user_id').eq('status', 'test'),
-        ]);
-        (pf.data || []).forEach((r) => r.id && testIds.add(String(r.id)));
-        (wl.data || []).forEach((r) => r.user_id && testIds.add(String(r.user_id)));
-      } catch (e) { /* fail open toward showing data */ }
+      // Single source of truth — the same endpoint the Investors tab uses, so the
+      // numbers match. Live price = current_price (CENTS) /100; test accounts are
+      // already excluded server-side. (NOT securities_c.last_price, which is cents
+      // and isn't the CRM's live-price source — that caused the 100× inflation.)
+      const resp = await fetch('/api/investors/data');
+      if (!resp.ok) throw new Error('investors data ' + resp.status);
+      const data = await resp.json();
+      const holdings = data.holdings || [], strategies = data.strategies || [],
+            profiles = data.profiles || [], secMeta = data.secMeta || [],
+            secLive = data.secLive || [], txns = data.txns || [],
+            residuals = data.residuals || [], drawdowns = data.drawdowns || [];
 
-      // ── Holdings + securities + transactions ──────────────────────────────
-      const [holdRes, txRes] = await Promise.all([
-        supabaseClient.from('stock_holdings_c')
-          .select('id, user_id, security_id, quantity, avg_fill, expected_fill:"Expected_fill", strategy_id, strategy_name_snapshot, trade_side, is_active, created_at')
-          .limit(5000),
-        supabaseClient.from('transactions')
-          .select('id, user_id, broker_fee_cents, isin_fee_cents, transaction_fee_cents, base_amount_cents, name, created_at')
-          .limit(5000),
-      ]);
-      if (holdRes.error) throw holdRes.error;
+      const stratMap = Object.fromEntries(strategies.map((s) => [s.id, s]));
+      const profMap = Object.fromEntries(profiles.map((p) => [p.id, p]));
+      const secMetaMap = Object.fromEntries(secMeta.map((s) => [s.id, s]));
 
-      let holdings = (holdRes.data || []).filter((h) => !testIds.has(String(h.user_id)));
-      // Active BUY positions only (exclude SELL audit rows + closed).
-      holdings = holdings.filter((h) => {
-        const side = String(h.trade_side || '').toUpperCase();
-        return h.is_active !== false && side !== 'SELL';
+      // Live price per security: current_price is in CENTS → rands (first/latest wins).
+      const priceR = {};
+      secLive.forEach((s) => { if (s && s.security_id != null && priceR[s.security_id] === undefined) priceR[s.security_id] = (Number(s.current_price) || 0) / 100; });
+
+      // Cash components (rands): rebalance residual + held 8% buffer (per unique tx) — matches the Investors tab.
+      const residualByUser = {};
+      residuals.forEach((r) => { const uk = String(r.user_id || ''); residualByUser[uk] = (residualByUser[uk] || 0) + (Number(r.balance_cents) || 0) / 100; });
+      const bufById = {}; txns.forEach((t) => { bufById[t.id] = (Number(t.buffer_cents) || 0) - (Number(t.buffer_consumed_cents) || 0); });
+      const bufByUser = {}; const bufSeen = {};
+      holdings.forEach((h) => {
+        if (!h.user_id || !h.transaction_id) return;
+        const uk = String(h.user_id);
+        if (!bufSeen[uk]) bufSeen[uk] = new Set();
+        if (bufSeen[uk].has(h.transaction_id)) return;
+        bufSeen[uk].add(h.transaction_id);
+        bufByUser[uk] = (bufByUser[uk] || 0) + (bufById[h.transaction_id] || 0) / 100;
       });
 
-      const secIds = [...new Set(holdings.map((h) => h.security_id).filter(Boolean))];
-      const secMap = {};
-      if (secIds.length) {
-        const { data: secs } = await supabaseClient.from('securities_c').select('id, symbol, name, last_price').in('id', secIds);
-        (secs || []).forEach((s) => { secMap[String(s.id)] = s; });
-      }
-      const userIds = [...new Set(holdings.map((h) => h.user_id).filter(Boolean))];
-      const profMap = {};
-      if (userIds.length) {
-        const { data: profs } = await supabaseClient.from('profiles').select('id, first_name, last_name, email').in('id', userIds);
-        (profs || []).forEach((p) => { profMap[String(p.id)] = p; });
-      }
-
-      // ── Shortfall (MINT out-of-pocket) via the service-role endpoint ───────
+      // Shortfall (MINT out-of-pocket) per holding, rands.
       const shortfallByHolding = {};
-      try {
-        const { data: sess } = await supabaseClient.auth.getSession();
-        const tok = sess?.session?.access_token;
-        const holdingIds = holdings.map((h) => String(h.id));
-        if (tok && holdingIds.length) {
-          const r = await fetch('/api/orderbook/send-csv?action=get-buffer-drawdowns', {
-            method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${tok}` },
-            body: JSON.stringify({ holdingIds }),
-          });
-          if (r.ok) {
-            const { drawdowns } = await r.json();
-            (drawdowns || []).forEach((d) => {
-              if (d.event_type === 'shortfall' && d.holding_id) {
-                shortfallByHolding[String(d.holding_id)] = (shortfallByHolding[String(d.holding_id)] || 0) + Math.max(0, Math.round(Number(d.delta_cents) || 0));
-              }
-            });
-          }
-        }
-      } catch (e) { /* shortfall best-effort; MINT profit shows gross gain if it fails */ }
+      drawdowns.forEach((d) => { if (d.event_type === 'shortfall' && d.holding_id) shortfallByHolding[String(d.holding_id)] = (shortfallByHolding[String(d.holding_id)] || 0) + Math.max(0, Number(d.delta_cents) || 0) / 100; });
 
-      // ── Aggregate ─────────────────────────────────────────────────────────
-      let totalInvested = 0, totalMarketValue = 0, totalClientPnl = 0, mintGainRands = 0, mintShortfallRands = 0;
+      // ── Aggregate (all in rands) ──────────────────────────────────────────
+      let totalInvested = 0, totalClientPnl = 0, mintGainRands = 0, mintShortfallRands = 0;
       const activeUsers = new Set();
       const stratAgg = {};   // key -> { name, investors:Set, invested, pnl, mv }
-      const userAgg = {};    // userId -> { invested, pnl, mv, strat:{} }
+      const userAgg = {};    // userId -> { holdings, invested, pnl, strat:{} }
 
       holdings.forEach((h) => {
         const qty = Math.abs(Number(h.quantity) || 0);
         if (!qty) return;
-        const sec = secMap[String(h.security_id)] || {};
-        const avgCents = Number(h.avg_fill);
-        const avgRands = Number.isFinite(avgCents) && avgCents > 0 ? avgCents / 100 : null;
-        const expected = guardExpected(h.expected_fill, avgRands || 0);
-        const costBasis = expected != null ? expected : avgRands; // client cost basis
-        const livePrice = Number(sec.last_price);
-        const hasLive = Number.isFinite(livePrice) && livePrice > 0;
+        const cb = costBasisR(h);
+        const lp = priceR[h.security_id];
+        const hasLive = Number.isFinite(lp) && lp > 0;
 
-        const invested = costBasis != null ? costBasis * qty : 0;
-        const mv = hasLive ? livePrice * qty : invested;
-        const pnl = (hasLive && costBasis != null) ? (livePrice - costBasis) * qty : 0;
+        const invested = cb * qty;
+        const mv = hasLive ? lp * qty : invested;       // live position value
+        const pnl = hasLive ? (lp - cb) * qty : 0;      // unrealised P&L
 
-        totalInvested += invested; totalMarketValue += mv; totalClientPnl += pnl;
+        totalInvested += invested; totalClientPnl += pnl;
         if (h.user_id) activeUsers.add(String(h.user_id));
 
         // MINT execution gain: filled below the client's quote.
-        if (avgRands != null && expected != null && expected > avgRands) {
-          mintGainRands += (expected - avgRands) * qty;
-        }
-        mintShortfallRands += (shortfallByHolding[String(h.id)] || 0) / 100;
+        const avgR = (Number(h.avg_fill) || 0) > 0 ? Number(h.avg_fill) / 100 : null;
+        if (avgR != null && cb > avgR) mintGainRands += (cb - avgR) * qty;
+        mintShortfallRands += shortfallByHolding[String(h.id)] || 0;
 
-        // Strategy bucket
-        const sName = h.strategy_name_snapshot || (h.strategy_id ? 'Strategy' : (sec.name || sec.symbol || 'Individual stock'));
+        const sName = (h.strategy_id && stratMap[h.strategy_id] && stratMap[h.strategy_id].name)
+          || (h.strategy_id ? 'Strategy'
+            : ((secMetaMap[h.security_id] && (secMetaMap[h.security_id].name || secMetaMap[h.security_id].symbol)) || 'Individual stock'));
         const sKey = h.strategy_id ? 'sid:' + h.strategy_id : 'name:' + sName;
         const sa = stratAgg[sKey] || (stratAgg[sKey] = { name: sName, investors: new Set(), invested: 0, pnl: 0, mv: 0 });
         sa.name = sName; if (h.user_id) sa.investors.add(String(h.user_id)); sa.invested += invested; sa.pnl += pnl; sa.mv += mv;
 
-        // User bucket
         const uKey = String(h.user_id || '');
-        const ua = userAgg[uKey] || (userAgg[uKey] = { invested: 0, pnl: 0, mv: 0, strat: {} });
-        ua.invested += invested; ua.pnl += pnl; ua.mv += mv;
+        const ua = userAgg[uKey] || (userAgg[uKey] = { holdings: 0, invested: 0, pnl: 0, strat: {} });
+        ua.holdings += mv; ua.invested += invested; ua.pnl += pnl;
         ua.strat[sName] = (ua.strat[sName] || 0) + invested;
       });
 
       const mintPnl = mintGainRands - mintShortfallRands;
 
-      // ── Fees (investment transactions, non-test) ──────────────────────────
-      const txns = (txRes.data || []).filter((t) => !testIds.has(String(t.user_id)));
+      // ── Fees (cents → rands) ──────────────────────────────────────────────
       let feeBroker = 0, feeCustody = 0, feeTxn = 0;
       txns.forEach((t) => {
         feeBroker += Number(t.broker_fee_cents) || 0;
         feeCustody += Number(t.isin_fee_cents) || 0;
         feeTxn += Number(t.transaction_fee_cents) || 0;
       });
-      feeBroker/=100; feeCustody/=100; feeTxn/=100;
+      feeBroker /= 100; feeCustody /= 100; feeTxn /= 100;
       const feesTotal = feeBroker + feeCustody + feeTxn;
 
-      // New investors this month: real users whose FIRST investment tx is this month.
+      // New investors this month: first investment tx in the current month.
       const now = new Date(); const mStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
       const firstTxByUser = {};
       txns.forEach((t) => {
         if (!/^Strategy Investment:|^Purchased /i.test(String(t.name || ''))) return;
-        const ts = new Date(t.created_at || 0).getTime();
+        const ts = new Date(t.transaction_date || 0).getTime();
         const u = String(t.user_id || ''); if (!u) return;
         if (!(u in firstTxByUser) || ts < firstTxByUser[u]) firstTxByUser[u] = ts;
       });
       const newThisMonth = Object.values(firstTxByUser).filter((ts) => ts >= mStart).length;
+
+      // Per-investor total value = live holdings + residual + buffer cash (Investors-tab method).
+      const investorValue = (uid) => (userAgg[uid] ? userAgg[uid].holdings : 0) + (residualByUser[uid] || 0) + (bufByUser[uid] || 0);
+      let totalPortfolio = 0;
+      Object.keys(userAgg).forEach((uid) => { totalPortfolio += investorValue(uid); });
 
       // ── Render ────────────────────────────────────────────────────────────
       renderStats({ totalInvested, mintPnl, totalClientPnl, activeInvestors: activeUsers.size });
@@ -337,31 +311,32 @@
         { name: 'Transaction fee', icon: 'fa-receipt', val: feeTxn },
       ], feesTotal);
 
-      const strategies = Object.values(stratAgg).map((s) => ({
+      const strategiesArr = Object.values(stratAgg).map((s) => ({
         name: s.name, investors: s.investors.size, invested: s.invested, mv: s.mv,
         roi: s.invested > 0 ? (s.pnl / s.invested) * 100 : 0,
       })).sort((a, b) => b.investors - a.investors || b.invested - a.invested);
-      renderChart(strategies);
-      renderStrategies(strategies, activeUsers.size);
+      renderChart(strategiesArr);
+      renderStrategies(strategiesArr, activeUsers.size);
 
-      const investors = Object.entries(userAgg).map(([uid, u]) => {
+      const investors = Object.keys(userAgg).map((uid) => {
         const prof = profMap[uid];
         const name = prof ? ([prof.first_name, prof.last_name].filter(Boolean).join(' ').trim() || prof.email || 'Investor') : 'Investor';
-        const topStrat = Object.entries(u.strat).sort((a, b) => b[1] - a[1])[0];
-        return { name, mv: u.mv, roi: u.invested > 0 ? (u.pnl / u.invested) * 100 : 0, strat: topStrat ? topStrat[0] : '—' };
+        const topStrat = Object.entries(userAgg[uid].strat).sort((a, b) => b[1] - a[1])[0];
+        return { name, mv: investorValue(uid), roi: userAgg[uid].invested > 0 ? (userAgg[uid].pnl / userAgg[uid].invested) * 100 : 0, strat: topStrat ? topStrat[0] : '—' };
       }).sort((a, b) => b.mv - a.mv).slice(0, 6);
       renderInvestors(investors);
 
-      const bestStrat = strategies.filter((s) => s.investors >= 1).slice().sort((a, b) => b.roi - a.roi)[0];
+      const bestStrat = strategiesArr.filter((s) => s.investors >= 1).slice().sort((a, b) => b.roi - a.roi)[0];
       renderSummary({
         avgSize: activeUsers.size ? totalInvested / activeUsers.size : 0,
         feesTotal,
         avgRoi: totalInvested > 0 ? (totalClientPnl / totalInvested) * 100 : 0,
         best: bestStrat ? bestStrat.name : '—',
         newThisMonth,
-        totalMv: totalMarketValue,
+        totalMv: totalPortfolio,
       });
     };
+
 
     const renderStats = (d) => {
       const cards = [
