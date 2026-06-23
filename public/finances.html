@@ -139,16 +139,19 @@
       <div class="fees-grid" id="feesGrid"></div>
     </div>
 
-    <!-- Assets Under Management -->
+    <!-- Assets Under Management (collapsible, collapsed by default) -->
     <div class="card">
-      <div class="card-head">
+      <div class="card-head" id="aumToggle" onclick="toggleAum()" style="cursor:pointer;user-select:none;">
         <div>
           <div class="card-title">Assets under management (AUM)</div>
           <div class="card-sub">Who contributes to AUM, and the management fee accruing on it</div>
         </div>
+        <span id="aumChevron" style="font-size:16px;color:var(--faint);transition:transform .15s;">▸</span>
       </div>
-      <div class="fees-grid" id="aumStats" style="margin-bottom:14px;"></div>
-      <div id="aumTable"><div class="skeleton" style="padding:20px 0;text-align:center;">Loading…</div></div>
+      <div id="aumBody" style="display:none;margin-top:14px;">
+        <div class="fees-grid" id="aumStats" style="margin-bottom:14px;"></div>
+        <div id="aumTable"><div class="skeleton" style="padding:20px 0;text-align:center;">Loading…</div></div>
+      </div>
     </div>
 
     <div class="grid-2">
@@ -506,6 +509,14 @@
           <div class="inv-info"><div class="inv-name">${esc(iv.name)}</div><div class="inv-strat">${esc(iv.strat)}${iv.aum > 0 ? ` · <span title="AUM fees collected from this investor">AUM ${money0(iv.aum)}</span>` : ''}</div></div>
           <div class="inv-nums"><div class="inv-amt">${money0(iv.mv)}</div><div class="inv-roi ${iv.roi >= 0 ? 'pos' : 'neg'}">${pct(iv.roi)}</div></div>
         </div>`).join('');
+    };
+
+    window.toggleAum = () => {
+      const body = document.getElementById('aumBody');
+      const chev = document.getElementById('aumChevron');
+      const open = body.style.display !== 'none';
+      body.style.display = open ? 'none' : 'block';
+      if (chev) chev.style.transform = open ? 'rotate(0deg)' : 'rotate(90deg)';
     };
 
     const renderAum = (rows, totals) => {
