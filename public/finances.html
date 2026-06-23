@@ -362,7 +362,7 @@
       renderFees([
         { name: 'Broker fee', icon: 'fa-building-columns', val: feeBroker, rate: asPct(appFees.brokerFeeRate) },
         { name: 'Custody fee', icon: 'fa-vault', val: feeCustody, rate: appFees.isinFeePerAsset != null ? asRand(appFees.isinFeePerAsset) + ' / asset' : null },
-        { name: 'Transaction fee', icon: 'fa-receipt', val: feeTxn, rate: asPct(appFees.transactionFeeRate) },
+        { name: 'Transaction fee', icon: 'fa-receipt', val: feeTxn, rate: `EFT ${asPct(appFees.walletTransactionFeeRate ?? 0.01)} · Ozow ${asPct(appFees.ozowTransactionFeeRate ?? 0.038)}` },
         { name: 'AUM management fee', icon: 'fa-chart-pie', val: feeAum, rate: appFees.aumFeeRate != null ? asPct(appFees.aumFeeRate) + ' p.a.' : '0.99% p.a.' },
       ], feesTotal);
 

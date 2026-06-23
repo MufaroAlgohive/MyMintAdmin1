@@ -661,24 +661,34 @@ module.exports = async (req, res) => {
       const incoming = req.body?.value;
       if (!incoming || typeof incoming !== 'object') return sendJson(res, 400, { error: 'value object is required' });
 
+      let before = null;
+      try {
+        const rows = await supabaseRequest(`/rest/v1/app_settings?key=eq.${encodeURIComponent(key)}&select=value&limit=1`);
+        before = (rows && rows[0]?.value) || null;
+      } catch { /* table may not exist yet */ }
+
       let value = incoming;
       if (key === 'fees') {
-        const allow = ['isinFeePerAsset', 'brokerFeeRate', 'executionReserveRate', 'transactionFeeRate', 'monthlyStrategyFee', 'rebBrokerageRate', 'rebCustodyFee'];
+        // Required fee keys — must be present & valid.
+        const required = ['isinFeePerAsset', 'brokerFeeRate', 'executionReserveRate', 'transactionFeeRate', 'monthlyStrategyFee', 'rebBrokerageRate', 'rebCustodyFee'];
+        // Optional keys (method-specific transaction fees + AUM). Default to the
+        // existing stored value, then a sensible fallback — so a save NEVER wipes
+        // them even if the form omits one.
+        const optional = { walletTransactionFeeRate: 0.01, ozowTransactionFeeRate: 0.038, aumFeeRate: 0.0099 };
         value = {};
-        for (const k of allow) {
+        for (const k of required) {
           const n = Number(incoming[k]);
           if (incoming[k] == null || incoming[k] === '' || isNaN(n) || n < 0) {
             return sendJson(res, 400, { error: `Invalid value for ${k}` });
           }
           value[k] = n;
         }
+        for (const [k, dflt] of Object.entries(optional)) {
+          const n = Number(incoming[k]);
+          if (incoming[k] != null && incoming[k] !== '' && !isNaN(n) && n >= 0) value[k] = n;
+          else value[k] = (before && before[k] != null) ? Number(before[k]) : dflt;
+        }
       }
-
-      let before = null;
-      try {
-        const rows = await supabaseRequest(`/rest/v1/app_settings?key=eq.${encodeURIComponent(key)}&select=value&limit=1`);
-        before = (rows && rows[0]?.value) || null;
-      } catch { /* table may not exist yet */ }
 
       let saved;
       try {
