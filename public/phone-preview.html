@@ -159,13 +159,134 @@
       padding-top: calc(var(--bar-h) + 48px);
       padding-bottom: 48px;
       display: flex;
+      flex-direction: row;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 32px;
+      min-height: 100vh;
+      width: 100%;
+    }
+
+    /* Phone column — centres vertically */
+    .phone-col {
+      display: flex;
       flex-direction: column;
       align-items: center;
       gap: 24px;
-      min-height: 100vh;
-      justify-content: center;
-      width: 100%;
+      padding-top: 0;
     }
+
+    /* ── Client breakdown panel ── */
+    .client-panel {
+      width: 288px;
+      flex-shrink: 0;
+      align-self: flex-start;
+      position: sticky;
+      top: calc(var(--bar-h) + 28px);
+      transition: width 0.3s cubic-bezier(0.4,0,0.2,1),
+                  opacity 0.25s ease;
+      overflow: hidden;
+    }
+    .client-panel.collapsed {
+      width: 36px;
+    }
+    .client-panel.no-data { display: none; }
+
+    /* Collapse handle */
+    .panel-handle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      padding: 0 2px;
+    }
+    .panel-title {
+      font-size: 10px; font-weight: 700; letter-spacing: 0.07em;
+      text-transform: uppercase; color: var(--text-muted);
+      white-space: nowrap; overflow: hidden;
+      transition: opacity 0.2s;
+    }
+    .client-panel.collapsed .panel-title { opacity: 0; pointer-events: none; }
+
+    .collapse-btn {
+      width: 28px; height: 28px; border-radius: 7px; flex-shrink: 0;
+      background: rgba(255,255,255,0.07); border: 1px solid var(--border);
+      color: var(--text-muted); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.15s, color 0.15s;
+    }
+    .collapse-btn:hover { background: rgba(255,255,255,0.12); color: var(--text-primary); }
+    .collapse-btn svg { transition: transform 0.3s; }
+    .client-panel.collapsed .collapse-btn svg { transform: rotate(180deg); }
+
+    /* Panel body */
+    .panel-body {
+      display: flex; flex-direction: column; gap: 10px;
+      transition: opacity 0.2s;
+    }
+    .client-panel.collapsed .panel-body { opacity: 0; pointer-events: none; }
+
+    /* Panel card */
+    .pc {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+
+    /* Client identity card */
+    .pc-identity {
+      padding: 16px;
+      display: flex; flex-direction: column; align-items: center; gap: 8px;
+      text-align: center;
+    }
+    .pc-avatar {
+      width: 48px; height: 48px; border-radius: 50%;
+      background: linear-gradient(135deg, #7c3aed, #a855f7);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 17px; font-weight: 800; color: #fff; letter-spacing: -0.02em;
+      flex-shrink: 0;
+    }
+    .pc-name { font-size: 14px; font-weight: 700; color: var(--text-primary); line-height: 1.2; }
+    .pc-email { font-size: 11px; color: var(--text-muted); }
+
+    /* Stats row */
+    .pc-stats {
+      display: grid; grid-template-columns: 1fr 1fr 1fr;
+      border-top: 1px solid var(--border);
+    }
+    .pc-stat {
+      padding: 12px 8px; text-align: center;
+    }
+    .pc-stat + .pc-stat { border-left: 1px solid var(--border); }
+    .pc-stat-label { font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 4px; }
+    .pc-stat-val { font-size: 13px; font-weight: 700; color: var(--text-primary); }
+    .pc-stat-val.pos { color: #34c759; }
+    .pc-stat-val.neg { color: #ff453a; }
+
+    /* Section header */
+    .pc-section-head {
+      padding: 10px 14px 8px;
+      font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
+      text-transform: uppercase; color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+    }
+
+    /* Row items */
+    .pc-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 9px 14px; gap: 8px;
+    }
+    .pc-row + .pc-row { border-top: 1px solid rgba(255,255,255,0.04); }
+    .pc-row-left { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+    .pc-row-sym { font-size: 12px; font-weight: 700; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pc-row-sub { font-size: 10px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pc-row-right { display: flex; flex-direction: column; gap: 1px; align-items: flex-end; flex-shrink: 0; }
+    .pc-row-val { font-size: 12px; font-weight: 700; color: var(--text-primary); }
+    .pc-row-pnl { font-size: 10px; font-weight: 600; }
+    .pc-row-pnl.pos { color: #34c759; }
+    .pc-row-pnl.neg { color: #ff453a; }
+    .pc-empty { padding: 12px 14px; font-size: 11px; color: var(--text-muted); text-align: center; }
 
     /* iPhone 14 shell — 390×844 screen, ~12px side padding, ~14px top/bottom */
     .phone-wrap { position: relative; }
@@ -387,6 +508,20 @@
 
   <!-- PHONE STAGE -->
   <div id="phoneStage">
+
+    <!-- Client breakdown panel (left of phone) -->
+    <div class="client-panel no-data" id="clientPanel">
+      <div class="panel-handle">
+        <span class="panel-title">Client Breakdown</span>
+        <button class="collapse-btn" id="collapseBtn" title="Collapse panel">
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M15.41 16.59L10.83 12l4.58-4.59L14 6l-6 6 6 6z"/></svg>
+        </button>
+      </div>
+      <div class="panel-body" id="panelBody"></div>
+    </div>
+
+    <!-- Phone column -->
+    <div class="phone-col">
     <div class="phone-wrap">
       <div class="phone-shell" id="phoneShell">
         <!-- Left buttons -->
@@ -418,6 +553,7 @@
     </div>
 
     <div class="hint-text">Viewing as client · Mint Admin</div>
+    </div><!-- /.phone-col -->
   </div>
 
   <!-- DESKTOP STAGE -->
@@ -532,6 +668,103 @@
     document.getElementById('frameToggle').addEventListener('change', e => {
       phoneShell.classList.toggle('frame-off', !e.target.checked);
     });
+
+    // ── Client breakdown panel ──
+    (function initClientPanel() {
+      const raw = params.get('cdata');
+      if (!raw) return;
+      let cd;
+      try { cd = JSON.parse(decodeURIComponent(escape(atob(decodeURIComponent(raw))))); } catch(e) { return; }
+
+      const panel    = document.getElementById('clientPanel');
+      const panelBody = document.getElementById('panelBody');
+      panel.classList.remove('no-data');
+
+      function fmtR(n) { return 'R\u202f' + Number(n||0).toLocaleString('en-ZA',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+      function fmtPct(n) { return (Number(n||0)>=0?'+':'') + Number(n||0).toFixed(2) + '%'; }
+
+      const pnlPos  = (cd.totalPnl || 0) >= 0;
+      const pnlPctPos = (cd.totalPnlPct || 0) >= 0;
+
+      // Identity + stats card
+      const idCard = document.createElement('div');
+      idCard.className = 'pc';
+      idCard.innerHTML = `
+        <div class="pc-identity">
+          <div class="pc-avatar">${escHtml(cd.initials || cd.name?.slice(0,2).toUpperCase() || '?')}</div>
+          <div class="pc-name">${escHtml(cd.name)}</div>
+          ${cd.email ? `<div class="pc-email">${escHtml(cd.email)}</div>` : ''}
+        </div>
+        <div class="pc-stats">
+          <div class="pc-stat">
+            <div class="pc-stat-label">Portfolio</div>
+            <div class="pc-stat-val">${fmtR(cd.totalValue)}</div>
+          </div>
+          <div class="pc-stat">
+            <div class="pc-stat-label">P&amp;L</div>
+            <div class="pc-stat-val ${pnlPos?'pos':'neg'}">${(cd.totalPnl>=0?'+':'')}${fmtR(Math.abs(cd.totalPnl||0))}</div>
+          </div>
+          <div class="pc-stat">
+            <div class="pc-stat-label">Strategies</div>
+            <div class="pc-stat-val">${cd.strategyCount || 0}</div>
+          </div>
+        </div>`;
+      panelBody.appendChild(idCard);
+
+      // Holdings card
+      const holdCard = document.createElement('div');
+      holdCard.className = 'pc';
+      const holdings = cd.holdings || [];
+      holdCard.innerHTML = `<div class="pc-section-head">Holdings</div>`
+        + (holdings.length
+          ? holdings.map(h => {
+              const hp = (h.pnlRands||0) >= 0;
+              return `<div class="pc-row">
+                <div class="pc-row-left">
+                  <div class="pc-row-sym">${escHtml(h.symbol)}${h.isPending ? ' <span style="font-size:9px;color:#8e8e93;">·&nbsp;Pending</span>' : ''}</div>
+                  <div class="pc-row-sub">${escHtml(h.name)}</div>
+                </div>
+                <div class="pc-row-right">
+                  <div class="pc-row-val">${fmtR(h.value)}</div>
+                  <div class="pc-row-pnl ${hp?'pos':'neg'}">${fmtPct(h.pnlPct)}</div>
+                </div>
+              </div>`;
+            }).join('')
+          : '<div class="pc-empty">No holdings</div>');
+      panelBody.appendChild(holdCard);
+
+      // Transactions card
+      const txCard = document.createElement('div');
+      txCard.className = 'pc';
+      const txns = cd.transactions || [];
+      txCard.innerHTML = `<div class="pc-section-head">Recent Transactions</div>`
+        + (txns.length
+          ? txns.map(t => {
+              const amt   = Math.abs(Number(t.amount||0)/100);
+              const isIn  = t.direction === 'credit';
+              const dateStr = t.date ? new Date(t.date).toLocaleDateString('en-ZA',{day:'numeric',month:'short'}) : '';
+              return `<div class="pc-row">
+                <div class="pc-row-left">
+                  <div class="pc-row-sym">${escHtml(t.name)}</div>
+                  ${dateStr ? `<div class="pc-row-sub">${dateStr}</div>` : ''}
+                </div>
+                <div class="pc-row-right">
+                  <div class="pc-row-val ${isIn?'pos':''}">${isIn?'+':''}${fmtR(amt)}</div>
+                </div>
+              </div>`;
+            }).join('')
+          : '<div class="pc-empty">No transactions</div>');
+      panelBody.appendChild(txCard);
+
+      // Collapse toggle
+      document.getElementById('collapseBtn').addEventListener('click', () => {
+        panel.classList.toggle('collapsed');
+      });
+
+      function escHtml(s) {
+        return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+      }
+    })();
 
     // Zoom slider — only shown in phone mode
     const zoomSlider = document.getElementById('zoomSlider');

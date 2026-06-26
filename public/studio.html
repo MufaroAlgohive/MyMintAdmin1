@@ -236,6 +236,7 @@
       let currentClient = null;
       let impersonationRequestId = 0;
       let inspectorRequestId = 0;
+      let lastInspectorData = null;
 
       function getActiveClients() {
         return activeClientTab === 'all' ? allUsersClients : allClients;
@@ -501,9 +502,32 @@
             return;
           }
           renderLaunchCard(client, envAtClick, 'ready');
-          const previewUrl = '/phone-preview.html?url=' + encodeURIComponent(data.actionLink)
+          let previewUrl = '/phone-preview.html?url=' + encodeURIComponent(data.actionLink)
             + '&name=' + encodeURIComponent(client.name)
             + '&env=' + encodeURIComponent(envAtClick);
+          if (lastInspectorData && lastInspectorData.client && lastInspectorData.client.id === client.id) {
+            try {
+              const payload = {
+                name: lastInspectorData.client.name,
+                email: lastInspectorData.client.email || '',
+                initials: lastInspectorData.client.initials || '',
+                totalValue: lastInspectorData.totalValue,
+                totalPnl: lastInspectorData.totalPnl,
+                totalPnlPct: lastInspectorData.totalPnlPct,
+                strategyCount: lastInspectorData.strategyCount,
+                holdings: (lastInspectorData.holdings || []).slice(0, 8).map(h => ({
+                  symbol: h.symbol, name: h.name, value: h.value,
+                  pnlRands: h.pnlRands, pnlPct: h.pnlPct, isPending: h.isPending
+                })),
+                transactions: (lastInspectorData.transactions || []).slice(0, 6).map(t => ({
+                  name: t.name || t.description || 'Transaction',
+                  amount: t.amount, direction: t.direction,
+                  date: t.transaction_date || t.created_at
+                }))
+              };
+              previewUrl += '&cdata=' + encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify(payload)))));
+            } catch(e) { /* skip if encoding fails */ }
+          }
           if (previewWin) {
             previewWin.location.href = previewUrl;
           } else {
@@ -604,6 +628,7 @@
       }
 
       function renderInspector(s) {
+        lastInspectorData = s;
         document.getElementById('inspectorHint').textContent='Live data for '+s.client.name;
         document.getElementById('mClient').textContent=s.client.name;
         document.getElementById('mPortfolio').textContent=`R${fmt(s.totalValue)}`;
