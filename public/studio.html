@@ -477,27 +477,40 @@
       async function openClientInNewTab(client) {
         const reqId = ++impersonationRequestId;
         const envAtClick = currentMintEnv;
+
+        // Open the window synchronously inside the click handler so popup
+        // blockers don't kill it — then navigate it once we have the URL.
+        const previewWin = window.open('/phone-preview.html?loading=1', '_blank', 'noopener');
+
         renderLaunchCard(client, envAtClick, 'loading');
         try {
           const token = await getAdminBearer();
-          if (reqId !== impersonationRequestId) return;
+          if (reqId !== impersonationRequestId) { if (previewWin) previewWin.close(); return; }
           const res = await fetch('/api/team?action=impersonate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
             body: JSON.stringify({ user_id: client.id, target: envAtClick })
           });
-          if (reqId !== impersonationRequestId) return;
+          if (reqId !== impersonationRequestId) { if (previewWin) previewWin.close(); return; }
           const data = await res.json().catch(() => ({}));
-          if (reqId !== impersonationRequestId) return;
+          if (reqId !== impersonationRequestId) { if (previewWin) previewWin.close(); return; }
           if (!res.ok || !data.actionLink) {
+            if (previewWin) previewWin.close();
             renderLaunchCard(client, envAtClick, { error: data.error || `Sign-in failed (${res.status})` });
             return;
           }
           renderLaunchCard(client, envAtClick, 'ready');
-          const previewUrl = '/phone-preview.html?url=' + encodeURIComponent(data.actionLink) + '&name=' + encodeURIComponent(client.name) + '&env=' + encodeURIComponent(envAtClick);
-          window.open(previewUrl, '_blank', 'noopener');
+          const previewUrl = '/phone-preview.html?url=' + encodeURIComponent(data.actionLink)
+            + '&name=' + encodeURIComponent(client.name)
+            + '&env=' + encodeURIComponent(envAtClick);
+          if (previewWin) {
+            previewWin.location.href = previewUrl;
+          } else {
+            window.open(previewUrl, '_blank', 'noopener');
+          }
         } catch (err) {
           if (reqId !== impersonationRequestId) return;
+          if (previewWin) previewWin.close();
           console.error('[Studio] impersonation failed:', err);
           renderLaunchCard(client, envAtClick, { error: err?.message || 'Unknown error' });
         }
