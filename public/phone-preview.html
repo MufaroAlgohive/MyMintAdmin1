@@ -7,8 +7,18 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+    :root {
+      --bar-h: 44px;
+      --bg: #0d0d14;
+      --surface: #141416;
+      --border: rgba(255,255,255,0.07);
+      --text-primary: rgba(255,255,255,0.88);
+      --text-muted: rgba(255,255,255,0.35);
+      --accent: #7c3aed;
+    }
+
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif;
       background: radial-gradient(ellipse at 30% 0%, #2d1b69 0%, #1a0d3e 40%, #0d0d14 100%);
       min-height: 100vh;
       display: flex;
@@ -16,287 +26,433 @@
       align-items: center;
       -webkit-font-smoothing: antialiased;
       overflow-x: hidden;
+      color: var(--text-primary);
     }
 
     /* ── Top bar ── */
     .top-bar {
       position: fixed;
       top: 0; left: 0; right: 0;
-      height: 52px;
-      background: rgba(13, 10, 30, 0.75);
-      backdrop-filter: blur(18px);
-      -webkit-backdrop-filter: blur(18px);
-      border-bottom: 1px solid rgba(255,255,255,0.08);
+      height: var(--bar-h);
+      background: rgba(12,12,14,0.85);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
       display: flex;
       align-items: center;
-      gap: 12px;
-      padding: 0 20px;
+      gap: 10px;
+      padding: 0 16px;
       z-index: 200;
     }
 
-    .top-bar-logo {
-      width: 28px; height: 28px;
-      border-radius: 8px;
-      background: linear-gradient(135deg, #7c3aed, #a855f7);
+    .tb-logo {
+      width: 22px; height: 22px;
+      border-radius: 6px;
+      background: #fff;
       display: flex; align-items: center; justify-content: center;
-      font-size: 13px; font-weight: 800; color: #fff;
       flex-shrink: 0;
     }
+    .tb-logo svg { display: block; }
 
-    .top-bar-label {
-      font-size: 13px; font-weight: 700; color: rgba(255,255,255,0.9);
-      letter-spacing: -0.01em;
+    .tb-label {
+      font-size: 12px; font-weight: 600;
+      color: var(--text-muted);
+      letter-spacing: 0.01em;
+      white-space: nowrap;
     }
 
-    .top-bar-name {
-      font-size: 12px; color: rgba(255,255,255,0.45); font-weight: 500;
+    .tb-divider { width: 1px; height: 16px; background: var(--border); flex-shrink: 0; }
+    .tb-client {
+      font-size: 13px; font-weight: 600; color: var(--text-primary);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      max-width: 200px;
     }
 
-    .top-bar-sep { width: 1px; height: 20px; background: rgba(255,255,255,0.12); flex-shrink: 0; }
-    .top-bar-spacer { flex: 1; }
-
-    .env-badge {
-      display: inline-flex; align-items: center; gap: 5px;
-      font-size: 11px; font-weight: 700;
-      padding: 4px 10px; border-radius: 20px;
+    .env-pill {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+      padding: 2px 8px; border-radius: 20px; flex-shrink: 0;
     }
-    .env-badge.dev  { background: rgba(109,40,217,0.25); color: #c4b5fd; border: 1px solid rgba(167,139,250,0.25); }
-    .env-badge.live { background: rgba(21,128,61,0.25);  color: #86efac; border: 1px solid rgba(134,239,172,0.2); }
+    .env-pill.dev  { background: rgba(124,58,237,0.15); color: #a78bfa; border: 1px solid rgba(124,58,237,0.25); }
+    .env-pill.live { background: rgba(16,185,129,0.12); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.2); }
+    .env-pill .dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
 
-    /* ── View mode toggle ── */
+    .tb-spacer { flex: 1; }
+
+    /* View toggle */
     .view-toggle {
       display: inline-flex;
-      border: 1px solid rgba(255,255,255,0.12);
-      border-radius: 8px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
       overflow: hidden;
-      background: rgba(255,255,255,0.05);
+      background: rgba(255,255,255,0.04);
+      flex-shrink: 0;
     }
     .view-toggle button {
-      border: none;
-      background: none;
-      color: rgba(255,255,255,0.45);
-      font-size: 12px; font-weight: 700;
-      padding: 5px 13px;
+      border: none; background: none;
+      color: var(--text-muted);
+      font-size: 11px; font-weight: 600; letter-spacing: 0.01em;
+      padding: 5px 11px;
       cursor: pointer;
-      display: flex; align-items: center; gap: 6px;
-      transition: all 0.15s;
+      display: flex; align-items: center; gap: 5px;
+      transition: background 0.15s, color 0.15s;
     }
-    .view-toggle button + button {
-      border-left: 1px solid rgba(255,255,255,0.1);
-    }
-    .view-toggle button.active {
-      background: rgba(124,58,237,0.4);
-      color: #c4b5fd;
-    }
-    .view-toggle button:hover:not(.active) {
-      background: rgba(255,255,255,0.07);
-      color: rgba(255,255,255,0.7);
-    }
+    .view-toggle button + button { border-left: 1px solid var(--border); }
+    .view-toggle button.active { background: rgba(255,255,255,0.09); color: var(--text-primary); }
+    .view-toggle button:hover:not(.active) { background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.6); }
 
-    .frame-toggle {
-      display: inline-flex; align-items: center; gap: 7px;
-      font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.55);
-      cursor: pointer; user-select: none;
-    }
-    .frame-toggle input[type="checkbox"] {
-      width: 14px; height: 14px; accent-color: #7c3aed; cursor: pointer;
-    }
-
-    .close-btn {
+    /* Frame toggle */
+    .frame-label {
       display: inline-flex; align-items: center; gap: 6px;
-      background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.1);
-      color: rgba(255,255,255,0.6); font-size: 12px; font-weight: 600;
-      padding: 5px 12px; border-radius: 8px; cursor: pointer;
-      transition: all 0.15s; text-decoration: none;
+      font-size: 11px; font-weight: 500; color: var(--text-muted);
+      cursor: pointer; user-select: none; flex-shrink: 0;
     }
-    .close-btn:hover { background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.9); }
+    .frame-label input { accent-color: var(--accent); cursor: pointer; }
+
+    /* Zoom slider */
+    .zoom-wrap {
+      display: inline-flex; align-items: center; gap: 7px;
+      flex-shrink: 0;
+    }
+    .zoom-icon { color: var(--text-muted); font-size: 13px; line-height: 1; }
+    .zoom-slider {
+      -webkit-appearance: none; appearance: none;
+      width: 72px; height: 3px;
+      border-radius: 2px;
+      background: rgba(255,255,255,0.12);
+      outline: none; cursor: pointer;
+    }
+    .zoom-slider::-webkit-slider-thumb {
+      -webkit-appearance: none; appearance: none;
+      width: 13px; height: 13px; border-radius: 50%;
+      background: #fff;
+      border: none;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.5);
+      cursor: pointer;
+    }
+    .zoom-slider::-moz-range-thumb {
+      width: 13px; height: 13px; border-radius: 50%;
+      background: #fff; border: none;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.5);
+      cursor: pointer;
+    }
+    .zoom-val {
+      font-size: 10px; font-weight: 600; color: var(--text-muted);
+      min-width: 28px; text-align: right;
+    }
+
+    /* Close */
+    .close-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 26px; height: 26px;
+      background: rgba(255,255,255,0.06); border: 1px solid var(--border);
+      color: var(--text-muted); border-radius: 6px; cursor: pointer;
+      transition: background 0.15s, color 0.15s; text-decoration: none;
+      flex-shrink: 0;
+    }
+    .close-btn:hover { background: rgba(255,255,255,0.11); color: var(--text-primary); }
 
     /* ══════════════════════════════════════
-       PHONE MODE
+       PHONE STAGE
     ══════════════════════════════════════ */
     #phoneStage {
-      padding-top: 72px;
-      padding-bottom: 32px;
+      padding-top: calc(var(--bar-h) + 48px);
+      padding-bottom: 48px;
       display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 18px;
-      min-height: 100vh;
+      flex-direction: row;
+      align-items: flex-start;
       justify-content: center;
+      gap: 32px;
+      min-height: 100vh;
       width: 100%;
     }
 
+    /* Phone column — centres vertically */
+    .phone-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 24px;
+      padding-top: 0;
+    }
+
+    /* ── Client breakdown panel ── */
+    .client-panel {
+      width: 288px;
+      flex-shrink: 0;
+      align-self: flex-start;
+      position: sticky;
+      top: calc(var(--bar-h) + 28px);
+      transition: width 0.3s cubic-bezier(0.4,0,0.2,1),
+                  opacity 0.25s ease;
+      overflow: hidden;
+    }
+    .client-panel.collapsed {
+      width: 36px;
+    }
+    .client-panel.no-data { display: none; }
+
+    /* Collapse handle */
+    .panel-handle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      padding: 0 2px;
+    }
+    .panel-title {
+      font-size: 10px; font-weight: 700; letter-spacing: 0.07em;
+      text-transform: uppercase; color: var(--text-muted);
+      white-space: nowrap; overflow: hidden;
+      transition: opacity 0.2s;
+    }
+    .client-panel.collapsed .panel-title { opacity: 0; pointer-events: none; }
+
+    .collapse-btn {
+      width: 28px; height: 28px; border-radius: 7px; flex-shrink: 0;
+      background: rgba(255,255,255,0.07); border: 1px solid var(--border);
+      color: var(--text-muted); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.15s, color 0.15s;
+    }
+    .collapse-btn:hover { background: rgba(255,255,255,0.12); color: var(--text-primary); }
+    .collapse-btn svg { transition: transform 0.3s; }
+    .client-panel.collapsed .collapse-btn svg { transform: rotate(180deg); }
+
+    /* Panel body */
+    .panel-body {
+      display: flex; flex-direction: column; gap: 10px;
+      transition: opacity 0.2s;
+    }
+    .client-panel.collapsed .panel-body { opacity: 0; pointer-events: none; }
+
+    /* Panel card */
+    .pc {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+
+    /* Client identity card */
+    .pc-identity {
+      padding: 16px;
+      display: flex; flex-direction: column; align-items: center; gap: 8px;
+      text-align: center;
+    }
+    .pc-avatar {
+      width: 48px; height: 48px; border-radius: 50%;
+      background: linear-gradient(135deg, #7c3aed, #a855f7);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 17px; font-weight: 800; color: #fff; letter-spacing: -0.02em;
+      flex-shrink: 0;
+    }
+    .pc-name { font-size: 14px; font-weight: 700; color: var(--text-primary); line-height: 1.2; }
+    .pc-email { font-size: 11px; color: var(--text-muted); }
+
+    /* Stats row */
+    .pc-stats {
+      display: grid; grid-template-columns: 1fr 1fr 1fr;
+      border-top: 1px solid var(--border);
+    }
+    .pc-stat {
+      padding: 12px 8px; text-align: center;
+    }
+    .pc-stat + .pc-stat { border-left: 1px solid var(--border); }
+    .pc-stat-label { font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 4px; }
+    .pc-stat-val { font-size: 13px; font-weight: 700; color: var(--text-primary); }
+    .pc-stat-val.pos { color: #34c759; }
+    .pc-stat-val.neg { color: #ff453a; }
+
+    /* Section header */
+    .pc-section-head {
+      padding: 10px 14px 8px;
+      font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
+      text-transform: uppercase; color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+    }
+
+    /* Row items */
+    .pc-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 9px 14px; gap: 8px;
+    }
+    .pc-row + .pc-row { border-top: 1px solid rgba(255,255,255,0.04); }
+    .pc-row-left { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+    .pc-row-sym { font-size: 12px; font-weight: 700; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pc-row-sub { font-size: 10px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pc-row-right { display: flex; flex-direction: column; gap: 1px; align-items: flex-end; flex-shrink: 0; }
+    .pc-row-val { font-size: 12px; font-weight: 700; color: var(--text-primary); }
+    .pc-row-pnl { font-size: 10px; font-weight: 600; }
+    .pc-row-pnl.pos { color: #34c759; }
+    .pc-row-pnl.neg { color: #ff453a; }
+    .pc-empty { padding: 12px 14px; font-size: 11px; color: var(--text-muted); text-align: center; }
+
+    /* iPhone 14 shell — 390×844 screen, ~12px side padding, ~14px top/bottom */
     .phone-wrap { position: relative; }
 
     .phone-shell {
-      width: 375px;
-      background: #111;
-      border-radius: 52px;
-      padding: 14px;
+      width: 414px;                         /* 390 + 2×12 */
+      background: #1a1a1a;
+      border-radius: 56px;
+      padding: 14px 12px;
       box-shadow:
-        0 0 0 1px #2c2c2e,
-        0 32px 80px rgba(0,0,0,0.7),
-        0 0 0 8px #1a1a1c,
-        0 0 0 9px #2c2c2e;
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        0 0 0 1px #333,
+        0 0 0 1.5px #111,
+        inset 0 0 0 1px #2a2a2a,
+        0 40px 100px rgba(0,0,0,0.8),
+        0 8px 32px rgba(0,0,0,0.5);
+      transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
+      position: relative;
+    }
+
+    /* Sheen highlight on shell edge */
+    .phone-shell::before {
+      content: '';
+      position: absolute; inset: 0;
+      border-radius: 56px;
+      background: linear-gradient(145deg, rgba(255,255,255,0.06) 0%, transparent 50%);
+      pointer-events: none;
     }
 
     .phone-shell.frame-off {
       background: transparent;
       border-radius: 20px;
       padding: 0;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.08);
+      box-shadow: 0 24px 64px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.06);
     }
+    .phone-shell.frame-off::before { display: none; }
 
     .phone-screen {
       background: #000;
-      border-radius: 38px;
-      height: 720px;
+      border-radius: 44px;
+      width: 390px;
+      height: 844px;
       overflow: hidden;
       position: relative;
       display: flex;
       flex-direction: column;
     }
+    .phone-shell.frame-off .phone-screen { border-radius: 16px; }
 
-    .phone-shell.frame-off .phone-screen {
-      border-radius: 14px;
-    }
-
+    /* iPhone 14 notch */
     .phone-notch {
       position: absolute;
       top: 0; left: 50%; transform: translateX(-50%);
-      width: 120px; height: 34px;
-      background: #111;
-      border-radius: 0 0 22px 22px;
+      width: 126px; height: 35px;
+      background: #000;
+      border-radius: 0 0 24px 24px;
       z-index: 10;
-      display: flex; align-items: center; justify-content: center; gap: 6px;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
     }
     .phone-shell.frame-off .phone-notch { display: none; }
-
-    .notch-cam { width: 10px; height: 10px; border-radius: 50%; background: #1c1c1e; border: 2px solid #2c2c2e; }
-    .notch-speaker { width: 56px; height: 5px; border-radius: 3px; background: #1c1c1e; }
-
-    .phone-btn-left, .phone-btn-right {
-      position: absolute; background: #222; border-radius: 3px;
+    .notch-speaker {
+      width: 62px; height: 6px; border-radius: 3px;
+      background: #111; border: 1px solid #222;
     }
-    .phone-btn-left  { left: -14px; width: 4px; }
-    .phone-btn-left.vol-up   { top: 120px; height: 36px; }
-    .phone-btn-left.vol-down { top: 172px; height: 36px; }
-    .phone-btn-left.silent   { top:  80px; height: 26px; }
-    .phone-btn-right { right: -14px; width: 4px; top: 140px; height: 60px; }
+    .notch-cam {
+      width: 11px; height: 11px; border-radius: 50%;
+      background: #111; border: 1.5px solid #1e1e1e;
+      position: relative;
+    }
+    .notch-cam::after {
+      content: ''; position: absolute; inset: 3px;
+      border-radius: 50%; background: #1a1a2e;
+    }
 
-    .phone-shell.frame-off .phone-btn-left,
-    .phone-shell.frame-off .phone-btn-right { display: none; }
+    /* Side buttons */
+    .btn-side { position: absolute; background: #252525; border-radius: 2.5px; }
+    .btn-left  { left: -3.5px; width: 3.5px; }
+    .btn-right { right: -3.5px; width: 3.5px; }
+    .btn-silent  { top: 92px;  height: 32px; }
+    .btn-vol-up  { top: 142px; height: 58px; }
+    .btn-vol-dn  { top: 210px; height: 58px; }
+    .btn-power   { top: 168px; height: 80px; }
 
+    .phone-shell.frame-off .btn-side { display: none; }
+
+    /* Home bar */
     .phone-home {
       position: absolute;
-      bottom: 8px; left: 50%; transform: translateX(-50%);
-      width: 130px; height: 5px;
-      background: rgba(255,255,255,0.35);
+      bottom: 7px; left: 50%; transform: translateX(-50%);
+      width: 134px; height: 5px;
+      background: rgba(255,255,255,0.3);
       border-radius: 3px; z-index: 10;
     }
     .phone-shell.frame-off .phone-home { display: none; }
 
-    .phone-iframe-wrap { flex: 1; position: relative; overflow: hidden; }
+    .phone-iframe-wrap { flex: 1; position: relative; overflow: hidden; margin-top: 0; }
 
     /* ══════════════════════════════════════
-       DESKTOP MODE
+       DESKTOP STAGE
     ══════════════════════════════════════ */
     #desktopStage {
       display: none;
       position: fixed;
-      inset: 52px 0 0 0;
+      inset: var(--bar-h) 0 0 0;
       flex-direction: column;
-      background: #0d0d14;
+      background: var(--bg);
     }
 
-    /* browser chrome bar */
     .browser-chrome {
-      height: 44px;
-      background: #1a1a2e;
-      border-bottom: 1px solid rgba(255,255,255,0.08);
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 0 16px;
-      flex-shrink: 0;
+      height: 40px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 10px;
+      padding: 0 14px; flex-shrink: 0;
     }
-
-    .browser-dots {
-      display: flex; gap: 6px; flex-shrink: 0;
-    }
-    .browser-dot {
-      width: 12px; height: 12px; border-radius: 50%;
-    }
-    .browser-dot.red    { background: #ff5f57; }
-    .browser-dot.yellow { background: #febc2e; }
-    .browser-dot.green  { background: #28c840; }
+    .browser-dots { display: flex; gap: 5px; }
+    .bdot { width: 11px; height: 11px; border-radius: 50%; }
+    .bdot.r { background: #ff5f56; }
+    .bdot.y { background: #ffbd2e; }
+    .bdot.g { background: #27c93f; }
 
     .browser-url-bar {
       flex: 1;
-      background: rgba(255,255,255,0.07);
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 8px;
-      height: 28px;
-      display: flex;
-      align-items: center;
-      padding: 0 12px;
-      gap: 6px;
-      min-width: 0;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      border-radius: 7px; height: 26px;
+      display: flex; align-items: center; padding: 0 10px; gap: 5px; min-width: 0;
     }
-    .browser-url-bar svg { flex-shrink: 0; opacity: 0.4; }
-    .browser-url-text {
-      font-size: 12px; color: rgba(255,255,255,0.5);
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
-    .browser-url-bar .lock-icon { color: #86efac; opacity: 0.8; font-size: 11px; }
+    .lock-icon { font-size: 10px; opacity: 0.6; }
+    .browser-url-text { font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-    .desktop-iframe-wrap {
-      flex: 1;
-      position: relative;
-      overflow: hidden;
-    }
+    .desktop-iframe-wrap { flex: 1; position: relative; overflow: hidden; }
 
-    /* ── Shared iframe styles ── */
-    .preview-iframe {
-      width: 100%;
-      height: 100%;
-      border: none;
-      display: block;
-    }
+    /* ── Shared ── */
+    .preview-iframe { width: 100%; height: 100%; border: none; display: block; }
 
-    /* Loading overlay */
     .loading-overlay {
       position: absolute; inset: 0;
-      background: #f8f6fa;
+      background: #f5f5f7;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
-      gap: 14px; z-index: 5;
-      transition: opacity 0.4s ease;
+      gap: 12px; z-index: 5; transition: opacity 0.35s ease;
     }
     .loading-overlay.hidden { opacity: 0; pointer-events: none; }
 
     .spinner {
-      width: 34px; height: 34px;
-      border: 3px solid #e5e5ea;
+      width: 28px; height: 28px;
+      border: 2.5px solid #e5e5ea;
       border-top-color: #7c3aed;
       border-radius: 50%;
-      animation: spin 0.9s linear infinite;
+      animation: spin 0.85s linear infinite;
     }
-    .loading-text { font-size: 13px; font-weight: 600; color: #8e8e93; }
+    .loading-text { font-size: 12px; font-weight: 500; color: #8e8e93; }
 
     @keyframes spin { to { transform: rotate(360deg); } }
 
     .error-screen {
       position: absolute; inset: 0;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
-      gap: 10px; padding: 24px; background: #f8f6fa;
+      gap: 8px; padding: 24px; background: #f5f5f7;
     }
-    .error-icon { font-size: 36px; }
-    .error-title { font-size: 15px; font-weight: 700; color: #1c1c1e; text-align: center; }
+    .error-icon { font-size: 32px; }
+    .error-title { font-size: 14px; font-weight: 700; color: #1c1c1e; text-align: center; }
     .error-msg { font-size: 12px; color: #8e8e93; text-align: center; line-height: 1.5; }
 
     .hint-text {
-      font-size: 11px; color: rgba(255,255,255,0.22); text-align: center; line-height: 1.5;
+      font-size: 10.5px; color: rgba(255,255,255,0.18);
+      text-align: center; letter-spacing: 0.01em;
     }
   </style>
 </head>
@@ -304,50 +460,78 @@
 
   <!-- Top bar -->
   <div class="top-bar">
-    <div class="top-bar-logo">M</div>
-    <div>
-      <div class="top-bar-label">Client Preview</div>
+    <!-- Mint logo mark -->
+    <div class="tb-logo">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+        <circle cx="12" cy="12" r="10" fill="#0c0c0e"/>
+        <path d="M7 16V8l5 4 5-4v8" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
     </div>
-    <div class="top-bar-sep"></div>
-    <span class="top-bar-name" id="clientNameLabel">Loading…</span>
-    <span class="env-badge" id="envBadge">—</span>
-    <div class="top-bar-spacer"></div>
 
-    <!-- View mode toggle -->
+    <span class="tb-label">Client Preview</span>
+    <div class="tb-divider"></div>
+    <span class="tb-client" id="clientNameLabel">Loading…</span>
+    <span class="env-pill" id="envBadge"><span class="dot"></span> —</span>
+
+    <div class="tb-spacer"></div>
+
     <div class="view-toggle" id="viewToggle">
       <button data-mode="phone" class="active">
-        <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M17 1.01L7 1c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-1.99-2-1.99zM17 19H7V5h10v14z"/></svg>
+        <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor"><path d="M17 1.01L7 1c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-1.99-2-1.99zM17 19H7V5h10v14z"/></svg>
         Phone
       </button>
       <button data-mode="desktop">
-        <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M20 3H4c-1.1 0-2 .9-2 2v11c0 1.1.9 2 2 2h3l-1 1v2h12v-2l-1-1h3c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 13H4V5h16v11z"/></svg>
+        <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor"><path d="M20 3H4c-1.1 0-2 .9-2 2v11c0 1.1.9 2 2 2h3l-1 1v2h12v-2l-1-1h3c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 13H4V5h16v11z"/></svg>
         Desktop
       </button>
     </div>
 
-    <div class="top-bar-sep" id="frameSep"></div>
-    <label class="frame-toggle" id="frameToggleWrap">
+    <div class="tb-divider" id="frameSep"></div>
+    <label class="frame-label" id="frameToggleWrap">
       <input type="checkbox" id="frameToggle" checked>
-      Phone frame
+      Frame
     </label>
 
-    <div class="top-bar-sep"></div>
-    <a href="javascript:window.close()" class="close-btn">
+    <div class="tb-divider" id="zoomSep"></div>
+    <div class="zoom-wrap" id="zoomWrap">
+      <span class="zoom-icon">⊖</span>
+      <input type="range" class="zoom-slider" id="zoomSlider" min="40" max="100" value="75" step="5">
+      <span class="zoom-icon">⊕</span>
+      <span class="zoom-val" id="zoomVal">75%</span>
+    </div>
+
+    <div class="tb-divider"></div>
+    <a href="javascript:window.close()" class="close-btn" title="Close">
       <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
-      Close
     </a>
   </div>
 
-  <!-- ── PHONE STAGE ── -->
+  <!-- PHONE STAGE -->
   <div id="phoneStage">
+
+    <!-- Client breakdown panel (left of phone) -->
+    <div class="client-panel no-data" id="clientPanel">
+      <div class="panel-handle">
+        <span class="panel-title">Client Breakdown</span>
+        <button class="collapse-btn" id="collapseBtn" title="Collapse panel">
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M15.41 16.59L10.83 12l4.58-4.59L14 6l-6 6 6 6z"/></svg>
+        </button>
+      </div>
+      <div class="panel-body" id="panelBody"></div>
+    </div>
+
+    <!-- Phone column -->
+    <div class="phone-col">
     <div class="phone-wrap">
       <div class="phone-shell" id="phoneShell">
-        <div class="phone-btn-left silent"></div>
-        <div class="phone-btn-left vol-up"></div>
-        <div class="phone-btn-left vol-down"></div>
-        <div class="phone-btn-right"></div>
+        <!-- Left buttons -->
+        <div class="btn-side btn-left btn-silent"></div>
+        <div class="btn-side btn-left btn-vol-up"></div>
+        <div class="btn-side btn-left btn-vol-dn"></div>
+        <!-- Right button -->
+        <div class="btn-side btn-right btn-power"></div>
 
-        <div class="phone-screen" id="phoneScreen">
+        <div class="phone-screen">
           <div class="phone-notch">
             <div class="notch-speaker"></div>
             <div class="notch-cam"></div>
@@ -358,7 +542,9 @@
               <div class="spinner"></div>
               <div class="loading-text">Opening Mint…</div>
             </div>
-            <iframe id="phoneFrame" class="preview-iframe" allow="fullscreen" referrerpolicy="no-referrer-when-downgrade"></iframe>
+            <iframe id="phoneFrame" class="preview-iframe"
+              allow="fullscreen"
+              referrerpolicy="no-referrer-when-downgrade"></iframe>
           </div>
 
           <div class="phone-home"></div>
@@ -366,33 +552,31 @@
       </div>
     </div>
 
-    <div class="hint-text">
-      The client app URL is unchanged — only this wrapper is added by Mint Admin.
-    </div>
+    <div class="hint-text">Viewing as client · Mint Admin</div>
+    </div><!-- /.phone-col -->
   </div>
 
-  <!-- ── DESKTOP STAGE ── -->
+  <!-- DESKTOP STAGE -->
   <div id="desktopStage">
-    <!-- Fake browser chrome -->
     <div class="browser-chrome">
       <div class="browser-dots">
-        <div class="browser-dot red"></div>
-        <div class="browser-dot yellow"></div>
-        <div class="browser-dot green"></div>
+        <div class="bdot r"></div>
+        <div class="bdot y"></div>
+        <div class="bdot g"></div>
       </div>
       <div class="browser-url-bar">
         <span class="lock-icon">🔒</span>
-        <svg viewBox="0 0 24 24" width="13" height="13" fill="rgba(255,255,255,0.4)"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
         <span class="browser-url-text" id="desktopUrlText">—</span>
       </div>
     </div>
-
     <div class="desktop-iframe-wrap">
       <div class="loading-overlay" id="desktopLoading">
         <div class="spinner"></div>
         <div class="loading-text">Opening Mint…</div>
       </div>
-      <iframe id="desktopFrame" class="preview-iframe" allow="fullscreen" referrerpolicy="no-referrer-when-downgrade"></iframe>
+      <iframe id="desktopFrame" class="preview-iframe"
+        allow="fullscreen"
+        referrerpolicy="no-referrer-when-downgrade"></iframe>
     </div>
   </div>
 
@@ -401,101 +585,229 @@
     const targetUrl  = params.get('url')  || '';
     const clientName = params.get('name') || 'Client';
     const envParam   = params.get('env')  || 'dev';
+    const isLoading  = params.get('loading') === '1';
 
     // Labels
-    document.getElementById('clientNameLabel').textContent = clientName;
+    document.getElementById('clientNameLabel').textContent = isLoading ? 'Connecting…' : clientName;
+    document.title = isLoading ? 'Connecting… — Mint Admin' : `${clientName} — Client Preview`;
+
     const badge = document.getElementById('envBadge');
-    if (envParam === 'live') {
-      badge.textContent = '🟢 Live';
-      badge.className = 'env-badge live';
+    if (!isLoading) {
+      if (envParam === 'live') {
+        badge.innerHTML = '<span class="dot"></span> Live';
+        badge.className = 'env-pill live';
+      } else {
+        badge.innerHTML = '<span class="dot"></span> Dev';
+        badge.className = 'env-pill dev';
+      }
     } else {
-      badge.textContent = '🔵 Dev';
-      badge.className = 'env-badge dev';
+      badge.style.display = 'none';
     }
-    document.title = `${clientName} — Client Preview`;
 
-    // Show a friendly URL in the desktop bar (strip auth tokens from display)
+    // Clean URL for desktop bar
     let displayUrl = targetUrl;
-    try {
-      const u = new URL(targetUrl);
-      displayUrl = u.origin + u.pathname;
-    } catch {}
-    document.getElementById('desktopUrlText').textContent = displayUrl || targetUrl;
+    try { const u = new URL(targetUrl); displayUrl = u.origin + u.pathname; } catch {}
+    document.getElementById('desktopUrlText').textContent = displayUrl || '—';
 
-    // ── Load iframes ──
-    const phoneFrame   = document.getElementById('phoneFrame');
-    const desktopFrame = document.getElementById('desktopFrame');
+    const phoneFrame     = document.getElementById('phoneFrame');
+    const desktopFrame   = document.getElementById('desktopFrame');
     const phoneLoading   = document.getElementById('phoneLoading');
     const desktopLoading = document.getElementById('desktopLoading');
 
-    function hideOverlay(overlay) { overlay.classList.add('hidden'); }
+    function hideOverlay(el) { el.classList.add('hidden'); }
 
-    const isLoading = params.get('loading') === '1';
-
-    if (isLoading) {
-      // Interim state — waiting for studio to navigate us to the real URL
-      document.getElementById('clientNameLabel').textContent = 'Connecting…';
-      // Keep the spinner visible indefinitely — studio will navigate us shortly
-    } else if (!targetUrl) {
-      ['phoneFrame', 'desktopFrame'].forEach(id => {
-        const wrap = document.getElementById(id).parentElement;
-        wrap.innerHTML = `
-          <div class="error-screen">
-            <div class="error-icon">⚠️</div>
-            <div class="error-title">No URL provided</div>
-            <div class="error-msg">This page must be opened from the Client View Studio.</div>
-          </div>`;
-      });
-    } else {
-      // Load phone iframe immediately
-      phoneFrame.src = targetUrl;
-      phoneFrame.addEventListener('load', () => hideOverlay(phoneLoading));
-      setTimeout(() => hideOverlay(phoneLoading), 6000);
-
-      // Desktop iframe is loaded lazily when mode switches to desktop
+    if (!isLoading) {
+      if (!targetUrl) {
+        document.getElementById('phoneLoading').innerHTML = `
+          <div class="error-icon">⚠️</div>
+          <div class="error-title">No URL provided</div>
+          <div class="error-msg">Open this page from the Client View Studio.</div>`;
+      } else {
+        phoneFrame.src = targetUrl;
+        phoneFrame.addEventListener('load', () => hideOverlay(phoneLoading));
+        setTimeout(() => hideOverlay(phoneLoading), 7000);
+      }
     }
 
-    // ── View mode toggle ──
-    let currentMode = 'phone';
-    let desktopLoaded = false;
+    // View toggle
+    let currentMode  = 'phone';
+    let desktopReady = false;
 
-    const phoneStage   = document.getElementById('phoneStage');
-    const desktopStage = document.getElementById('desktopStage');
+    const phoneStage      = document.getElementById('phoneStage');
+    const desktopStage    = document.getElementById('desktopStage');
     const frameToggleWrap = document.getElementById('frameToggleWrap');
-    const frameSep = document.getElementById('frameSep');
+    const frameSep        = document.getElementById('frameSep');
 
     document.getElementById('viewToggle').addEventListener('click', e => {
       const btn = e.target.closest('button[data-mode]');
       if (!btn || btn.dataset.mode === currentMode) return;
-
       currentMode = btn.dataset.mode;
       document.querySelectorAll('#viewToggle button').forEach(b => b.classList.toggle('active', b === btn));
 
       if (currentMode === 'desktop') {
-        phoneStage.style.display = 'none';
+        phoneStage.style.display   = 'none';
         desktopStage.style.display = 'flex';
         frameToggleWrap.style.display = 'none';
-        frameSep.style.display = 'none';
-
-        // Lazy-load desktop iframe on first switch
-        if (!desktopLoaded && targetUrl) {
-          desktopLoaded = true;
+        frameSep.style.display        = 'none';
+        if (!desktopReady && targetUrl) {
+          desktopReady = true;
           desktopFrame.src = targetUrl;
           desktopFrame.addEventListener('load', () => hideOverlay(desktopLoading));
           setTimeout(() => hideOverlay(desktopLoading), 8000);
         }
       } else {
-        phoneStage.style.display = 'flex';
-        desktopStage.style.display = 'none';
+        phoneStage.style.display      = 'flex';
+        desktopStage.style.display    = 'none';
         frameToggleWrap.style.display = 'inline-flex';
-        frameSep.style.display = 'block';
+        frameSep.style.display        = 'block';
       }
     });
 
-    // ── Phone frame toggle ──
+    // Frame toggle
     const phoneShell = document.getElementById('phoneShell');
     document.getElementById('frameToggle').addEventListener('change', e => {
       phoneShell.classList.toggle('frame-off', !e.target.checked);
+    });
+
+    // ── Client breakdown panel ──
+    (function initClientPanel() {
+      const raw = params.get('cdata');
+      if (!raw) return;
+      let cd;
+      try { cd = JSON.parse(decodeURIComponent(escape(atob(decodeURIComponent(raw))))); } catch(e) { return; }
+
+      const panel    = document.getElementById('clientPanel');
+      const panelBody = document.getElementById('panelBody');
+      panel.classList.remove('no-data');
+
+      function fmtR(n) { return 'R\u202f' + Number(n||0).toLocaleString('en-ZA',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+      function fmtPct(n) { return (Number(n||0)>=0?'+':'') + Number(n||0).toFixed(2) + '%'; }
+
+      const pnlPos  = (cd.totalPnl || 0) >= 0;
+      const pnlPctPos = (cd.totalPnlPct || 0) >= 0;
+
+      // Identity + stats card
+      const idCard = document.createElement('div');
+      idCard.className = 'pc';
+      idCard.innerHTML = `
+        <div class="pc-identity">
+          <div class="pc-avatar">${escHtml(cd.initials || cd.name?.slice(0,2).toUpperCase() || '?')}</div>
+          <div class="pc-name">${escHtml(cd.name)}</div>
+          ${cd.email ? `<div class="pc-email">${escHtml(cd.email)}</div>` : ''}
+        </div>
+        <div class="pc-stats">
+          <div class="pc-stat">
+            <div class="pc-stat-label">Portfolio</div>
+            <div class="pc-stat-val">${fmtR(cd.totalValue)}</div>
+          </div>
+          <div class="pc-stat">
+            <div class="pc-stat-label">P&amp;L</div>
+            <div class="pc-stat-val ${pnlPos?'pos':'neg'}">${(cd.totalPnl>=0?'+':'')}${fmtR(Math.abs(cd.totalPnl||0))}</div>
+          </div>
+          <div class="pc-stat">
+            <div class="pc-stat-label">Strategies</div>
+            <div class="pc-stat-val">${cd.strategyCount || 0}</div>
+          </div>
+        </div>`;
+      panelBody.appendChild(idCard);
+
+      // Holdings card
+      const holdCard = document.createElement('div');
+      holdCard.className = 'pc';
+      const holdings = cd.holdings || [];
+      holdCard.innerHTML = `<div class="pc-section-head">Holdings</div>`
+        + (holdings.length
+          ? holdings.map(h => {
+              const hp = (h.pnlRands||0) >= 0;
+              return `<div class="pc-row">
+                <div class="pc-row-left">
+                  <div class="pc-row-sym">${escHtml(h.symbol)}${h.isPending ? ' <span style="font-size:9px;color:#8e8e93;">·&nbsp;Pending</span>' : ''}</div>
+                  <div class="pc-row-sub">${escHtml(h.name)}</div>
+                </div>
+                <div class="pc-row-right">
+                  <div class="pc-row-val">${fmtR(h.value)}</div>
+                  <div class="pc-row-pnl ${hp?'pos':'neg'}">${fmtPct(h.pnlPct)}</div>
+                </div>
+              </div>`;
+            }).join('')
+          : '<div class="pc-empty">No holdings</div>');
+      panelBody.appendChild(holdCard);
+
+      // Transactions card
+      const txCard = document.createElement('div');
+      txCard.className = 'pc';
+      const txns = cd.transactions || [];
+      txCard.innerHTML = `<div class="pc-section-head">Recent Transactions</div>`
+        + (txns.length
+          ? txns.map(t => {
+              const amt   = Math.abs(Number(t.amount||0)/100);
+              const isIn  = t.direction === 'credit';
+              const dateStr = t.date ? new Date(t.date).toLocaleDateString('en-ZA',{day:'numeric',month:'short'}) : '';
+              return `<div class="pc-row">
+                <div class="pc-row-left">
+                  <div class="pc-row-sym">${escHtml(t.name)}</div>
+                  ${dateStr ? `<div class="pc-row-sub">${dateStr}</div>` : ''}
+                </div>
+                <div class="pc-row-right">
+                  <div class="pc-row-val ${isIn?'pos':''}">${isIn?'+':''}${fmtR(amt)}</div>
+                </div>
+              </div>`;
+            }).join('')
+          : '<div class="pc-empty">No transactions</div>');
+      panelBody.appendChild(txCard);
+
+      // Collapse toggle
+      document.getElementById('collapseBtn').addEventListener('click', () => {
+        panel.classList.toggle('collapsed');
+      });
+
+      function escHtml(s) {
+        return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+      }
+    })();
+
+    // Zoom slider — only shown in phone mode
+    const zoomSlider = document.getElementById('zoomSlider');
+    const zoomVal    = document.getElementById('zoomVal');
+    const zoomWrap   = document.getElementById('zoomWrap');
+    const zoomSep    = document.getElementById('zoomSep');
+    const phoneWrap  = document.querySelector('.phone-wrap');
+
+    function applyZoom(pct) {
+      const scale = pct / 100;
+      // Scale from top-center so it stays centered
+      phoneWrap.style.transform       = `scale(${scale})`;
+      phoneWrap.style.transformOrigin = 'top center';
+      // Collapse the visual space the shell no longer occupies
+      const shellH = phoneWrap.getBoundingClientRect().height || 858;
+      // Use margin-bottom to pull up the dead space when shrunk
+      phoneWrap.style.marginBottom = `${(shellH * (scale - 1))}px`;
+    }
+
+    // Auto-detect a good starting zoom based on viewport height
+    (function initZoom() {
+      const availH  = window.innerHeight - 44 - 96; // bar + padding
+      const shellH  = 858;  // phone shell natural height (px)
+      const ideal   = Math.floor((availH / shellH) * 100 / 5) * 5;
+      const clamped = Math.min(100, Math.max(40, ideal));
+      zoomSlider.value = clamped;
+      zoomVal.textContent = clamped + '%';
+      applyZoom(clamped);
+    })();
+
+    zoomSlider.addEventListener('input', () => {
+      const pct = Number(zoomSlider.value);
+      zoomVal.textContent = pct + '%';
+      applyZoom(pct);
+    });
+
+    // Hide zoom controls when switching to desktop mode (already handled by display:none on phoneStage)
+    // But keep them visible only in phone mode
+    const origToggle = document.getElementById('viewToggle').onclick;
+    document.getElementById('viewToggle').addEventListener('click', () => {
+      const isPhone = currentMode === 'phone';
+      zoomWrap.style.display = isPhone ? 'inline-flex' : 'none';
+      zoomSep.style.display  = isPhone ? 'block' : 'none';
     });
   </script>
 </body>
