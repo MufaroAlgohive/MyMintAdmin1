@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Client Preview — Mint Admin</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: radial-gradient(ellipse at 30% 0%, #2d1b69 0%, #1a0d3e 40%, #0d0d14 100%);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Top bar ── */
+    .top-bar {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: 52px;
+      background: rgba(13, 10, 30, 0.7);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 20px;
+      z-index: 100;
+    }
+
+    .top-bar-logo {
+      width: 28px; height: 28px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #7c3aed, #a855f7);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 800; color: #fff;
+      flex-shrink: 0;
+    }
+
+    .top-bar-label {
+      font-size: 13px; font-weight: 700; color: rgba(255,255,255,0.9);
+      letter-spacing: -0.01em;
+    }
+
+    .top-bar-name {
+      font-size: 12px; color: rgba(255,255,255,0.45);
+      font-weight: 500;
+    }
+
+    .top-bar-sep { width: 1px; height: 20px; background: rgba(255,255,255,0.12); flex-shrink: 0; }
+
+    .top-bar-spacer { flex: 1; }
+
+    .frame-toggle {
+      display: inline-flex; align-items: center; gap: 7px;
+      font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.55);
+      cursor: pointer; user-select: none;
+    }
+
+    .frame-toggle input[type="checkbox"] {
+      width: 14px; height: 14px; accent-color: #7c3aed; cursor: pointer;
+    }
+
+    .env-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 11px; font-weight: 700;
+      padding: 4px 10px; border-radius: 20px;
+    }
+    .env-badge.dev  { background: rgba(109,40,217,0.25); color: #c4b5fd; border: 1px solid rgba(167,139,250,0.25); }
+    .env-badge.live { background: rgba(21,128,61,0.25);  color: #86efac;  border: 1px solid rgba(134,239,172,0.2); }
+
+    .close-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.1);
+      color: rgba(255,255,255,0.6); font-size: 12px; font-weight: 600;
+      padding: 5px 12px; border-radius: 8px; cursor: pointer;
+      transition: all 0.15s;
+      text-decoration: none;
+    }
+    .close-btn:hover { background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.9); }
+
+    /* ── Stage ── */
+    .stage {
+      padding-top: 72px;
+      padding-bottom: 32px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 18px;
+      min-height: 100vh;
+      justify-content: center;
+    }
+
+    /* ── Phone shell ── */
+    .phone-wrap {
+      position: relative;
+    }
+
+    .phone-shell {
+      width: 375px;
+      background: #111;
+      border-radius: 52px;
+      padding: 14px;
+      box-shadow:
+        0 0 0 1px #2c2c2e,
+        0 32px 80px rgba(0,0,0,0.7),
+        0 0 0 8px #1a1a1c,
+        0 0 0 9px #2c2c2e;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .phone-shell.frame-off {
+      background: transparent;
+      border-radius: 20px;
+      padding: 0;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.08);
+    }
+
+    .phone-screen {
+      background: #000;
+      border-radius: 38px;
+      height: 720px;
+      overflow: hidden;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .phone-shell.frame-off .phone-screen {
+      border-radius: 14px;
+      height: 720px;
+    }
+
+    /* Notch */
+    .phone-notch {
+      position: absolute;
+      top: 0; left: 50%; transform: translateX(-50%);
+      width: 120px; height: 34px;
+      background: #111;
+      border-radius: 0 0 22px 22px;
+      z-index: 10;
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+    }
+
+    .phone-shell.frame-off .phone-notch { display: none; }
+
+    .notch-cam {
+      width: 10px; height: 10px; border-radius: 50%; background: #1c1c1e;
+      border: 2px solid #2c2c2e;
+    }
+
+    .notch-speaker {
+      width: 56px; height: 5px; border-radius: 3px; background: #1c1c1e;
+    }
+
+    /* Side buttons */
+    .phone-btn-left, .phone-btn-right {
+      position: absolute;
+      background: #222;
+      border-radius: 3px;
+    }
+    .phone-btn-left  { left: -14px; width: 4px; }
+    .phone-btn-left.vol-up   { top: 120px; height: 36px; }
+    .phone-btn-left.vol-down { top: 172px; height: 36px; }
+    .phone-btn-left.silent   { top:  80px; height: 26px; }
+    .phone-btn-right { right: -14px; width: 4px; top: 140px; height: 60px; }
+
+    .phone-shell.frame-off .phone-btn-left,
+    .phone-shell.frame-off .phone-btn-right { display: none; }
+
+    /* Home indicator */
+    .phone-home {
+      position: absolute;
+      bottom: 8px; left: 50%; transform: translateX(-50%);
+      width: 130px; height: 5px;
+      background: rgba(255,255,255,0.35);
+      border-radius: 3px;
+      z-index: 10;
+    }
+
+    .phone-shell.frame-off .phone-home { display: none; }
+
+    /* ── iframe ── */
+    .phone-iframe-wrap {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .phone-iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+      display: block;
+    }
+
+    /* Loading overlay */
+    .loading-overlay {
+      position: absolute;
+      inset: 0;
+      background: #f8f6fa;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      z-index: 5;
+      transition: opacity 0.4s ease;
+    }
+
+    .loading-overlay.hidden { opacity: 0; pointer-events: none; }
+
+    .spinner {
+      width: 34px; height: 34px;
+      border: 3px solid #e5e5ea;
+      border-top-color: #7c3aed;
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+    }
+
+    .loading-text {
+      font-size: 13px; font-weight: 600; color: #8e8e93;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* error state */
+    .error-screen {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 10px; padding: 24px; background: #f8f6fa;
+    }
+
+    .error-icon { font-size: 36px; }
+    .error-title { font-size: 15px; font-weight: 700; color: #1c1c1e; text-align: center; }
+    .error-msg { font-size: 12px; color: #8e8e93; text-align: center; line-height: 1.5; }
+
+    /* ── Size selector ── */
+    .size-row {
+      display: flex; align-items: center; gap: 8px;
+    }
+
+    .size-btn {
+      border: 1px solid rgba(255,255,255,0.15);
+      background: rgba(255,255,255,0.06);
+      color: rgba(255,255,255,0.5);
+      font-size: 11px; font-weight: 700;
+      padding: 5px 12px; border-radius: 8px; cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .size-btn.active, .size-btn:hover {
+      background: rgba(124,58,237,0.3);
+      border-color: rgba(124,58,237,0.5);
+      color: #c4b5fd;
+    }
+
+    .hint-text {
+      font-size: 11px; color: rgba(255,255,255,0.25); text-align: center;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top bar -->
+  <div class="top-bar">
+    <div class="top-bar-logo">M</div>
+    <div>
+      <div class="top-bar-label">Client Preview</div>
+    </div>
+    <div class="top-bar-sep"></div>
+    <span class="top-bar-name" id="clientNameLabel">Loading…</span>
+    <span class="env-badge" id="envBadge">—</span>
+    <div class="top-bar-spacer"></div>
+    <label class="frame-toggle">
+      <input type="checkbox" id="frameToggle" checked>
+      Phone frame
+    </label>
+    <div class="top-bar-sep"></div>
+    <a href="javascript:window.close()" class="close-btn">
+      <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+      Close
+    </a>
+  </div>
+
+  <!-- Stage -->
+  <div class="stage">
+    <div class="phone-wrap">
+      <div class="phone-shell" id="phoneShell">
+        <!-- Side buttons -->
+        <div class="phone-btn-left silent"></div>
+        <div class="phone-btn-left vol-up"></div>
+        <div class="phone-btn-left vol-down"></div>
+        <div class="phone-btn-right"></div>
+
+        <div class="phone-screen">
+          <!-- Notch -->
+          <div class="phone-notch">
+            <div class="notch-speaker"></div>
+            <div class="notch-cam"></div>
+          </div>
+
+          <!-- iframe area -->
+          <div class="phone-iframe-wrap" id="iframeWrap">
+            <div class="loading-overlay" id="loadingOverlay">
+              <div class="spinner"></div>
+              <div class="loading-text">Opening Mint…</div>
+            </div>
+            <iframe
+              id="mintFrame"
+              class="phone-iframe"
+              allow="fullscreen"
+              referrerpolicy="no-referrer-when-downgrade"
+            ></iframe>
+          </div>
+
+          <!-- Home indicator -->
+          <div class="phone-home"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="size-row">
+      <button class="size-btn active" data-h="720">Standard</button>
+      <button class="size-btn" data-h="844">Large</button>
+      <button class="size-btn" data-h="932">Max</button>
+    </div>
+
+    <div class="hint-text">
+      This preview is for admin use only.<br>
+      The client app URL is unchanged — only this wrapper is added by Mint Admin.
+    </div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const targetUrl  = params.get('url')  || '';
+    const clientName = params.get('name') || 'Client';
+    const envParam   = params.get('env')  || 'dev';
+
+    // Set labels
+    document.getElementById('clientNameLabel').textContent = clientName;
+    const badge = document.getElementById('envBadge');
+    if (envParam === 'live') {
+      badge.textContent = '🟢 Live';
+      badge.className = 'env-badge live';
+    } else {
+      badge.textContent = '🔵 Dev';
+      badge.className = 'env-badge dev';
+    }
+    document.title = `${clientName} — Client Preview`;
+
+    // Load iframe
+    const frame = document.getElementById('mintFrame');
+    const overlay = document.getElementById('loadingOverlay');
+
+    if (!targetUrl) {
+      document.getElementById('iframeWrap').innerHTML = `
+        <div class="error-screen">
+          <div class="error-icon">⚠️</div>
+          <div class="error-title">No URL provided</div>
+          <div class="error-msg">This page must be opened from the Client View Studio.</div>
+        </div>`;
+    } else {
+      frame.src = targetUrl;
+
+      // Hide loading overlay once the iframe loads (or after a timeout)
+      frame.addEventListener('load', () => {
+        overlay.classList.add('hidden');
+      });
+
+      // Fallback: hide after 6 seconds regardless
+      setTimeout(() => overlay.classList.add('hidden'), 6000);
+    }
+
+    // Frame toggle
+    const phoneShell = document.getElementById('phoneShell');
+    document.getElementById('frameToggle').addEventListener('change', e => {
+      phoneShell.classList.toggle('frame-off', !e.target.checked);
+    });
+
+    // Height size buttons
+    const phoneScreen = phoneShell.querySelector('.phone-screen');
+    document.querySelectorAll('.size-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.size-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const h = parseInt(btn.dataset.h, 10);
+        phoneScreen.style.height = h + 'px';
+        // Also update the frame-off screen height
+        const style = phoneShell.querySelector('.phone-screen');
+        if (style) style.style.height = h + 'px';
+      });
+    });
+  </script>
+</body>
+</html>

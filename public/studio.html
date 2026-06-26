@@ -494,7 +494,8 @@
             return;
           }
           renderLaunchCard(client, envAtClick, 'ready');
-          window.open(data.actionLink, '_blank', 'noopener');
+          const previewUrl = '/phone-preview.html?url=' + encodeURIComponent(data.actionLink) + '&name=' + encodeURIComponent(client.name) + '&env=' + encodeURIComponent(envAtClick);
+          window.open(previewUrl, '_blank', 'noopener');
         } catch (err) {
           if (reqId !== impersonationRequestId) return;
           console.error('[Studio] impersonation failed:', err);
