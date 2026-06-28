@@ -2636,9 +2636,10 @@
           : '';
         const hSide = String(h.side || '-').toUpperCase();
         const hSideClass = hSide === 'BUY' ? 'side-badge-buy' : hSide === 'SELL' ? 'side-badge-sell' : 'side-badge-neutral';
-        /* Sold (inactive SELL) rows are dimmed so they read as historical, not
-           a current holding. */
-        const hRowStyle = (h.isActive === false || hSide === 'SELL') ? ' style="opacity:.6;"' : '';
+        /* Sold (inactive SELL) and settled-audit SELL rows are dimmed so they read
+           as historical. A PENDING sell (active, awaiting fill) stays full-opacity
+           — it's an actionable order. */
+        const hRowStyle = (h.isActive === false || (hSide === 'SELL' && !h.isPendingSell)) ? ' style="opacity:.6;"' : '';
         return `
         <tr${hRowStyle}>
           <td>${escapeHtml(String(h.line))}</td>
@@ -6199,6 +6200,9 @@
           fillDate: row.fill_date || null,
           tradeSide: side,
           isActive: row.is_active,
+          // A client-requested sell on a previously-filled (archived) holding:
+          // active SELL with no exit price yet. Must re-surface in the live book.
+          isPendingSell: side === 'SELL' && row.is_active !== false && (row.avg_exit == null || Number(row.avg_exit) === 0),
           closedReason: String(row.closed_reason || ''),
           closedAt: row.closed_at || null,
           rebalanceBatchId: row.rebalance_batch_id || null,
@@ -6217,7 +6221,9 @@
       const allRawRows = rawRows;
 
       const filteredRows = allRawRows.filter((row) => {
-        if (row.sourceId && archivedSourceIds.has(String(row.sourceId))) {
+        // A pending sell re-surfaces even if the holding was archived as a filled
+        // BUY — it's a new actionable order now.
+        if (row.sourceId && archivedSourceIds.has(String(row.sourceId)) && !row.isPendingSell) {
           return false;
         }
 
