@@ -2691,6 +2691,11 @@
         </tr>
       `; }).join('');
 
+      // Derive from the actual rendered holdings, not row.side — row.side can
+      // be stale on an archived snapshot whose underlying holdings have since
+      // been flipped to a pending sell.
+      const detailAllSell = holdings.length > 0 && holdings.every((h) => String(h.tradeSide || h.side || '').toUpperCase() === 'SELL');
+
       return `
         <div class="orderbook-detail-title">Holdings under ${escapeHtml(row.strategyName || 'Strategy')}${titleSuffix}</div>
         <div class="orderbook-detail-table-wrap">
@@ -2702,7 +2707,7 @@
                 <th>Ticker</th>
                 <th>Side</th>
                 <th>Total QYT</th>
-                <th>${String(row.side || '').toUpperCase() === 'SELL' ? 'Avg Exit' : 'Avg Fill'}</th>
+                <th>${detailAllSell ? 'Avg Exit' : 'Avg Fill'}</th>
                 <th>Expected Fill</th>
                 <th>Live Price</th>
                 <th>Client PnL</th><th>MINT PnL</th>
@@ -4508,6 +4513,14 @@
       let latestFillDate = null;
       let hasSent = false;
       let hasFailed = false;
+      // Sell quantities are stored positive, so qty-sign can't tell BUY from
+      // SELL — read the live side string instead (mirrors groupByStrategy).
+      let liveSellCount = 0;
+      let isPendingSellAny = false;
+      let avgExitWeighted = 0, avgExitWeight = 0;
+      let expExitWeighted = 0, expExitWeight = 0;
+      let avgExitTotal = 0, hasAvgExitTotal = false;
+      let expExitTotal = 0, hasExpExitTotal = false;
 
       liveRows.forEach((live) => {
         const q = Number(live.quantityValue || 0);
@@ -4530,6 +4543,23 @@
           actualWeight += w;
         }
 
+        if (String(live.tradeSide || live.side || '').toUpperCase() === 'SELL') liveSellCount += 1;
+        if (live.isPendingSell) isPendingSellAny = true;
+        const avgExit = Number(live.avgExitNumber);
+        if (Number.isFinite(avgExit)) {
+          const w = Math.abs(q) || 1;
+          avgExitWeighted += (avgExit * w);
+          avgExitWeight += w;
+        }
+        if (Number.isFinite(live.avgExitTotalNum)) { avgExitTotal += live.avgExitTotalNum; hasAvgExitTotal = true; }
+        const expExit = Number(live.expectedExitNumber);
+        if (Number.isFinite(expExit)) {
+          const w = Math.abs(q) || 1;
+          expExitWeighted += (expExit * w);
+          expExitWeight += w;
+        }
+        if (Number.isFinite(live.expectedExitTotalNum)) { expExitTotal += live.expectedExitTotalNum; hasExpExitTotal = true; }
+
         if (live.notificationStatus === 'sent') hasSent = true;
         if (live.notificationStatus === 'failed') hasFailed = true;
 
@@ -4548,6 +4578,8 @@
         }
       });
 
+      const liveIsSell = liveRows.length > 0 && liveSellCount === liveRows.length;
+
       const next = {
         ...row,
         sourceIds: ids,
@@ -4560,7 +4592,9 @@
         unrealizedPnl: Number.isFinite(pnlTotal)
           ? pnlTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
           : (row.unrealizedPnl ?? '-'),
-        side: Number.isFinite(qtyTotal) ? (qtyTotal < 0 ? 'SELL' : 'BUY') : (row.side || '-'),
+        side: liveIsSell ? 'SELL' : (Number.isFinite(qtyTotal) ? (qtyTotal < 0 ? 'SELL' : 'BUY') : (row.side || '-')),
+        tradeSide: liveIsSell ? 'SELL' : (row.tradeSide || row.side || '-'),
+        isPendingSell: isPendingSellAny,
         timestamp: latestTimestamp || row.timestamp || null,
         fillDate: latestFillDate || row.fillDate || null,
         notificationStatus: hasSent ? 'sent' : (hasFailed ? 'failed' : (row.notificationStatus || 'pending'))
@@ -4571,6 +4605,16 @@
         next.avgFillNumber = avgFillNumber;
         next.avgFill = formatMoneyText(avgFillNumber);
       }
+
+      if (avgExitWeight > 0) {
+        next.avgExitNumber = avgExitWeighted / avgExitWeight;
+        next.avgExit = formatMoneyText(next.avgExitNumber);
+      }
+      if (hasAvgExitTotal) next.avgExitTotalNum = avgExitTotal;
+      if (expExitWeight > 0) {
+        next.expectedExitNumber = expExitWeighted / expExitWeight;
+      }
+      if (hasExpExitTotal) next.expectedExitTotalNum = expExitTotal;
 
       if (actualWeight > 0) {
         const actualFillNumber = actualWeighted / actualWeight;
@@ -4670,6 +4714,12 @@
       let hasSent = false;
       let hasFailed = false;
       const sourceIds = new Set();
+      // Sell quantities are positive, so qty-sign can't tell BUY from SELL —
+      // derive from the reconciled holdings' own side (mirrors groupByStrategy).
+      let sellHoldingCount = 0;
+      let isPendingSellAny = false;
+      let avgExitTotalSum = 0, hasAvgExitTotalSum = false;
+      let expExitTotalSum = 0, hasExpExitTotalSum = false;
 
       nextHoldings.forEach((holding) => {
         const q = Number(holding.quantityValue || 0);
@@ -4694,6 +4744,11 @@
           actualFillSum += act * Math.abs(q || 0);
           hasActualFillSum = true;
         }
+
+        if (String(holding.tradeSide || holding.side || '').toUpperCase() === 'SELL') sellHoldingCount += 1;
+        if (holding.isPendingSell) isPendingSellAny = true;
+        if (Number.isFinite(holding.avgExitTotalNum)) { avgExitTotalSum += holding.avgExitTotalNum; hasAvgExitTotalSum = true; }
+        if (Number.isFinite(holding.expectedExitTotalNum)) { expExitTotalSum += holding.expectedExitTotalNum; hasExpExitTotalSum = true; }
 
         if (holding.timestamp) {
           const t = new Date(holding.timestamp).getTime();
@@ -4722,6 +4777,8 @@
         if (holding.notificationStatus === 'failed') hasFailed = true;
       });
 
+      const allSell = nextHoldings.length > 0 && sellHoldingCount === nextHoldings.length;
+
       const next = {
         ...row,
         strategyHoldings: nextHoldings,
@@ -4735,11 +4792,15 @@
         unrealizedPnl: Number.isFinite(pnlTotal)
           ? pnlTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
           : (row.unrealizedPnl ?? '-'),
-        side: Number.isFinite(qtyTotal) ? (qtyTotal < 0 ? 'SELL' : 'BUY') : (row.side || '-'),
+        side: allSell ? 'SELL' : (Number.isFinite(qtyTotal) ? (qtyTotal < 0 ? 'SELL' : 'BUY') : (row.side || '-')),
+        isPendingSell: allSell && isPendingSellAny,
         timestamp: latestTimestamp || row.timestamp || null,
         fillDate: latestFillDate || row.fillDate || null,
         notificationStatus: hasSent ? 'sent' : (hasFailed ? 'failed' : (row.notificationStatus || 'pending'))
       };
+
+      if (hasAvgExitTotalSum) next.avgExitTotalNum = avgExitTotalSum;
+      if (hasExpExitTotalSum) next.expectedExitTotalNum = expExitTotalSum;
 
       /* Keep avgFillNumber as the per-share weighted avg for any downstream
          consumer; the display string shows the SUM so the strategy row reads
