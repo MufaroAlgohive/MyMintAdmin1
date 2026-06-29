@@ -2677,7 +2677,9 @@
           <td><span class="side-badge ${hSideClass}">${escapeHtml(hSide)}</span></td>
           <td>${escapeHtml(String(h.totalQuantity ?? '-'))}</td>
           <td>${escapeHtml(asRandValue(String(h.side || h.tradeSide || '').toUpperCase() === 'SELL' ? h.avgExit : h.avgFill))}${renderFillByline(h)}</td>
-          <td>${escapeHtml(asRandValue(h.actualFill))}</td>
+          <td>${escapeHtml(hSide === 'SELL'
+            ? (Number.isFinite(h.expectedExitNumber) ? `R ${h.expectedExitNumber.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-')
+            : asRandValue(h.actualFill))}</td>
           <td>${escapeHtml(asRandValue(h.marketValue))}</td>
           ${renderInitialPnlCell(h.unrealizedPnlNumber, h.unrealizedPnl)}${renderMintPnlCell(h)}
         </tr>
