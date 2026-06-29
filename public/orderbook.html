@@ -8556,20 +8556,20 @@
           const isSell = String(h.side || h.tradeSide || '').toUpperCase() === 'SELL';
           const currentVal = asRandValue(isSell ? h.avgExit : h.avgFill);
           const currentNum = Number.isFinite(isSell ? h.avgExitNumber : h.avgFillNumber) ? (isSell ? h.avgExitNumber : h.avgFillNumber).toFixed(2) : '';
-          return \`
+          return `
             <tr>
-              <td style="font-weight:500;">\${escapeHtml(h.instrumentName || '-')}</td>
-              <td><span style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">\${escapeHtml(h.ticker || '-')}</span></td>
-              <td><span class="side-badge \${isSell ? 'side-badge-sell' : 'side-badge-buy'}">\${isSell ? 'SELL' : 'BUY'}</span></td>
-              <td class="r">\${escapeHtml(String(h.quantityValue ?? '-'))}</td>
+              <td style="font-weight:500;">${escapeHtml(h.instrumentName || '-')}</td>
+              <td><span style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">${escapeHtml(h.ticker || '-')}</span></td>
+              <td><span class="side-badge ${isSell ? 'side-badge-sell' : 'side-badge-buy'}">${isSell ? 'SELL' : 'BUY'}</span></td>
+              <td class="r">${escapeHtml(String(h.quantityValue ?? '-'))}</td>
               <td class="r">
-                <input type="number" class="manual-fill-input price-input" data-index="\${i}" data-side="\${isSell ? 'SELL' : 'BUY'}" step="0.01" min="0" value="\${currentNum}" placeholder="\${currentVal === '-' ? '0.00' : currentVal}" style="width:100%;text-align:right;border:1px solid #cbd5e1;border-radius:6px;padding:6px;font-family:monospace;font-size:13px;height:auto;">
+                <input type="number" class="manual-fill-input price-input" data-index="${i}" data-side="${isSell ? 'SELL' : 'BUY'}" step="0.01" min="0" value="${currentNum}" placeholder="${currentVal === '-' ? '0.00' : currentVal}" style="width:100%;text-align:right;border:1px solid #cbd5e1;border-radius:6px;padding:6px;font-family:monospace;font-size:13px;height:auto;">
               </td>
             </tr>
-          \`;
+          `;
         }).join('');
       } catch (err) {
-        els.tableBody.innerHTML = \`<tr><td colspan="5" style="text-align:center;padding:12px;color:#dc2626;">Error: \${escapeHtml(err.message)}</td></tr>\`;
+        els.tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:12px;color:#dc2626;">Error: ${escapeHtml(err.message)}</td></tr>`;
         els.confirmBtn.disabled = true;
       }
     });
