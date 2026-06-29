@@ -8649,11 +8649,11 @@
           if (fillPricePerm === 'pending') {
             const resp = await fetch('/api/team?action=submit-approval', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': \`Bearer \${accessToken}\` },
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
               body: JSON.stringify({
                 type: 'fill_price',
                 payload: { ids: [m.sourceId], dbPayload: m.dbPayload, instrument: m.instrumentName, ticker: m.ticker, newPriceRand: m.newPriceRand, side: m.side },
-                notes: \`Manual fill R\${m.newPriceRand.toFixed(2)} for \${m.instrumentName || m.ticker} (\${m.side}) — \${manualFillsCtx.userName || 'investor'}\`
+                notes: `Manual fill R${m.newPriceRand.toFixed(2)} for ${m.instrumentName || m.ticker} (${m.side}) — ${manualFillsCtx.userName || 'investor'}`
               }),
             });
             const d = await resp.json().catch(() => ({}));
@@ -8662,7 +8662,7 @@
           } else {
             const updateRes = await fetch('/api/orderbook/update-price', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': \`Bearer \${accessToken}\` },
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
               body: JSON.stringify({ ids: [m.sourceId], payload: m.dbPayload })
             });
             const d = await updateRes.json().catch(() => ({}));
@@ -8672,7 +8672,7 @@
         }
         
         if (failCount > 0) {
-          alert(\`Submitted \${successCount} successfully, but \${failCount} failed. Please verify.\`);
+          alert(`Submitted ${successCount} successfully, but ${failCount} failed. Please verify.`);
         }
         
         els.modal.style.display = 'none';
