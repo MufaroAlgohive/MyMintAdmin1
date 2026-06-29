@@ -141,7 +141,7 @@ async function settleSellFills(holdingIds) {
   try {
     if (!holdingIds || !holdingIds.length) return;
     const holdings = await fetchSupabaseJson(
-      `/rest/v1/stock_holdings_c?id=in.(${buildInFilter(holdingIds)})&select=id,user_id,family_member_id,quantity,avg_exit,expected_exit,trade_side,is_active`
+      `/rest/v1/stock_holdings_c?id=in.(${buildInFilter(holdingIds)})&select=id,user_id,family_member_id,quantity,avg_exit,expected_exit,trade_side,is_active,sell_transaction_id`
     );
     const toSettle = (holdings || []).filter((h) =>
       String(h.trade_side || '').toUpperCase() === 'SELL' &&
@@ -154,19 +154,17 @@ async function settleSellFills(holdingIds) {
     const nowIso = new Date().toISOString();
     const netRandsByUser = {};   // own holdings → wallets.balance (rands)
     const netCentsByChild = {};  // child holdings → family_members.available_balance (cents)
-    const userIds = new Set();
+    // Credit at the client's expected exit (what they saw); fall back to the
+    // broker's avg_exit only if it was never captured.
+    const creditPerShareOf = (h) => (Number(h.expected_exit) > 0 ? Number(h.expected_exit) : Number(h.avg_exit) || 0);
 
     for (const h of toSettle) {
       const qty = Number(h.quantity) || 0;
-      // Credit at the client's expected exit (what they saw); fall back to the
-      // broker's avg_exit only if it was never captured.
-      const creditPerShare = Number(h.expected_exit) > 0 ? Number(h.expected_exit) : Number(h.avg_exit) || 0;
-      const netCents = Math.round(creditPerShare * qty);
+      const netCents = Math.round(creditPerShareOf(h) * qty);
       if (h.family_member_id) {
         netCentsByChild[h.family_member_id] = (netCentsByChild[h.family_member_id] || 0) + netCents;
       } else {
         netRandsByUser[h.user_id] = (netRandsByUser[h.user_id] || 0) + netCents / 100;
-        userIds.add(h.user_id);
       }
       // Close the position (also the idempotency guard).
       await requestSupabaseJson(`/rest/v1/stock_holdings_c?id=eq.${encodeURIComponent(h.id)}`, {
@@ -192,14 +190,50 @@ async function settleSellFills(holdingIds) {
       });
     }
 
-    // Complete the user's most recent pending "Sell:" transaction with the net amount (cents).
-    for (const uid of userIds) {
+    // ── Reconcile each sell transaction idempotently ─────────────────────────
+    // A strategy sell has ONE transaction shared by MANY holdings (one per
+    // security), each of which the broker may fill on a different day in a
+    // separate CRM action. Rather than overwrite the transaction's amount
+    // with just THIS batch's credit, recompute the full realised total from
+    // EVERY holding linked to it (sell_transaction_id) — so partial fills
+    // accumulate correctly and the transaction only flips to "completed" once
+    // every holding in the sell has actually settled.
+    const txnIds = [...new Set(toSettle.map((h) => h.sell_transaction_id).filter(Boolean))];
+    for (const txnId of txnIds) {
+      try {
+        const group = await fetchSupabaseJson(
+          `/rest/v1/stock_holdings_c?sell_transaction_id=eq.${encodeURIComponent(txnId)}&select=quantity,avg_exit,expected_exit,is_active`
+        );
+        const all = group || [];
+        if (!all.length) continue;
+        const realizedCents = all
+          .filter((h) => Number(h.avg_exit) > 0)
+          .reduce((s, h) => s + Math.round(creditPerShareOf(h) * (Number(h.quantity) || 0)), 0);
+        const allSettled = all.every((h) => h.is_active === false);
+        await requestSupabaseJson(`/rest/v1/transactions?id=eq.${encodeURIComponent(txnId)}`, {
+          method: 'PATCH',
+          body: { amount: realizedCents, status: allSettled ? 'completed' : 'pending', updated_at: nowIso },
+        });
+      } catch (txErr) {
+        console.error(`[settle-sell] transaction reconcile failed for ${txnId}:`, txErr?.message || txErr);
+      }
+    }
+
+    // Legacy holdings sold before sell_transaction_id existed — best-effort
+    // fallback to the old heuristic (most recent pending "Sell:" transaction).
+    const legacy = toSettle.filter((h) => !h.sell_transaction_id);
+    const legacyUserIds = [...new Set(legacy.filter((h) => !h.family_member_id).map((h) => h.user_id))];
+    for (const uid of legacyUserIds) {
+      const netCents = Math.round(
+        legacy.filter((h) => h.user_id === uid && !h.family_member_id)
+          .reduce((s, h) => s + creditPerShareOf(h) * (Number(h.quantity) || 0), 0)
+      );
+      if (netCents <= 0) continue;
       const txns = await fetchSupabaseJson(
         `/rest/v1/transactions?user_id=eq.${encodeURIComponent(uid)}&status=eq.pending&name=like.Sell:*&select=id&order=created_at.desc&limit=1`
       );
       const tx = txns && txns[0];
       if (tx) {
-        const netCents = Math.round((netRandsByUser[uid] || 0) * 100);
         await requestSupabaseJson(`/rest/v1/transactions?id=eq.${encodeURIComponent(tx.id)}`, {
           method: 'PATCH', body: { status: 'completed', amount: netCents, updated_at: nowIso },
         });

@@ -2777,6 +2777,7 @@
                   data-transaction-id="${escapeHtml(String(u.transactionId || ''))}"
                   data-created-at-bucket="${escapeHtml(String(u.createdAtBucket || ''))}"
                   data-source-ids="${escapeHtml(encodeEditSourceIds(u.sourceIds || []))}"
+                  data-is-test="${(_testUserIdSet && _testUserIdSet.has(String(u.userId || ''))) ? '1' : '0'}"
                   title="Upload broker fills (Excel) for ${escapeHtml(u.clientName || 'this investor')}">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 12 15 15"/></svg>
                 </button>
@@ -8300,9 +8301,12 @@
           priceModalConfirm.textContent = 'Checking permissions...';
 
           // ── Permission check ──────────────────────────────────────────────
-          const fillPricePerm = (typeof window.mintCan === 'function')
-            ? window.mintCan('orderbook', 'edit_fill_price')
-            : true;
+          // UAT/test-account fills are practice data, not real money — never
+          // gate them on the live edit_fill_price permission.
+          const editIsTest = !!(_testUserIdSet && _testUserIdSet.has(String(currentEditRow.userId || '')));
+          const fillPricePerm = editIsTest
+            ? true
+            : ((typeof window.mintCan === 'function') ? window.mintCan('orderbook', 'edit_fill_price') : true);
 
           if (fillPricePerm === false) {
             throw new Error('You do not have permission to edit fill prices. Contact your admin.');
@@ -8618,6 +8622,7 @@
         userId: btn.dataset.userId || '',
         userName: btn.dataset.userName || '',
         sourceIds: decodeEditSourceIds(btn.dataset.sourceIds),
+        isTest: btn.dataset.isTest === '1',
         excelRows: null,
       };
       if (!brokerFillsCtx.sourceIds.length) {
@@ -8661,8 +8666,12 @@
       try {
         await verifyModalPassword(password ? password.value : '');
 
-        const fillPricePerm = (typeof window.mintCan === 'function')
-          ? window.mintCan('orderbook', 'edit_fill_price') : true;
+        // UAT/test-account fills are practice data, not real money — never
+        // gate them on the live edit_fill_price permission. Only real (live)
+        // investor fills require it.
+        const fillPricePerm = brokerFillsCtx.isTest
+          ? true
+          : (typeof window.mintCan === 'function' ? window.mintCan('orderbook', 'edit_fill_price') : true);
         if (fillPricePerm === false) throw new Error('You do not have permission to edit fill prices. Contact your admin.');
 
         const { data: sessionData } = await supabaseClient.auth.getSession();
