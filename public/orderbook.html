@@ -1192,8 +1192,8 @@
     }
     .reverse-investor-btn svg { width: 14px; height: 14px; }
     /* Upload-broker-fills button (green) per investor row */
-    .upload-fills-col { width: 36px; text-align: center; }
-    .upload-fills-btn {
+    .upload-fills-col { width: 70px; text-align: center; }
+    .upload-fills-btn, .manual-fills-btn {
       background: none;
       border: none;
       width: 26px;
@@ -1206,13 +1206,13 @@
       cursor: pointer;
       transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
     }
-    .upload-fills-btn:hover {
+    .upload-fills-btn:hover, .manual-fills-btn:hover {
       background: #ecfdf5;
       color: #047857;
       transform: translateY(-1px);
     }
-    .upload-fills-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-    .upload-fills-btn svg { width: 15px; height: 15px; }
+    .upload-fills-btn:disabled, .manual-fills-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .upload-fills-btn svg, .manual-fills-btn svg { width: 15px; height: 15px; }
     /* "by {admin}" byline under an avg fill — who authorized it */
     .ob-fill-by { font-size: 9.5px; color: #94a3b8; font-weight: 500; margin-top: 1px; white-space: nowrap; }
     /* Broker-fills preview modal table */
@@ -2785,6 +2785,18 @@
                   data-is-test="${(_testUserIdSet && _testUserIdSet.has(String(u.userId || ''))) ? '1' : '0'}"
                   title="Upload broker fills (Excel) for ${escapeHtml(u.clientName || 'this investor')}">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 12 15 15"/></svg>
+                </button>
+                <button type="button" class="manual-fills-btn" data-manual-fills
+                  data-strategy-id="${escapeHtml(String(row.strategyId || ''))}"
+                  data-strategy-name="${escapeHtml(row.strategyName || '')}"
+                  data-user-id="${escapeHtml(String(u.userId || ''))}"
+                  data-user-name="${escapeHtml(u.clientName || '')}"
+                  data-family-member-id="${escapeHtml(String(u.familyMemberId || ''))}"
+                  data-transaction-id="${escapeHtml(String(u.transactionId || ''))}"
+                  data-created-at-bucket="${escapeHtml(String(u.createdAtBucket || ''))}"
+                  data-source-ids="${escapeHtml(encodeEditSourceIds(u.sourceIds || []))}"
+                  title="Manually enter fills for ${escapeHtml(u.clientName || 'this investor')}">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                 </button>
               </td>`
             : '';
@@ -8481,6 +8493,197 @@
     const normalizeFillTicker = (t) =>
       String(t || '').trim().toUpperCase().replace(/\s+/g, '').split('.')[0];
 
+    // ── Manual Fills Logic ────────────────────────────────────────────────────
+    let manualFillsCtx = null;
+    let manualFillsHoldings = [];
+
+    const getManualFillsEls = () => ({
+      modal: document.getElementById('manualFillsModal'),
+      closeBtn: document.getElementById('manualFillsClose'),
+      cancelBtn: document.getElementById('manualFillsCancel'),
+      confirmBtn: document.getElementById('manualFillsConfirm'),
+      subtitle: document.getElementById('manualFillsSubtitle'),
+      tableBody: document.getElementById('manualFillsTableBody'),
+      pwInput: document.getElementById('manualFillsPasswordInput'),
+      pwGroup: document.getElementById('manualFillsPasswordGroup'),
+    });
+
+    document.addEventListener('click', async (event) => {
+      const btn = event.target.closest('[data-manual-fills]');
+      if (!btn) return;
+      event.preventDefault();
+      event.stopPropagation();
+      
+      const els = getManualFillsEls();
+      if (!els.modal) return;
+      
+      manualFillsCtx = {
+        strategyId: btn.dataset.strategyId || '',
+        strategyName: btn.dataset.strategyName || '',
+        userId: btn.dataset.userId || '',
+        userName: btn.dataset.userName || '',
+        familyMemberId: btn.dataset.familyMemberId || '',
+        sourceIdsStr: btn.dataset.sourceIds || ''
+      };
+      
+      const sourceIds = decodeEditSourceIds(manualFillsCtx.sourceIdsStr);
+      if (!sourceIds.length) return;
+      
+      els.subtitle.innerHTML = `Loading individual holdings for <strong>${escapeHtml(manualFillsCtx.userName || 'investor')}</strong> &mdash; ${escapeHtml(manualFillsCtx.strategyName || 'strategy')}...`;
+      els.tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:12px;">Loading holdings...</td></tr>`;
+      els.pwInput.value = '';
+      els.pwGroup.style.display = orderbookUatMode ? 'none' : 'block';
+      els.confirmBtn.textContent = 'Submit Fills';
+      els.confirmBtn.disabled = false;
+      els.modal.style.display = 'flex';
+
+      try {
+        const stratRow = lastLoadedRows.find(r => r.strategyId === manualFillsCtx.strategyId);
+        if (!stratRow) throw new Error('Strategy data not found locally');
+        
+        const holdings = await loadArchivedInvestorHoldings(sourceIds, stratRow.strategyHoldings);
+        manualFillsHoldings = holdings;
+        
+        els.subtitle.innerHTML = `Manually updating broker fills for <strong>${escapeHtml(manualFillsCtx.userName || 'investor')}</strong> &mdash; ${escapeHtml(manualFillsCtx.strategyName || 'strategy')}`;
+        
+        if (!holdings.length) {
+          els.tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:12px;color:#94a3b8;">No un-filled holdings found.</td></tr>`;
+          els.confirmBtn.disabled = true;
+          return;
+        }
+
+        els.tableBody.innerHTML = holdings.map((h, i) => {
+          const isSell = String(h.side || h.tradeSide || '').toUpperCase() === 'SELL';
+          const currentVal = asRandValue(isSell ? h.avgExit : h.avgFill);
+          const currentNum = Number.isFinite(isSell ? h.avgExitNumber : h.avgFillNumber) ? (isSell ? h.avgExitNumber : h.avgFillNumber).toFixed(2) : '';
+          return \`
+            <tr>
+              <td style="font-weight:500;">\${escapeHtml(h.instrumentName || '-')}</td>
+              <td><span style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">\${escapeHtml(h.ticker || '-')}</span></td>
+              <td><span class="side-badge \${isSell ? 'side-badge-sell' : 'side-badge-buy'}">\${isSell ? 'SELL' : 'BUY'}</span></td>
+              <td class="r">\${escapeHtml(String(h.quantityValue ?? '-'))}</td>
+              <td class="r">
+                <input type="number" class="manual-fill-input price-input" data-index="\${i}" data-side="\${isSell ? 'SELL' : 'BUY'}" step="0.01" min="0" value="\${currentNum}" placeholder="\${currentVal === '-' ? '0.00' : currentVal}" style="width:100%;text-align:right;border:1px solid #cbd5e1;border-radius:6px;padding:6px;font-family:monospace;font-size:13px;height:auto;">
+              </td>
+            </tr>
+          \`;
+        }).join('');
+      } catch (err) {
+        els.tableBody.innerHTML = \`<tr><td colspan="5" style="text-align:center;padding:12px;color:#dc2626;">Error: \${escapeHtml(err.message)}</td></tr>\`;
+        els.confirmBtn.disabled = true;
+      }
+    });
+
+    document.addEventListener('click', (event) => {
+      const closeBtn = event.target.closest('#manualFillsClose, #manualFillsCancel');
+      if (closeBtn) {
+        const els = getManualFillsEls();
+        if (els.modal) els.modal.style.display = 'none';
+        manualFillsCtx = null;
+        manualFillsHoldings = [];
+      }
+    });
+
+    document.addEventListener('click', async (event) => {
+      const confirmBtn = event.target.closest('#manualFillsConfirm');
+      if (!confirmBtn) return;
+      const els = getManualFillsEls();
+      if (!els.modal) return;
+      
+      const inputs = els.tableBody.querySelectorAll('.manual-fill-input');
+      const updates = [];
+      
+      inputs.forEach(input => {
+        const valStr = input.value.trim();
+        if (valStr) {
+          const val = parseFloat(valStr);
+          if (!isNaN(val) && val > 0) {
+            const idx = parseInt(input.dataset.index, 10);
+            const h = manualFillsHoldings[idx];
+            if (h && h.sourceId) {
+              const isSell = input.dataset.side === 'SELL';
+              updates.push({
+                sourceId: String(h.sourceId),
+                instrumentName: h.instrumentName || '',
+                ticker: h.ticker || '',
+                side: input.dataset.side,
+                newPriceRand: val,
+                dbPayload: {
+                  [isSell ? 'avg_exit' : 'avg_fill']: Math.round(val * 100)
+                }
+              });
+            }
+          }
+        }
+      });
+      
+      if (!updates.length) {
+        alert('Please enter at least one valid price.');
+        return;
+      }
+
+      els.confirmBtn.disabled = true;
+      els.confirmBtn.textContent = 'Verifying...';
+
+      try {
+        if (!orderbookUatMode) {
+          await verifyModalPassword(els.pwInput.value);
+        }
+        
+        let fillPricePerm = (typeof window.mintCan === 'function') ? window.mintCan('orderbook', 'edit_fill_price') : true;
+        if (!orderbookUatMode && fillPricePerm === 'direct') {
+          fillPricePerm = 'pending';
+        }
+        if (fillPricePerm === false) {
+          throw new Error('You do not have permission to edit fill prices.');
+        }
+
+        els.confirmBtn.textContent = 'Submitting...';
+        const { data: sessionData } = await supabaseClient.auth.getSession();
+        const accessToken = sessionData?.session?.access_token || '';
+
+        let successCount = 0;
+        let failCount = 0;
+        
+        for (const m of updates) {
+          if (fillPricePerm === 'pending') {
+            const resp = await fetch('/api/team?action=submit-approval', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': \`Bearer \${accessToken}\` },
+              body: JSON.stringify({
+                type: 'fill_price',
+                payload: { ids: [m.sourceId], dbPayload: m.dbPayload, instrument: m.instrumentName, ticker: m.ticker, newPriceRand: m.newPriceRand, side: m.side },
+                notes: \`Manual fill R\${m.newPriceRand.toFixed(2)} for \${m.instrumentName || m.ticker} (\${m.side}) — \${manualFillsCtx.userName || 'investor'}\`
+              }),
+            });
+            const d = await resp.json().catch(() => ({}));
+            if (resp.ok && d.ok) successCount++;
+            else failCount++;
+          } else {
+            const updateRes = await fetch('/api/orderbook/update-price', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': \`Bearer \${accessToken}\` },
+              body: JSON.stringify({ ids: [m.sourceId], payload: m.dbPayload })
+            });
+            const d = await updateRes.json().catch(() => ({}));
+            if (updateRes.ok && !d.error) successCount++;
+            else failCount++;
+          }
+        }
+        
+        if (failCount > 0) {
+          alert(\`Submitted \${successCount} successfully, but \${failCount} failed. Please verify.\`);
+        }
+        
+        els.modal.style.display = 'none';
+        loadOrderbook();
+      } catch (err) {
+        alert(err.message || 'An error occurred submitting fills.');
+        els.confirmBtn.disabled = false;
+        els.confirmBtn.textContent = 'Submit Fills';
+      }
+    });
+
     const getBrokerFillsEls = () => ({
       modal: document.getElementById('brokerFillsModal'),
       fileInput: document.getElementById('brokerFillsFileInput'),
@@ -9041,6 +9244,42 @@
     <div class="price-modal-footer">
       <button id="priceModalCancel" class="price-modal-btn price-btn-cancel">Cancel</button>
       <button id="priceModalConfirm" class="price-modal-btn price-btn-confirm">Update Price</button>
+    </div>
+  </div>
+</div>
+
+<!-- Manual Batch Fills Modal -->
+<div id="manualFillsModal" class="price-modal-backdrop">
+  <div class="price-modal-content" style="max-width:860px;width:94vw;">
+    <div class="price-modal-header">
+      <h3 class="price-modal-title">Manually Enter Fills</h3>
+      <button id="manualFillsClose" style="background:none;border:none;color:#94a3b8;cursor:pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="price-modal-body">
+      <div id="manualFillsSubtitle" style="font-size:12.5px;color:#64748b;margin-bottom:10px;"></div>
+      <div style="max-height:45vh;overflow-y:auto;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:20px;">
+        <table class="broker-fills-preview-table" style="margin:0;">
+          <thead>
+            <tr>
+              <th>Instrument Name</th>
+              <th>Ticker</th>
+              <th>Side</th>
+              <th class="r">Total Qty</th>
+              <th class="r" style="width:140px;">Fill Price (R)</th>
+            </tr>
+          </thead>
+          <tbody id="manualFillsTableBody">
+          </tbody>
+        </table>
+      </div>
+      <div class="price-input-group" id="manualFillsPasswordGroup">
+        <label class="price-input-label" for="manualFillsPasswordInput">Confirm Password</label>
+        <input type="password" id="manualFillsPasswordInput" class="price-input" placeholder="Enter your password" autocomplete="current-password">
+      </div>
+      <div style="display:flex;gap:12px;margin-top:24px;">
+        <button type="button" id="manualFillsCancel" class="price-btn-cancel" style="flex:1;">Cancel</button>
+        <button type="button" id="manualFillsConfirm" class="price-btn-confirm" style="flex:1;">Submit Fills</button>
+      </div>
     </div>
   </div>
 </div>
