@@ -315,9 +315,17 @@ module.exports = async (req, res) => {
     return sendJson(res, 401, { error: 'Missing Authorization bearer token' });
   }
 
+  let user;
   try {
-    const user = await fetchSupabaseJson('/auth/v1/user', token, false);
+    user = await fetchSupabaseJson('/auth/v1/user', token, false);
+  } catch {
+    return sendJson(res, 401, { error: 'Invalid or expired token' });
+  }
+  if (!user || !user.id) {
+    return sendJson(res, 401, { error: 'Invalid or expired token' });
+  }
 
+  try {
     let action = (req.query && req.query.action);
     if (!action && (req.url || '').includes('action=add-wallet')) action = 'add-wallet';
     if (!action && (req.url || '').includes('action=approve-deposit')) action = 'approve-deposit';
