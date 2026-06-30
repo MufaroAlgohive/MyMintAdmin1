@@ -1,4 +1,54 @@
-const { sendJson, fetchSupabaseJson, requestSupabaseJson, buildInFilter } = require('../_orderbook');
+const {
+  sendJson, fetchSupabaseJson, requestSupabaseJson, buildInFilter,
+  loadSecuritiesByIds, buildTradeRow, buildEmailHtml, sendTransactionalEmail
+} = require('../_orderbook');
+
+/**
+ * Emails the client once their sell has fully settled — same branded
+ * trade-confirmation shell as the buy-fill email, reused via _orderbook.js.
+ * Never throws; a failed/unconfigured email must not block settlement.
+ */
+async function sendSellSettledEmail({ userId, reference, lines }) {
+  try {
+    const [profileRows, securities] = await Promise.all([
+      fetchSupabaseJson(`/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=first_name,email`),
+      loadSecuritiesByIds([...new Set(lines.map((l) => l.securityId).filter(Boolean))]),
+    ]);
+    const profile = profileRows && profileRows[0];
+    if (!profile?.email) return;
+
+    const securityById = {};
+    (securities || []).forEach((s) => { securityById[s.id] = s; });
+
+    let totalCents = 0;
+    const tableRowsHtml = lines.map((line) => {
+      totalCents += line.amountCents;
+      const sec = securityById[line.securityId] || {};
+      const totalAmountStr = `R ${(line.amountCents / 100).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      const quantityDisplay = Number(line.quantity).toLocaleString('en-ZA', { minimumFractionDigits: 0, maximumFractionDigits: 4 });
+      return buildTradeRow({
+        side: 'SELL',
+        assetName: sec.name || sec.symbol || 'Asset',
+        quantityDisplay,
+        totalAmountStr,
+        ref: reference,
+      });
+    }).join('');
+
+    const html = buildEmailHtml({
+      firstName: profile.first_name || 'Investor',
+      mintRef: reference,
+      orderDate: new Date().toLocaleDateString('en-ZA', { year: 'numeric', month: 'long', day: 'numeric' }),
+      tableRowsHtml,
+      subjectHeading: 'Holdings Sold.',
+      subjectIntro: `You've successfully sold your holdings. We've credited the proceeds — R ${(totalCents / 100).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} — to your MINT wallet. Here's what we sold:`,
+    });
+
+    await sendTransactionalEmail({ to: profile.email, subject: 'Holdings Sold — MINT', html });
+  } catch (err) {
+    console.error('[settle-sell] confirmation email failed:', err?.message || err);
+  }
+}
 
 /**
  * Reconcile the execution-reserve (8% buffer) ledger after a BUY fill price is set.
@@ -141,7 +191,7 @@ async function settleSellFills(holdingIds) {
   try {
     if (!holdingIds || !holdingIds.length) return;
     const holdings = await fetchSupabaseJson(
-      `/rest/v1/stock_holdings_c?id=in.(${buildInFilter(holdingIds)})&select=id,user_id,family_member_id,quantity,avg_exit,expected_exit,trade_side,is_active,sell_transaction_id`
+      `/rest/v1/stock_holdings_c?id=in.(${buildInFilter(holdingIds)})&select=id,user_id,family_member_id,security_id,quantity,avg_exit,expected_exit,trade_side,is_active,sell_transaction_id`
     );
     const toSettle = (holdings || []).filter((h) =>
       String(h.trade_side || '').toUpperCase() === 'SELL' &&
@@ -201,19 +251,33 @@ async function settleSellFills(holdingIds) {
     const txnIds = [...new Set(toSettle.map((h) => h.sell_transaction_id).filter(Boolean))];
     for (const txnId of txnIds) {
       try {
-        const group = await fetchSupabaseJson(
-          `/rest/v1/stock_holdings_c?sell_transaction_id=eq.${encodeURIComponent(txnId)}&select=quantity,avg_exit,expected_exit,is_active`
-        );
+        const [group, txnRows] = await Promise.all([
+          fetchSupabaseJson(`/rest/v1/stock_holdings_c?sell_transaction_id=eq.${encodeURIComponent(txnId)}&select=security_id,quantity,avg_exit,expected_exit,is_active`),
+          fetchSupabaseJson(`/rest/v1/transactions?id=eq.${encodeURIComponent(txnId)}&select=user_id,status,store_reference`),
+        ]);
         const all = group || [];
         if (!all.length) continue;
-        const realizedCents = all
-          .filter((h) => Number(h.avg_exit) > 0)
-          .reduce((s, h) => s + Math.round(creditPerShareOf(h) * (Number(h.quantity) || 0)), 0);
+        const filled = all.filter((h) => Number(h.avg_exit) > 0);
+        const realizedCents = filled.reduce((s, h) => s + Math.round(creditPerShareOf(h) * (Number(h.quantity) || 0)), 0);
         const allSettled = all.every((h) => h.is_active === false);
+        const txn = txnRows && txnRows[0];
+        const wasPending = txn?.status === 'pending';
         await requestSupabaseJson(`/rest/v1/transactions?id=eq.${encodeURIComponent(txnId)}`, {
           method: 'PATCH',
           body: { amount: realizedCents, status: allSettled ? 'posted' : 'pending', updated_at: nowIso },
         });
+        // Email once, exactly on the pending -> fully-settled transition.
+        if (allSettled && wasPending && txn?.user_id) {
+          await sendSellSettledEmail({
+            userId: txn.user_id,
+            reference: txn.store_reference || txnId,
+            lines: filled.map((h) => ({
+              securityId: h.security_id,
+              quantity: Number(h.quantity) || 0,
+              amountCents: Math.round(creditPerShareOf(h) * (Number(h.quantity) || 0)),
+            })),
+          });
+        }
       } catch (txErr) {
         console.error(`[settle-sell] transaction reconcile failed for ${txnId}:`, txErr?.message || txErr);
       }
@@ -221,21 +285,35 @@ async function settleSellFills(holdingIds) {
 
     // Legacy holdings sold before sell_transaction_id existed — best-effort
     // fallback to the old heuristic (most recent pending "Sell:" transaction).
+    // Unlike the path above, this can't recompute from EVERY holding tied to
+    // the transaction (no deterministic link), so if a legacy multi-security
+    // sell is filled across separate CRM actions, only the FIRST batch flips
+    // the transaction + sends the email — later batches still credit the
+    // wallet correctly but silently skip (no pending row left to match).
     const legacy = toSettle.filter((h) => !h.sell_transaction_id);
     const legacyUserIds = [...new Set(legacy.filter((h) => !h.family_member_id).map((h) => h.user_id))];
     for (const uid of legacyUserIds) {
-      const netCents = Math.round(
-        legacy.filter((h) => h.user_id === uid && !h.family_member_id)
-          .reduce((s, h) => s + creditPerShareOf(h) * (Number(h.quantity) || 0), 0)
-      );
+      const userLegacy = legacy.filter((h) => h.user_id === uid && !h.family_member_id);
+      const netCents = Math.round(userLegacy.reduce((s, h) => s + creditPerShareOf(h) * (Number(h.quantity) || 0), 0));
       if (netCents <= 0) continue;
       const txns = await fetchSupabaseJson(
-        `/rest/v1/transactions?user_id=eq.${encodeURIComponent(uid)}&status=eq.pending&name=like.Sell:*&select=id&order=created_at.desc&limit=1`
+        `/rest/v1/transactions?user_id=eq.${encodeURIComponent(uid)}&status=eq.pending&name=like.Sell:*&select=id,store_reference&order=created_at.desc&limit=1`
       );
       const tx = txns && txns[0];
       if (tx) {
         await requestSupabaseJson(`/rest/v1/transactions?id=eq.${encodeURIComponent(tx.id)}`, {
           method: 'PATCH', body: { status: 'posted', amount: netCents, updated_at: nowIso },
+        });
+        // status=eq.pending in the query above means this match-and-flip only
+        // ever happens once per transaction — safe to email unconditionally here.
+        await sendSellSettledEmail({
+          userId: uid,
+          reference: tx.store_reference || tx.id,
+          lines: userLegacy.map((h) => ({
+            securityId: h.security_id,
+            quantity: Number(h.quantity) || 0,
+            amountCents: Math.round(creditPerShareOf(h) * (Number(h.quantity) || 0)),
+          })),
         });
       }
     }

@@ -196,6 +196,169 @@ const loadLiveOrderbookRows = async (sinceIso = null) => {
 
 
 
+const DASHBOARD_URL = 'https://app.mymint.co.za';
+
+// Shared by buy fill confirmations (handleSendTradeConfirmation) and sell
+// settlement confirmations (orderbook/update-price.js settleSellFills) — one
+// branded trade-confirmation email shell for both directions.
+const buildTradeRow = ({ side, assetName, quantityDisplay, totalAmountStr, ref }) => {
+  const isSell = side === 'SELL';
+  const badgeColor = isSell ? '#dc2626' : '#059669';
+  const badgeBg = isSell ? '#fef2f2' : '#f0fdf4';
+  const badgeLabel = isSell ? 'SELL' : 'BUY';
+  return `
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-bottom:12px;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0;">
+      <tr>
+        <td style="padding:16px 20px;background:#f8fafc;">
+          <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+            <tr>
+              <td style="font-size:13px;font-weight:700;color:#0f172a;">${assetName}</td>
+              <td style="text-align:right;">
+                <span style="display:inline-block;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:0.05em;color:${badgeColor};background:${badgeBg};">${badgeLabel}</span>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:0 20px;">
+          <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+            <tr>
+              <td style="padding:12px 0;border-bottom:1px solid #f1f5f9;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#94a3b8;">Total Amount</td>
+              <td style="padding:12px 0;border-bottom:1px solid #f1f5f9;font-size:15px;font-weight:800;color:#0f172a;text-align:right;">${totalAmountStr}</td>
+            </tr>
+            <tr>
+              <td style="padding:12px 0;border-bottom:1px solid #f1f5f9;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#94a3b8;">Quantity</td>
+              <td style="padding:12px 0;border-bottom:1px solid #f1f5f9;font-size:13px;font-weight:600;color:#1e293b;text-align:right;">${quantityDisplay} shares</td>
+            </tr>
+            <tr>
+              <td style="padding:12px 0;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#94a3b8;">Reference</td>
+              <td style="padding:12px 0;font-size:12px;font-weight:700;color:#7c3aed;text-align:right;font-family:monospace,monospace;">${ref}</td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  `;
+};
+
+const buildEmailHtml = ({ firstName, mintRef, orderDate, tableRowsHtml, subjectHeading, subjectIntro }) => {
+  const currentDateStr = new Date().toLocaleDateString('en-ZA', { year: 'numeric', month: 'long', day: 'numeric' });
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light only">
+  <title>${subjectHeading}</title>
+</head>
+<body style="margin:0;padding:0;background:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <span style="display:none!important;visibility:hidden;mso-hide:all;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">${subjectIntro.replace(/<[^>]+>/g, '')}</span>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#ffffff" style="background:#ffffff;">
+    <tr>
+      <td align="center" style="padding:32px 16px;">
+        <table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 8px 32px rgba(15,23,42,0.07);">
+
+          <!-- Header Image -->
+          <tr>
+            <td style="padding:0;">
+              <img src="https://cdn.jsdelivr.net/gh/MufaroAlgohive/MyMintAdmin@3180e25/public/images/email-header.jpg" alt="Mint Investment Platform" width="600" style="width:100%;max-width:600px;height:auto;display:block;border-radius:18px 18px 0 0;" />
+            </td>
+          </tr>
+          <!-- Subject Heading -->
+          <tr>
+            <td style="padding:32px 36px 0 36px;">
+              <h1 style="margin:0;color:#0f172a;font-size:26px;line-height:1.2;font-weight:800;letter-spacing:-0.5px;">${subjectHeading}</h1>
+            </td>
+          </tr>
+
+          <!-- Greeting -->
+          <tr>
+            <td style="padding:32px 36px 0 36px;">
+              <p style="margin:0 0 8px 0;font-size:16px;color:#1e293b;font-weight:600;">Hi ${firstName},</p>
+              <p style="margin:0;font-size:14px;color:#475569;line-height:1.6;">${subjectIntro}</p>
+            </td>
+          </tr>
+
+          <!-- Reference banner -->
+          <tr>
+            <td style="padding:24px 36px 0 36px;">
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background:#faf7ff;border:1px solid #ede5ff;border-radius:12px;">
+                <tr>
+                  <td style="padding:16px 20px;text-align:center;border-right:1px solid #ede5ff;width:50%;">
+                    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#7c3aed;margin-bottom:4px;">Reference</div>
+                    <div style="font-size:13px;font-weight:700;color:#0f172a;font-family:monospace,monospace;">${mintRef}</div>
+                  </td>
+                  <td style="padding:16px 20px;text-align:center;width:50%;">
+                    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#7c3aed;margin-bottom:4px;">Order Date</div>
+                    <div style="font-size:13px;font-weight:700;color:#0f172a;">${orderDate}</div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Trade rows -->
+          <tr>
+            <td style="padding:20px 36px 0 36px;">
+              ${tableRowsHtml}
+            </td>
+          </tr>
+
+          <!-- CTA -->
+          <tr>
+            <td style="padding:28px 36px 36px 36px;text-align:center;">
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center">
+                <tr>
+                  <td style="border-radius:999px;background:#5c3bcf;box-shadow:0 4px 14px rgba(92,59,207,0.3);">
+                    <a href="${DASHBOARD_URL}" target="_blank" style="display:inline-block;padding:14px 36px;font-size:14px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:999px;letter-spacing:0.2px;">View Portfolio</a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding:24px 36px 32px 36px;border-top:1px solid #f0f0f3;">
+              <p style="margin:0 0 12px 0;font-size:10px;color:#94a3b8;line-height:1.6;text-align:justify;">MINT Platforms (Pty) Ltd is an authorised Financial Services Provider (FSP 55118) regulated by the Financial Sector Conduct Authority and a registered Credit Provider (NCRCP22892) under the National Credit Act. All investment activity carries risk, including the possible loss of capital and liquidity constraints. Any information provided here is educational in nature, does not constitute personalised financial advice, and should not be relied on as a recommendation to buy or sell securities.</p>
+              <p style="margin:0;font-size:10px;color:#94a3b8;">&copy; ${new Date().getFullYear()} MINT. All rights reserved. &middot; ${currentDateStr} &middot; <a href="https://www.mymint.co.za" style="color:#94a3b8;text-decoration:underline;">mymint.co.za</a></p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+};
+
+/**
+ * Sends a transactional email via Resend. Thin wrapper shared by every
+ * trade-confirmation-style email (buy fills, sell settlements).
+ */
+const sendTransactionalEmail = async ({ to, subject, html }) => {
+  const resendApiKey = process.env.RESEND_API_KEY;
+  const orderbookEmailFrom = process.env.ORDERBOOK_EMAIL_FROM;
+  if (!resendApiKey || !orderbookEmailFrom) {
+    throw new Error('Email service not configured. Set RESEND_API_KEY, ORDERBOOK_EMAIL_FROM');
+  }
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${resendApiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ from: orderbookEmailFrom, to: [to], subject, html })
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload?.message || payload?.error || `Resend error: ${response.status}`);
+  }
+  return payload;
+};
+
 const handleSendTradeConfirmation = async (req, res, token) => {
   const body = req.body && typeof req.body === 'object' ? req.body : {};
   const { holdingId, bndReference, forceResend } = body;
@@ -284,139 +447,7 @@ const handleSendTradeConfirmation = async (req, res, token) => {
 
     const resendApiKey = process.env.RESEND_API_KEY;
     const orderbookEmailFrom = process.env.ORDERBOOK_EMAIL_FROM;
-
-    const DASHBOARD_URL = 'https://app.mymint.co.za';
     const currentDateStr = new Date().toLocaleDateString('en-ZA', { year: 'numeric', month: 'long', day: 'numeric' });
-
-    const buildTradeRow = ({ side, assetName, quantityDisplay, totalAmountStr, ref }) => {
-      const isSell = side === 'SELL';
-      const badgeColor = isSell ? '#dc2626' : '#059669';
-      const badgeBg = isSell ? '#fef2f2' : '#f0fdf4';
-      const badgeLabel = isSell ? 'SELL' : 'BUY';
-      return `
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-bottom:12px;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0;">
-          <tr>
-            <td style="padding:16px 20px;background:#f8fafc;">
-              <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-                <tr>
-                  <td style="font-size:13px;font-weight:700;color:#0f172a;">${assetName}</td>
-                  <td style="text-align:right;">
-                    <span style="display:inline-block;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:0.05em;color:${badgeColor};background:${badgeBg};">${badgeLabel}</span>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:0 20px;">
-              <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-                <tr>
-                  <td style="padding:12px 0;border-bottom:1px solid #f1f5f9;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#94a3b8;">Total Amount</td>
-                  <td style="padding:12px 0;border-bottom:1px solid #f1f5f9;font-size:15px;font-weight:800;color:#0f172a;text-align:right;">${totalAmountStr}</td>
-                </tr>
-                <tr>
-                  <td style="padding:12px 0;border-bottom:1px solid #f1f5f9;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#94a3b8;">Quantity</td>
-                  <td style="padding:12px 0;border-bottom:1px solid #f1f5f9;font-size:13px;font-weight:600;color:#1e293b;text-align:right;">${quantityDisplay} shares</td>
-                </tr>
-                <tr>
-                  <td style="padding:12px 0;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#94a3b8;">Reference</td>
-                  <td style="padding:12px 0;font-size:12px;font-weight:700;color:#7c3aed;text-align:right;font-family:monospace,monospace;">${ref}</td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-        </table>
-      `;
-    };
-
-    const buildEmailHtml = ({ firstName, mintRef, orderDate, tableRowsHtml, subjectHeading, subjectIntro }) => `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="color-scheme" content="light only">
-  <title>${subjectHeading}</title>
-</head>
-<body style="margin:0;padding:0;background:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-  <span style="display:none!important;visibility:hidden;mso-hide:all;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">${subjectIntro.replace(/<[^>]+>/g, '')}</span>
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#ffffff" style="background:#ffffff;">
-    <tr>
-      <td align="center" style="padding:32px 16px;">
-        <table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 8px 32px rgba(15,23,42,0.07);">
-
-          <!-- Header Image -->
-          <tr>
-            <td style="padding:0;">
-              <img src="https://cdn.jsdelivr.net/gh/MufaroAlgohive/MyMintAdmin@3180e25/public/images/email-header.jpg" alt="Mint Investment Platform" width="600" style="width:100%;max-width:600px;height:auto;display:block;border-radius:18px 18px 0 0;" />
-            </td>
-          </tr>
-          <!-- Subject Heading -->
-          <tr>
-            <td style="padding:32px 36px 0 36px;">
-              <h1 style="margin:0;color:#0f172a;font-size:26px;line-height:1.2;font-weight:800;letter-spacing:-0.5px;">${subjectHeading}</h1>
-            </td>
-          </tr>
-
-          <!-- Greeting -->
-          <tr>
-            <td style="padding:32px 36px 0 36px;">
-              <p style="margin:0 0 8px 0;font-size:16px;color:#1e293b;font-weight:600;">Hi ${firstName},</p>
-              <p style="margin:0;font-size:14px;color:#475569;line-height:1.6;">${subjectIntro}</p>
-            </td>
-          </tr>
-
-          <!-- Reference banner -->
-          <tr>
-            <td style="padding:24px 36px 0 36px;">
-              <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background:#faf7ff;border:1px solid #ede5ff;border-radius:12px;">
-                <tr>
-                  <td style="padding:16px 20px;text-align:center;border-right:1px solid #ede5ff;width:50%;">
-                    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#7c3aed;margin-bottom:4px;">Reference</div>
-                    <div style="font-size:13px;font-weight:700;color:#0f172a;font-family:monospace,monospace;">${mintRef}</div>
-                  </td>
-                  <td style="padding:16px 20px;text-align:center;width:50%;">
-                    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#7c3aed;margin-bottom:4px;">Order Date</div>
-                    <div style="font-size:13px;font-weight:700;color:#0f172a;">${orderDate}</div>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-
-          <!-- Trade rows -->
-          <tr>
-            <td style="padding:20px 36px 0 36px;">
-              ${tableRowsHtml}
-            </td>
-          </tr>
-
-          <!-- CTA -->
-          <tr>
-            <td style="padding:28px 36px 36px 36px;text-align:center;">
-              <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center">
-                <tr>
-                  <td style="border-radius:999px;background:#5c3bcf;box-shadow:0 4px 14px rgba(92,59,207,0.3);">
-                    <a href="${DASHBOARD_URL}" target="_blank" style="display:inline-block;padding:14px 36px;font-size:14px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:999px;letter-spacing:0.2px;">View Portfolio</a>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-
-          <!-- Footer -->
-          <tr>
-            <td style="padding:24px 36px 32px 36px;border-top:1px solid #f0f0f3;">
-              <p style="margin:0 0 12px 0;font-size:10px;color:#94a3b8;line-height:1.6;text-align:justify;">MINT Platforms (Pty) Ltd is an authorised Financial Services Provider (FSP 55118) regulated by the Financial Sector Conduct Authority and a registered Credit Provider (NCRCP22892) under the National Credit Act. All investment activity carries risk, including the possible loss of capital and liquidity constraints. Any information provided here is educational in nature, does not constitute personalised financial advice, and should not be relied on as a recommendation to buy or sell securities.</p>
-              <p style="margin:0;font-size:10px;color:#94a3b8;">&copy; ${new Date().getFullYear()} MINT. All rights reserved. &middot; ${currentDateStr} &middot; <a href="https://www.mymint.co.za" style="color:#94a3b8;text-decoration:underline;">mymint.co.za</a></p>
-            </td>
-          </tr>
-
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`;
 
     const firstName = profile.first_name || 'Investor';
     let subject = 'Trade Confirmation — MINT';
@@ -653,4 +684,4 @@ const handleSendTradeConfirmation = async (req, res, token) => {
     });
   }
 };
-module.exports = { sendJson, requestSupabaseJson, fetchSupabaseJson, buildInFilter, toOrderbookCsvContent, sendOrderbookCsvEmail, loadLiveOrderbookRows, handleSendTradeConfirmation };
+module.exports = { sendJson, requestSupabaseJson, fetchSupabaseJson, buildInFilter, toOrderbookCsvContent, sendOrderbookCsvEmail, loadLiveOrderbookRows, handleSendTradeConfirmation, loadSecuritiesByIds, buildTradeRow, buildEmailHtml, sendTransactionalEmail };
