@@ -41,7 +41,7 @@
   };
 
   const applyNavVisibility = (role, pageAccess, approverTier) => {
-    const isMasterAdmin = role === 'master_admin' || approverTier === 'master';
+    const isMasterAdmin = role === 'master_admin' || approverTier === 'master' || approverTier === 'dev';
     document.querySelectorAll('.nav-icon, [data-nav-page]').forEach(link => {
       const href = link.getAttribute('href') || '';
       const path = href.split('?')[0].split('#')[0];
