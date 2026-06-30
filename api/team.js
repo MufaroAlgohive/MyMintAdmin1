@@ -867,7 +867,26 @@ module.exports = async (req, res) => {
 
       if (row.type === 'fill_price' || row.type === 'trade_confirmation') {
         try {
-          const masterRows = await supabaseRequest('/rest/v1/admin_team?approver_tier=eq.master&select=email,permissions');
+          // Intercept to check if this is a test account
+          let isTestUser = false;
+          try {
+            const targetHoldingId = row.payload?.holdingId || (row.payload?.ids && row.payload.ids[0]);
+            if (targetHoldingId) {
+              const holdings = await supabaseRequest(`/rest/v1/stock_holdings?id=eq.${encodeURIComponent(targetHoldingId)}&select=user_id&limit=1`, { method: 'GET', useServiceRoleAuth: true });
+              if (holdings && holdings[0]?.user_id) {
+                const profs = await supabaseRequest(`/rest/v1/profiles?id=eq.${encodeURIComponent(holdings[0].user_id)}&select=is_test&limit=1`, { method: 'GET', useServiceRoleAuth: true });
+                if (profs && profs[0]?.is_test) isTestUser = true;
+              }
+            }
+          } catch (e) {
+            console.error('Submit Approval: Failed to check test user status', e);
+          }
+
+          if (isTestUser) {
+            console.log(`[Submit Approval] Skipping pending approval email for ${row.type} because target is a test user`);
+          } else {
+            const masterRows = await supabaseRequest('/rest/v1/admin_team?approver_tier=eq.master&select=email,permissions');
+
           const masterEmails = (masterRows || [])
             .filter(r => {
               if (!r.email) return false;
@@ -912,6 +931,7 @@ module.exports = async (req, res) => {
             for (const email of masterEmails) {
               await sendResendEmail({ to: email, subject, html, text: '' }).catch(e => console.error(`[Approvals] Failed to email master admin for ${row.type}:`, e));
             }
+          }
           }
         } catch (e) {
           console.error('[Approvals] Error fetching master admins or sending email:', e);
