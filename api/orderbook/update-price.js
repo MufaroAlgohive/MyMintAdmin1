@@ -2,6 +2,7 @@ const {
   sendJson, fetchSupabaseJson, requestSupabaseJson, buildInFilter,
   loadSecuritiesByIds, buildTradeRow, buildEmailHtml, sendTransactionalEmail
 } = require('../_orderbook');
+const { requirePermission } = require('../_team');
 
 /**
  * Emails the client once their sell has fully settled — same branded
@@ -415,21 +416,18 @@ module.exports = async (req, res) => {
   try {
     const authUser = await fetchSupabaseJson('/auth/v1/user', token, false);
 
-    // ── Role check: only admins may commit fill prices directly ──────────────
-    // Staff must go through the approval queue (submit-approval). This check
-    // runs server-side so the restriction cannot be bypassed via curl/Postman.
+    // ── Role check: granular permission check for fill price edits ───────────
+    const authResult = await requirePermission(req, res, 'orderbook', 'edit_fill_price');
+    if (!authResult) return;
+    
+    // Only devs can hit this directly. Master Admins and Staff must use the approval queue.
+    if (authResult.member?.approver_tier !== 'dev') {
+      return sendJson(res, 403, { error: 'Direct edits require Dev tier. Please submit an approval request.' });
+    }
+    
     const email = (authUser?.email || '').toLowerCase();
     if (!email) {
       return sendJson(res, 401, { error: 'Could not resolve user email from token' });
-    }
-    const memberRows = await fetchSupabaseJson(
-      `/rest/v1/admin_team?email=eq.${encodeURIComponent(email)}&select=role&limit=1`
-    );
-    const memberRole = memberRows && memberRows[0] ? memberRows[0].role : null;
-    if (memberRole !== 'admin') {
-      return sendJson(res, 403, {
-        error: 'Admin access required to commit fill prices directly. Staff must submit for approval.'
-      });
     }
 
     const body = req.body && typeof req.body === 'object' ? req.body : {};

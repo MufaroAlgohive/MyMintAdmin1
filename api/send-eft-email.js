@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { sendJson, fetchSupabaseJson, requestSupabaseJson, buildInFilter } = require('./_orderbook');
 const { logEmail } = require('./_email-logger');
+const { requirePermission } = require('./_team');
 
 const parseBearerToken = (authHeader) => {
   if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
@@ -23,6 +24,8 @@ const readJsonBody = (req) => {
 };
 
 const handleAddWallet = async (req, res, token) => {
+  if (!(await requirePermission(req, res, 'eft', 'manual_funds'))) return;
+
   let body;
   try {
     body = (req.body && typeof req.body === 'object') ? req.body : await readJsonBody(req);
@@ -153,7 +156,6 @@ const handleAddWallet = async (req, res, token) => {
   return sendJson(res, 200, { success: true, amountAdded: numericAmount, newBalance: newWalletBalance, walletId, pending: wallet_status === 'active' });
 };
 
-const APPROVER_EMAILS = ['lonwabo@mymint.co.za', 'mufaro.ncube@mymint.co.za'];
 
 const sendApprovalNotification = async (userId, amount) => {
   const resendApiKey = process.env.RESEND_API_KEY;
@@ -204,9 +206,7 @@ const sendApprovalNotification = async (userId, amount) => {
 };
 
 const handleApproveDeposit = async (req, res, user) => {
-  if (!APPROVER_EMAILS.includes((user.email || '').toLowerCase())) {
-    return sendJson(res, 403, { error: 'Unauthorized to approve deposits' });
-  }
+  if (!(await requirePermission(req, res, 'eft', 'approve_deposits'))) return;
 
   let body;
   try {
@@ -252,9 +252,7 @@ const handleApproveDeposit = async (req, res, user) => {
 };
 
 const handleRejectDeposit = async (req, res, user) => {
-  if (!APPROVER_EMAILS.includes((user.email || '').toLowerCase())) {
-    return sendJson(res, 403, { error: 'Unauthorized to reject deposits' });
-  }
+  if (!(await requirePermission(req, res, 'eft', 'approve_deposits'))) return;
 
   let body;
   try {
@@ -315,9 +313,17 @@ module.exports = async (req, res) => {
     return sendJson(res, 401, { error: 'Missing Authorization bearer token' });
   }
 
+  let user;
   try {
-    const user = await fetchSupabaseJson('/auth/v1/user', token, false);
+    user = await fetchSupabaseJson('/auth/v1/user', token, false);
+  } catch {
+    return sendJson(res, 401, { error: 'Invalid or expired token' });
+  }
+  if (!user || !user.id) {
+    return sendJson(res, 401, { error: 'Invalid or expired token' });
+  }
 
+  try {
     let action = (req.query && req.query.action);
     if (!action && (req.url || '').includes('action=add-wallet')) action = 'add-wallet';
     if (!action && (req.url || '').includes('action=approve-deposit')) action = 'approve-deposit';

@@ -218,12 +218,32 @@
       <!-- Members Tab -->
       <div class="tab-pane active" id="tab-members">
         <div class="card">
-          <div class="card-header">
-            <span class="card-title">Staff Roster</span>
-            <button class="btn btn-primary" id="inviteBtn">
-              <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:#fff"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
-              Invite Member
-            </button>
+          <div class="card-header" style="flex-direction:column; align-items:stretch; gap:16px;">
+            <div style="display:flex; align-items:center; justify-content:space-between;">
+              <div style="display:flex; align-items:center; gap:20px;">
+                <span class="card-title">Staff Roster</span>
+                <div class="tabs" style="margin-bottom:0; border-bottom:none;">
+                  <button class="tab-btn domain-filter-btn active" data-domain="all">All</button>
+                  <button class="tab-btn domain-filter-btn" data-domain="mymint">MyMint</button>
+                  <button class="tab-btn domain-filter-btn" data-domain="external">External</button>
+                </div>
+              </div>
+              <button class="btn btn-primary" id="inviteBtn">
+                <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:#fff"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+                Invite Member
+              </button>
+            </div>
+            
+            <div style="display:flex; gap:12px; align-items:center;">
+              <input type="text" id="memberSearch" placeholder="Search name or email..." style="max-width:300px; padding:8px 12px; font-size:13px; border-radius:8px;">
+              <select id="memberTierFilter" style="max-width:180px; padding:8px 12px; font-size:13px; border-radius:8px;">
+                <option value="all">All Tiers & Roles</option>
+                <option value="dev">Dev</option>
+                <option value="master">Master / Master Admin</option>
+                <option value="admin">Admin</option>
+                <option value="staff">Staff</option>
+              </select>
+            </div>
           </div>
           <div style="overflow-x:auto;">
             <table>
@@ -497,13 +517,17 @@
 
     const ALL_PAGES = [
       { key: 'clients',    label: 'Clients',      href: '/index.html' },
+      { key: 'studio',     label: 'Client View Studio', href: '/studio.html' },
       { key: 'dashboard',  label: 'Dashboard',    href: '/dashboard.html' },
-      { key: 'strategies', label: 'Strategies',   href: '/strategies.html' },
       { key: 'factsheets', label: 'Factsheets',   href: '/factsheets.html' },
       { key: 'investors',  label: 'Investors',    href: '/investors.html' },
-      { key: 'eft',        label: 'EFT Payments', href: '/eft.html' },
       { key: 'orderbook',  label: 'Order Book',   href: '/orderbook.html' },
+      { key: 'gifting',    label: 'Gifting',      href: '/gifting.html' },
+      { key: 'finances',   label: 'Finances',     href: '/finances.html' },
+      { key: 'eft',        label: 'EFT Payments', href: '/eft.html' },
       { key: 'settings',   label: 'Settings',     href: '/settings.html' },
+      { key: 'team',       label: 'Team',         href: '/team.html' },
+      { key: 'cyber_compliance', label: 'Cyber Compliance', href: '/cyber-compliance.html' },
     ];
 
     // ── Permission Matrix Definition ──────────────────────────────────────────
@@ -617,11 +641,23 @@
     const getCheckedPages = (containerId) =>
       Array.from(document.querySelectorAll(`#${containerId} input[type=checkbox]:checked`)).map(cb => cb.value);
 
+    // Returns true if a staff member has at least one permission explicitly enabled.
+    // Used to detect the "page access granted but no actions enabled" misconfiguration.
+    const hasAnyPermission = (permissions) => {
+      if (!permissions || typeof permissions !== 'object') return false;
+      return Object.values(permissions).some(section =>
+        section && typeof section === 'object' &&
+        Object.values(section).some(v => v !== false && v !== undefined && v !== null)
+      );
+    };
+
+    let allMembers = [];
+    
     // ── Member Table ──────────────────────────────────────────────────────────
     const renderTable = (members) => {
       const body = document.getElementById('teamTableBody');
       if (!members.length) {
-        body.innerHTML = '<tr><td colspan="6" class="empty-state">No team members yet. Invite someone to get started.</td></tr>';
+        body.innerHTML = '<tr><td colspan="6" class="empty-state">No matching team members.</td></tr>';
         return;
       }
       body.innerHTML = members.map(m => {
@@ -638,12 +674,30 @@
         const resendBtn = m.status === 'pending'
           ? `<button class="btn btn-sm btn-ghost" onclick='resendInvite(${JSON.stringify(m.id)},${JSON.stringify(m.email)})'>Resend</button>`
           : '';
+
+        // Warn if staff has page access granted but no fine-grained permissions set —
+        // users in this state can navigate to pages but all actions will be blocked.
+        const needsPermWarning = m.role === 'staff'
+          && m.status === 'active'
+          && perms.length > 0
+          && !hasAnyPermission(m.permissions);
+        const permBtnStyle = needsPermWarning
+          ? 'background:#fff3cd;color:#92400e;border:1px solid #fcd34d;'
+          : 'background:#ede9fe;color:#5b21b6;';
+        const permBtnLabel = needsPermWarning
+          ? '⚠ Permissions'
+          : 'Permissions';
+        const permBtnTitle = needsPermWarning
+          ? 'title="This user has page access but no actions are enabled — they will be blocked from doing anything. Click to configure permissions."'
+          : '';
+
         return `
-          <tr>
+          <tr ${needsPermWarning ? 'style="background:#fffbeb;"' : ''}>
             <td>
               <div style="font-weight:600">${esc(m.full_name || '—')}</div>
               <div style="font-size:11px;color:#8e8e93;margin-top:2px">${esc(m.email)}</div>
               ${m.last_sign_in_at ? `<div style="font-size:10px;color:#8e8e93;margin-top:1px">Last login: ${new Date(m.last_sign_in_at).toLocaleDateString('en-ZA')}</div>` : ''}
+              ${needsPermWarning ? `<div style="font-size:10px;color:#92400e;font-weight:600;margin-top:3px;">⚠ No actions enabled — configure Permissions</div>` : ''}
             </td>
             <td>${tierBadge(m.approver_tier)}</td>
             <td><span class="badge badge-${m.role}">${m.role === 'admin' ? 'Admin' : 'Staff'}</span></td>
@@ -653,7 +707,7 @@
               <div class="td-actions">
                 ${resendBtn}
                 <button class="btn btn-sm btn-ghost" onclick='openEdit(${JSON.stringify(m.id)},${JSON.stringify(m.role)},${JSON.stringify(perms)})'>Role</button>
-                <button class="btn btn-sm" style="background:#ede9fe;color:#5b21b6;" onclick='openPerms(${JSON.stringify(m.id)},${JSON.stringify(m.email)},${JSON.stringify(m.approver_tier||null)},${JSON.stringify(m.permissions||{})})'>Permissions</button>
+                <button class="btn btn-sm" style="${permBtnStyle}" ${permBtnTitle} onclick='openPerms(${JSON.stringify(m.id)},${JSON.stringify(m.email)},${JSON.stringify(m.approver_tier||null)},${JSON.stringify(m.permissions||{})})'>${permBtnLabel}</button>
                 ${!m.email.endsWith('@mymint.co.za') ? `<button class="btn btn-sm" style="background:#fff8e1;color:#b45309;" onclick='openUpdateEmail(${JSON.stringify(m.id)},${JSON.stringify(m.email)})'>Update Email</button>` : ''}
                 ${isSelf ? '' : `<button class="btn btn-sm btn-danger" onclick='removeMember(${JSON.stringify(m.id)},${JSON.stringify(m.full_name || m.email)})'>Remove</button>`}
               </div>
@@ -666,18 +720,77 @@
     const updateStats = (members) => {
       document.getElementById('statTotal').textContent   = members.length;
       document.getElementById('statDev').textContent     = members.filter(m => m.approver_tier === 'dev').length;
-      document.getElementById('statMaster').textContent  = members.filter(m => m.approver_tier === 'master').length;
+      document.getElementById('statMaster').textContent  = members.filter(m => m.approver_tier === 'master' || m.role === 'master_admin').length;
       document.getElementById('statPending').textContent = members.filter(m => m.status === 'pending').length;
     };
 
+    // ── Filter Logic ──────────────────────────────────────────────────────────
+    let activeDomainFilter = 'all';
+    
+    document.querySelectorAll('.domain-filter-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        document.querySelectorAll('.domain-filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        activeDomainFilter = btn.getAttribute('data-domain');
+        applyFilters();
+      });
+    });
+
+    document.getElementById('memberSearch').addEventListener('input', () => applyFilters());
+    document.getElementById('memberTierFilter').addEventListener('change', () => applyFilters());
+
+    const applyFilters = () => {
+      const searchQ = document.getElementById('memberSearch').value.toLowerCase();
+      const tierFilter = document.getElementById('memberTierFilter').value;
+      
+      const filtered = allMembers.filter(m => {
+        // Domain Filter
+        const isMyMint = (m.email || '').toLowerCase().endsWith('@mymint.co.za');
+        if (activeDomainFilter === 'mymint' && !isMyMint) return false;
+        if (activeDomainFilter === 'external' && isMyMint) return false;
+
+        // Tier / Role Filter
+        if (tierFilter === 'dev' && m.approver_tier !== 'dev') return false;
+        if (tierFilter === 'master' && m.approver_tier !== 'master' && m.role !== 'master_admin') return false;
+        if (tierFilter === 'admin' && m.role !== 'admin') return false;
+        if (tierFilter === 'staff' && m.role !== 'staff') return false;
+
+        // Search Filter
+        if (searchQ) {
+          const emailMatch = (m.email || '').toLowerCase().includes(searchQ);
+          const nameMatch = (m.full_name || '').toLowerCase().includes(searchQ);
+          if (!emailMatch && !nameMatch) return false;
+        }
+
+        return true;
+      });
+
+      renderTable(filtered);
+    };
+
     // ── Permissions Modal ─────────────────────────────────────────────────────
+    // Holds the last known committed permissions from the DB for the member being edited.
+    // This is the source of truth when switching tiers, so we never read dev-locked DOM state.
+    let _permBaseSnapshot = {};
+
     const buildAccordion = (permissions, tier) => {
       const isDevTier = tier === 'dev';
       const acc = document.getElementById('permAccordion');
-      acc.innerHTML = PERMISSION_MATRIX.map(section => {
+
+      // Dev-tier info banner
+      const devBanner = isDevTier
+        ? `<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#92400e;">
+            <strong>Dev tier bypasses all permission checks.</strong> The settings below are saved to the database but are not enforced at runtime for this user.
+           </div>`
+        : '';
+
+      acc.innerHTML = devBanner + PERMISSION_MATRIX.map(section => {
         const fields = section.fields.map(field => {
           const curVal = (permissions[section.key] || {})[field.key];
           if (field.type === 'toggle') {
+            // FIX Bug 2/3: For dev tier, show checked visually but DON'T disable —
+            // we use data-dev-bypass to prevent interaction instead, and always save
+            // the actual stored value (not the visual override) when reading permissions.
             const checked = isDevTier ? true : !!curVal;
             return `
               <div class="perm-field">
@@ -686,13 +799,15 @@
                   <div class="perm-field-desc">${esc(field.desc)}</div>
                 </div>
                 <div class="perm-field-ctrl">
-                  <label class="perm-toggle" title="${isDevTier ? 'Bypassed by Dev tier' : ''}">
-                    <input type="checkbox" class="perm-toggle-input" data-section="${section.key}" data-field="${field.key}" ${checked ? 'checked' : ''} ${isDevTier ? 'disabled' : ''}>
+                  <label class="perm-toggle" title="${isDevTier ? 'Bypassed by Dev tier — saved but not enforced' : ''}">
+                    <input type="checkbox" class="perm-toggle-input" data-section="${section.key}" data-field="${field.key}" data-dev-bypass="${isDevTier}" ${checked ? 'checked' : ''} ${isDevTier ? 'disabled' : ''}>
                     <span class="perm-toggle-track"></span>
                   </label>
                 </div>
               </div>`;
           } else {
+            // FIX Bug 2/3: For dev tier, show max value visually but mark buttons with data-dev-bypass.
+            // readPermissions() will use _permBaseSnapshot for dev-bypass fields instead of reading DOM.
             const activeVal = isDevTier ? (field.options[field.options.length - 1].value) : (curVal !== undefined ? curVal : false);
             const btns = field.options.map(opt => {
               const isActive = String(activeVal) === String(opt.value);
@@ -700,7 +815,7 @@
               let cls = 'ts-btn';
               if (isActive && isBlocked) cls += ' ts-blocked';
               else if (isActive) cls += ' ts-active';
-              return `<button type="button" class="${cls}" data-section="${section.key}" data-field="${field.key}" data-value="${String(opt.value)}" ${isDevTier ? 'disabled' : ''}>${esc(opt.label)}</button>`;
+              return `<button type="button" class="${cls}" data-section="${section.key}" data-field="${field.key}" data-value="${String(opt.value)}" data-dev-bypass="${isDevTier}" ${isDevTier ? 'disabled' : ''}>${esc(opt.label)}</button>`;
             }).join('');
             return `
               <div class="perm-field">
@@ -750,16 +865,27 @@
     };
 
     const readPermissions = () => {
+      // FIX Bug 2 & 3: If the accordion was rendered in dev-bypass mode, disabled DOM
+      // controls cannot be relied on. For those fields we fall back to _permBaseSnapshot
+      // (the real DB value), so downgrading dev→master never leaks max permissions.
       const perms = {};
       PERMISSION_MATRIX.forEach(section => {
         perms[section.key] = {};
         section.fields.forEach(field => {
           if (field.type === 'toggle') {
             const el = document.querySelector(`.perm-toggle-input[data-section="${section.key}"][data-field="${field.key}"]`);
-            perms[section.key][field.key] = el ? el.checked : false;
+            if (el && el.dataset.devBypass === 'true') {
+              // Use the stored DB value, not the forced-checked dev-bypass display value
+              perms[section.key][field.key] = (_permBaseSnapshot[section.key] || {})[field.key] ?? false;
+            } else {
+              perms[section.key][field.key] = el ? el.checked : false;
+            }
           } else {
             const activeBtn = document.querySelector(`.ts-btn.ts-active[data-section="${section.key}"][data-field="${field.key}"], .ts-btn.ts-blocked[data-section="${section.key}"][data-field="${field.key}"]`);
-            if (activeBtn) {
+            if (activeBtn && activeBtn.dataset.devBypass === 'true') {
+              // Use the stored DB value, not the forced-max dev-bypass display value
+              perms[section.key][field.key] = (_permBaseSnapshot[section.key] || {})[field.key] ?? false;
+            } else if (activeBtn) {
               const v = activeBtn.dataset.value;
               perms[section.key][field.key] = v === 'false' ? false : v;
             } else {
@@ -773,19 +899,27 @@
 
     window.openPerms = (id, email, tier, permissions) => {
       currentPermMemberId = id;
+      // FIX Bug 2 & 3: Snapshot the real DB permissions on open so readPermissions()
+      // can use them as a fallback when the accordion is in dev-bypass mode.
+      _permBaseSnapshot = JSON.parse(JSON.stringify(permissions || {}));
       document.getElementById('permMemberEmail').textContent = email;
       const tierInputs = document.querySelectorAll('input[name="permTier"]');
       tierInputs.forEach(inp => { inp.checked = (inp.value === (tier || '')); });
-      const isDevTier = tier === 'dev';
       buildAccordion(permissions || {}, tier || '');
       document.getElementById('permOverlay').classList.add('open');
     };
 
     // Re-build accordion when tier changes
+    // FIX Bug 3: Read permissions BEFORE the rebuild (from the snapshot-aware readPermissions),
+    // so the accordion starts from the real saved values, not forced dev-max state.
     document.addEventListener('change', (e) => {
       if (e.target.name === 'permTier') {
         const tier = e.target.value;
+        // readPermissions respects dev-bypass and uses _permBaseSnapshot for locked fields
         const currentPerms = readPermissions();
+        // After a tier change, update the snapshot to what the user had before switching
+        // so further reads remain consistent within this modal session
+        _permBaseSnapshot = JSON.parse(JSON.stringify(currentPerms));
         buildAccordion(currentPerms, tier);
       }
     });
@@ -975,10 +1109,10 @@
     };
 
     // ── Tabs ──────────────────────────────────────────────────────────────────
-    document.querySelectorAll('.tab-btn').forEach(btn => {
+    document.querySelectorAll('button.tab-btn[data-tab]').forEach(btn => {
       btn.addEventListener('click', () => {
         const tab = btn.getAttribute('data-tab');
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+        document.querySelectorAll('button.tab-btn[data-tab]').forEach(b => b.classList.toggle('active', b === btn));
         document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.id === 'tab-' + tab));
         if (tab === 'audit') loadAudit();
         if (tab === 'impersonation') loadImpersonation();
@@ -1134,8 +1268,9 @@
     const loadTeam = async () => {
       const data = await api('GET', '/api/team?action=list');
       if (data.ok) {
-        updateStats(data.members);
-        renderTable(data.members);
+        allMembers = data.members || [];
+        updateStats(allMembers);
+        applyFilters();
       } else {
         document.getElementById('teamTableBody').innerHTML = '<tr><td colspan="6" class="empty-state">Could not load team (Access Denied or not configured)</td></tr>';
         updateStats([]);
@@ -1282,7 +1417,14 @@
 
     // ── Remove ────────────────────────────────────────────────────────────────
     window.removeMember = async (id, name) => {
-      if (!confirm(`Remove ${name} from the team?`)) return;
+      const confirmText = `yes i am sure i want to delete ${name}`.toLowerCase();
+      const userType = prompt(`Remove ${name} from the team?\n\nThis action cannot be reversed.\nType exactly: "yes i am sure i want to delete ${name}"\nto confirm.`);
+      
+      if (!userType || userType.trim().toLowerCase() !== confirmText) {
+        if (userType !== null) alert('Confirmation text did not match. Deletion cancelled.');
+        return;
+      }
+      
       const data = await api('DELETE', '/api/team?action=remove', { id });
       if (data.ok) { await loadTeam(); }
       else { alert(data.error || 'Failed to remove member'); }
@@ -1305,7 +1447,7 @@
       const ok = await requireSession();
       if (!ok) return;
       const me = await api('GET', '/api/team?action=me');
-      if (!me.ok || me.role !== 'admin') { window.location.href = '/index.html'; return; }
+      if (!me.ok || (me.role !== 'admin' && me.role !== 'master_admin')) { window.location.href = '/index.html'; return; }
       myMemberId = me.id || null;
       myApproverTier = me.approver_tier || null;
       await loadTeam();

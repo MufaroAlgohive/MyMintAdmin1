@@ -4,7 +4,7 @@ const {
   sendJson,
   isAllowedDomain,
   requireAuth,
-  requireAdmin,
+  requireMasterAdmin,
   supabaseRequest,
   createAuthUser,
   listAuthUsers,
@@ -65,11 +65,26 @@ module.exports = async (req, res) => {
     // LIST — admin only
     if (action === 'list') {
       if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
-      const result = await requireAdmin(req, res);
+      const result = await requireMasterAdmin(req, res);
       if (!result) return;
-      const data = await supabaseRequest(
-        '/rest/v1/admin_team?select=id,user_id,email,full_name,role,page_access,status,invited_by,approver_tier,permissions,created_at,updated_at&order=created_at.asc'
-      );
+      let data, error;
+      try {
+        const res = await supabaseRequest(
+          '/rest/v1/admin_team?select=id,user_id,email,full_name,role,page_access,status,invited_by,approver_tier,permissions,created_at,updated_at&order=created_at.asc'
+        );
+        if (res.error) throw res.error;
+        data = res;
+      } catch (err) {
+        // Fallback for Bug 4: if migration hasn't run, approver_tier and permissions don't exist
+        try {
+          const fallbackRes = await supabaseRequest(
+            '/rest/v1/admin_team?select=id,user_id,email,full_name,role,page_access,status,invited_by,created_at,updated_at&order=created_at.asc'
+          );
+          data = fallbackRes;
+        } catch (fallbackErr) {
+          error = fallbackErr;
+        }
+      }
       // Enrich with last_sign_in_at from Supabase Auth (best-effort).
       let signInByEmail = {};
       let signInByUserId = {};
@@ -92,12 +107,12 @@ module.exports = async (req, res) => {
     // INVITE — admin only. Stores token, returns signup link, tries to email it.
     if (action === 'invite') {
       if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
-      const result = await requireAdmin(req, res);
+      const result = await requireMasterAdmin(req, res);
       if (!result) return;
       const email = normEmail(req.body?.email);
       const full_name = (req.body?.full_name || '').trim() || null;
-      const role = req.body?.role === 'admin' ? 'admin' : 'staff';
-      const page_access = role === 'admin' ? [] : (Array.isArray(req.body?.page_access) ? req.body.page_access : []);
+      const role = req.body?.role === 'admin' ? 'admin' : (req.body?.role === 'master_admin' ? 'master_admin' : 'staff');
+      const page_access = Array.isArray(req.body?.page_access) ? req.body.page_access : [];
 
       if (!email) return sendJson(res, 400, { error: 'Email is required' });
       if (!isAllowedDomain(email)) {
@@ -214,7 +229,7 @@ module.exports = async (req, res) => {
     // and re-sends the invitation email (or returns the new link).
     if (action === 'resend') {
       if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
-      const result = await requireAdmin(req, res);
+      const result = await requireMasterAdmin(req, res);
       if (!result) return;
       const id = req.body?.id;
       if (!id) return sendJson(res, 400, { error: 'id is required' });
@@ -389,7 +404,7 @@ module.exports = async (req, res) => {
     // Updates both the admin_team row and the Supabase Auth user record.
     if (action === 'update-email') {
       if (req.method !== 'POST' && req.method !== 'PATCH') return sendJson(res, 405, { error: 'Method not allowed' });
-      const result = await requireAdmin(req, res);
+      const result = await requireMasterAdmin(req, res);
       if (!result) return;
       const { id, new_email } = req.body || {};
       if (!id || !new_email) return sendJson(res, 400, { error: 'id and new_email are required' });
@@ -446,7 +461,7 @@ module.exports = async (req, res) => {
       if (req.method !== 'PUT' && req.method !== 'POST' && req.method !== 'PATCH') {
         return sendJson(res, 405, { error: 'Method not allowed' });
       }
-      const result = await requireAdmin(req, res);
+      const result = await requireMasterAdmin(req, res);
       if (!result) return;
       const { id, role, page_access } = req.body || {};
       if (!id) return sendJson(res, 400, { error: 'id is required' });
@@ -454,8 +469,8 @@ module.exports = async (req, res) => {
       const beforeRows = await supabaseRequest(`/rest/v1/admin_team?id=eq.${id}&limit=1`);
       const before = beforeRows && beforeRows[0];
 
-      const safeRole = role === 'admin' ? 'admin' : 'staff';
-      const safePages = safeRole === 'admin' ? [] : (Array.isArray(page_access) ? page_access : []);
+      const safeRole = role === 'admin' ? 'admin' : (role === 'master_admin' ? 'master_admin' : 'staff');
+      const safePages = Array.isArray(page_access) ? page_access : [];
       const [updated] = await supabaseRequest(`/rest/v1/admin_team?id=eq.${id}`, {
         method: 'PATCH',
         extraHeaders: { 'Prefer': 'return=representation' },
@@ -484,7 +499,7 @@ module.exports = async (req, res) => {
     // REMOVE — admin only
     if (action === 'remove') {
       if (req.method !== 'DELETE') return sendJson(res, 405, { error: 'Method not allowed' });
-      const result = await requireAdmin(req, res);
+      const result = await requireMasterAdmin(req, res);
       if (!result) return;
       const id = req.body?.id || url.searchParams.get('id');
       if (!id) return sendJson(res, 400, { error: 'id is required' });
@@ -511,7 +526,7 @@ module.exports = async (req, res) => {
     // so the admin can preview the live Mint client app signed in as them.
     if (action === 'impersonate') {
       if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
-      const result = await requireAdmin(req, res);
+      const result = await requireMasterAdmin(req, res);
       if (!result) return;
       const userId = (req.body?.user_id || '').trim();
       const target = (req.body?.target || 'dev').toLowerCase() === 'live' ? 'live' : 'dev';
@@ -592,7 +607,7 @@ module.exports = async (req, res) => {
     // AUDIT-LIST — admin only
     if (action === 'audit-list') {
       if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
-      const result = await requireAdmin(req, res);
+      const result = await requireMasterAdmin(req, res);
       if (!result) return;
       const limit = Math.min(parseInt(url.searchParams.get('limit') || '100', 10) || 100, 500);
 
@@ -655,7 +670,7 @@ module.exports = async (req, res) => {
       if (req.method !== 'POST' && req.method !== 'PUT' && req.method !== 'PATCH') {
         return sendJson(res, 405, { error: 'Method not allowed' });
       }
-      const result = await requireAdmin(req, res);
+      const result = await requireMasterAdmin(req, res);
       if (!result) return;
       const key = (req.body?.key || 'fees').trim();
       const incoming = req.body?.value;
@@ -717,7 +732,7 @@ module.exports = async (req, res) => {
     // UPDATE-PERMISSIONS — admin only. Sets a member's approver_tier + permissions JSONB.
     if (action === 'update-permissions') {
       if (req.method !== 'POST' && req.method !== 'PATCH') return sendJson(res, 405, { error: 'Method not allowed' });
-      const result = await requireAdmin(req, res);
+      const result = await requireMasterAdmin(req, res);
       if (!result) return;
       const { id, approver_tier, permissions } = req.body || {};
       if (!id) return sendJson(res, 400, { error: 'id is required' });
@@ -817,6 +832,33 @@ module.exports = async (req, res) => {
         return sendJson(res, 500, { error: `Could not submit approval: ${err.message}. Have you run the permissions migration SQL?` });
       }
 
+      if (row.type === 'fill_price') {
+        try {
+          const masterRows = await supabaseRequest('/rest/v1/admin_team?approver_tier=eq.master&select=email');
+          const masterEmails = (masterRows || []).map(r => r.email).filter(Boolean);
+          if (masterEmails.length > 0) {
+            const subject = `[MyMint Admin] Pending Orderbook Price Update: ${row.payload?.ticker || 'Instrument'}`;
+            const html = `
+              <div style="font-family: sans-serif; color: #333; max-width: 600px;">
+                <h2 style="color: #0f172a;">Orderbook Price Change Pending Approval</h2>
+                <p><strong>${result.user.email}</strong> has requested to update a live orderbook fill price.</p>
+                <div style="background: #f8fafc; padding: 16px; border-radius: 8px; margin: 16px 0;">
+                  <p style="margin: 0 0 8px 0;"><strong>Instrument:</strong> ${row.payload?.instrument || ''} (${row.payload?.ticker || ''})</p>
+                  <p style="margin: 0 0 8px 0;"><strong>New Price:</strong> R ${Number(row.payload?.newPriceRand || 0).toFixed(2)}</p>
+                  <p style="margin: 0;"><strong>Notes:</strong> ${row.notes || '-'}</p>
+                </div>
+                <p>Please log in to the MyMint Admin Dashboard and navigate to the <strong>Teams & Approvals</strong> tab to approve or reject this change.</p>
+              </div>
+            `;
+            for (const email of masterEmails) {
+              await sendResendEmail({ to: email, subject, html, text: '' }).catch(e => console.error('[Approvals] Failed to email master admin:', e));
+            }
+          }
+        } catch (e) {
+          console.error('[Approvals] Error fetching master admins or sending email:', e);
+        }
+      }
+
       return sendJson(res, 200, { ok: true, approval });
     }
 
@@ -825,7 +867,7 @@ module.exports = async (req, res) => {
       if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
       const result = await requireAuth(req, res);
       if (!result) return;
-      if (!isMasterOrDev(result.member) && result.member.role !== 'admin') {
+      if (!isMasterOrDev(result.member) && result.member.role !== 'master_admin') {
         return sendJson(res, 403, { error: 'Not authorized to resolve approvals' });
       }
 

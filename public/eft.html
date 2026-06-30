@@ -181,7 +181,7 @@
       -->
 
       <!-- Add to Wallet Section -->
-      <div class="card">
+      <div class="card" id="addWalletCard">
         <div class="card-title">Add to Client Wallet</div>
         <div id="addWalletAlert" class="alert alert-error" style="display:none;"></div>
         <div id="addWalletSuccess" class="alert alert-success" style="display:none;"></div>
@@ -736,6 +736,17 @@
         tableBody.innerHTML = `<tr><td colspan="5" class="empty-state">Error: ${err.message}</td></tr>`;
       }
     }
+
+    // Apply granular UI permissions
+    document.addEventListener('DOMContentLoaded', () => {
+      // access-guard exposes window.mintCan and window.mintMe
+      setTimeout(() => {
+        if (typeof window.mintCan === 'function' && !window.mintCan('eft', 'manual_funds')) {
+          const addWalletCard = document.getElementById('addWalletCard');
+          if (addWalletCard) addWalletCard.style.display = 'none';
+        }
+      }, 100); // Give access-guard time to load if deferred
+    });
 
     const showToast = (message, type = 'success') => {
       const toast = document.createElement('div');

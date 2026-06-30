@@ -40,16 +40,16 @@
     if (window.location.pathname !== '/signin.html') window.location.replace(target);
   };
 
-  const applyNavVisibility = (role, pageAccess) => {
-    const isAdmin = role === 'admin';
+  const applyNavVisibility = (role, pageAccess, approverTier) => {
+    const isMasterAdmin = role === 'master_admin' || approverTier === 'master';
     document.querySelectorAll('.nav-icon, [data-nav-page]').forEach(link => {
       const href = link.getAttribute('href') || '';
       const path = href.split('?')[0].split('#')[0];
       const key = link.getAttribute('data-nav-page') || NAV_PAGE_MAP[path];
       if (!key) return;
       if (key === '__admin_only__') {
-        link.style.display = isAdmin ? '' : 'none';
-      } else if (!isAdmin && !pageAccess.includes(key)) {
+        link.style.display = isMasterAdmin ? '' : 'none';
+      } else if (!isMasterAdmin && !pageAccess.includes(key)) {
         link.style.display = 'none';
       }
     });
@@ -57,9 +57,11 @@
 
   // Helper available to page JS: check a granular permission.
   // Usage: window.mintCan('orderbook', 'edit_fill_price') → false | 'pending' | 'direct' | true
-  const buildPermHelper = (permissions, approverTier) => {
+  const buildPermHelper = (permissions, approverTier, role) => {
+    const isMasterAdmin = role === 'master_admin' || approverTier === 'master';
     return (section, field) => {
-      if (approverTier === 'dev') return true; // Dev bypasses everything
+      // Master Admins and Devs bypass everything
+      if (approverTier === 'dev' || isMasterAdmin) return true;
       if (!permissions || typeof permissions !== 'object') return false;
       const sec = permissions[section];
       if (!sec || typeof sec !== 'object') return false;
@@ -93,18 +95,19 @@
     const pageAccess = Array.isArray(me.page_access) ? me.page_access : [];
     const approverTier = me.approver_tier || null;
     const permissions = me.permissions || {};
+    const isMasterAdmin = role === 'master_admin' || approverTier === 'master';
 
-    applyNavVisibility(role, pageAccess);
+    applyNavVisibility(role, pageAccess, approverTier);
 
     // Expose permission helper to page scripts
-    window.mintCan = buildPermHelper(permissions, approverTier);
+    window.mintCan = buildPermHelper(permissions, approverTier, role);
     window.mintMe = { role, pageAccess, approverTier, permissions, email: me.email };
 
     if (PAGE_KEY) {
-      // '__admin_only__' = only role=admin can access; all staff are redirected
+      // '__admin_only__' = only master_admin or dev can access page level
       const allowed = PAGE_KEY === '__admin_only__'
-        ? role === 'admin'
-        : role === 'admin' || pageAccess.includes(PAGE_KEY);
+        ? isMasterAdmin || approverTier === 'dev'
+        : isMasterAdmin || approverTier === 'dev' || pageAccess.includes(PAGE_KEY);
       if (!allowed) {
         const fallback = pageAccess[0]
           ? Object.keys(NAV_PAGE_MAP).find(p => NAV_PAGE_MAP[p] === pageAccess[0]) || '/signin.html?reason=no-access'

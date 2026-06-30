@@ -1920,7 +1920,6 @@
     const encodeEditSourceIds = (ids) => encodeURIComponent(JSON.stringify(ids || []));
 
     const renderEditPriceButton = (row, label = 'Edit avg fill') => {
-      if (window.mintCan && !window.mintCan('orderbook', 'edit_fill_price')) return '';
       const sourceIds = getEditableSourceIds(row);
       if (!sourceIds.length) return '';
 
@@ -2022,8 +2021,7 @@
       }
 
       const body = bndRows.map((detailRow) => {
-        const refundPerm = typeof window.mintCan === 'function' ? window.mintCan('orderbook', 'refund_investor') : true;
-        const canReverse = refundPerm && !!detailRow.userId && !!detailRow.sourceId;
+        const canReverse = !!detailRow.userId && !!detailRow.sourceId;
         const reverseCell = canReverse
           ? `<td class="reverse-investor-col">
               <button type="button" class="reverse-investor-btn" data-reverse-investor
@@ -2104,8 +2102,7 @@
     };
 
     const renderSnapshotBndDetailsTable = (snapshotRows, targetRow, parentSequence = null, options = {}) => {
-      const refundPerm = typeof window.mintCan === 'function' ? window.mintCan('orderbook', 'refund_investor') : true;
-      const allowReverse = refundPerm && options.allowReverse === true;
+      const allowReverse = options.allowReverse === true;
       const cleanup = options.cleanup === true && options.bookId != null && options.rowIndex != null;
       const cleanupBookId = options.bookId != null ? String(options.bookId) : '';
       const cleanupRowIndex = options.rowIndex != null ? String(options.rowIndex) : '';
@@ -2723,10 +2720,9 @@
     };
 
     const renderStrategyDetailsTable = (row, options = {}) => {
-      const cleanup = options.cleanup === true;
-      const editable = !cleanup;
-      const refundPerm = typeof window.mintCan === 'function' ? window.mintCan('orderbook', 'refund_investor') : true;
-      const allowReverseOpt = refundPerm && options.allowReverse === true;
+      const editable = options.editable !== false;
+      const cleanup = options.cleanup === true && options.bookId != null && options.rowIndex != null;
+      const allowReverseOpt = options.allowReverse === true;
       const cleanupBookId = options.bookId != null ? String(options.bookId) : '';
       const cleanupRowIndex = options.rowIndex != null ? String(options.rowIndex) : '';
       const holdings = row.strategyHoldings || [];
@@ -5726,7 +5722,7 @@
                 style="background:#dc2626;color:white;border-radius:8px;padding:5px 14px;font-size:11px;font-weight:700;border:none;cursor:pointer;white-space:nowrap;letter-spacing:.02em;box-shadow:0 1px 3px rgba(220,38,38,.25);transition:background .15s;"
                 onmouseover="this.style.background='#b91c1c'" onmouseout="this.style.background='#dc2626'">Reverse</button>
             </div>`;
-        // Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬ Client Email column Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬
+        // Ã¢&rdquo;â¬Ã¢&rdquo;â¬ Client Email column Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬Ã¢&rdquo;â¬
         // investor_trade_confirmations is the sole source of truth.
         // Show pill + button for any row that has a fill price set.
         // No dependency on fillDate &mdash; that was causing 8/9 rows to show AWAITING FILL.
@@ -5888,7 +5884,7 @@
     };
 
     const loadOrderbookClientSideFallback = async () => {
-      /* Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬ Load stock_holdings_c + pending rebalance events in parallel Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬ */
+      /* Ã¢&rdquo;â¬Ã¢&rdquo;â¬ Load stock_holdings_c + pending rebalance events in parallel Ã¢&rdquo;â¬Ã¢&rdquo;â¬ */
       const [holdingsResult, rebEventsResult, rebBatchesResult] = await Promise.all([
         supabaseClient
           .from('stock_holdings_c')
@@ -5918,7 +5914,7 @@
       const _testIds = await getTestUserIdSet();
       const _keepRow = (uid) => orderbookUatMode ? _testIds.has(uid) : !_testIds.has(uid);
       holdings = holdings.filter((h) => _keepRow(h.user_id));
-      rebEvents = rebEvents.filter((e) => e.user_id ? _keepRow(e.user_id) : true);
+      rebEvents = rebEvents.filter((e) => _keepRow(e.user_id));
 
       // Gift-claimed holdings link to a GIFT2-CLAIM transaction — flag them so the
       // orderbook can show a compact "Gift" badge without widening the row. Gifts
@@ -6343,7 +6339,7 @@
         return false;
       });
 
-      /* Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬ Map rebalance_event rows into orderbook-compatible format Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬ */
+      /* Ã¢&rdquo;â¬Ã¢&rdquo;â¬ Map rebalance_event rows into orderbook-compatible format Ã¢&rdquo;â¬Ã¢&rdquo;â¬ */
       const rebEventRows = rebEvents.map((evt, idx) => {
         const batch = batchById[evt.batch_id] || {};
         const batchStatus = batch.status || '';
@@ -6425,7 +6421,7 @@
       allBirSourceRows = rawRows;
       allOrderbookRawRows = settledRows;
 
-      // Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬ Build standalone rebalance batches Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬
+      // Ã¢&rdquo;â¬Ã¢&rdquo;â¬ Build standalone rebalance batches Ã¢&rdquo;â¬Ã¢&rdquo;â¬
       rebalanceBatchesForStandaloneList = rebBatches
         .filter((b) => ['PENDING', 'SETTLED', 'REVERSED'].includes(String(b.status || '').toUpperCase()))
         .map((b) => {
@@ -6527,7 +6523,7 @@
       orderbookSearch.addEventListener('input', applySearchFilter);
     }
 
-    /* Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬ Sort toggle for Active Order Books Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬ */
+    /* Ã¢&rdquo;â¬Ã¢&rdquo;â¬ Sort toggle for Active Order Books Ã¢&rdquo;â¬Ã¢&rdquo;â¬ */
     const obSortBtn = document.getElementById('obSortBtn');
     const obSortLabel = document.getElementById('obSortLabel');
     const sortCycle = ['newest', 'oldest', 'as-is'];
@@ -6604,7 +6600,7 @@
     };
 
 
-      /* Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬ Fill & Settle Modal (inline, dynamic) Ã¢&rdquo;â‚¬Ã¢&rdquo;â‚¬ */
+      /* Ã¢&rdquo;â¬Ã¢&rdquo;â¬ Fill & Settle Modal (inline, dynamic) Ã¢&rdquo;â¬Ã¢&rdquo;â¬ */
       const openFillSettleModal = async (batchId) => {
         try {
           const [batchResult, eventsResult] = await Promise.all([
@@ -8319,6 +8315,11 @@
           let fillPricePerm = (typeof window.mintCan === 'function')
             ? window.mintCan('orderbook', 'edit_fill_price')
             : true;
+            
+          // All live order changes must be approved by a Master Admin
+          if (!orderbookUatMode && fillPricePerm === 'direct') {
+            fillPricePerm = 'pending';
+          }
 
           if (fillPricePerm === false) {
             throw new Error('You do not have permission to edit fill prices. Contact your admin.');

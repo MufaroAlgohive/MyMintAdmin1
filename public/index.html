@@ -10704,6 +10704,32 @@
 })();
 </script>
 <script>window.PAGE_ACCESS_KEY = "clients";</script>
-<script src="/js/access-guard.js"></script>
+<script src="/js/access-guard.js">window.addEventListener('access-guard:ready', function() {
+  if (typeof window.mintCan !== 'function') return;
+
+  // Manage KYC
+  if (!window.mintCan('clients', 'manage_kyc')) {
+    var style = document.createElement('style');
+    style.innerHTML = `
+      .cert-btn-accept, .cert-btn-reject, .cert-btn-reevaluate, 
+      [data-child-accept], [data-child-reject] {
+        display: none !important;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  // Edit Profiles
+  if (!window.mintCan('clients', 'edit_profiles')) {
+    var phoneSave = document.getElementById('phoneModalSave');
+    if (phoneSave) {
+      phoneSave.disabled = true;
+      phoneSave.title = 'You do not have permission to edit profiles';
+      phoneSave.style.opacity = '0.4';
+      phoneSave.style.cursor = 'not-allowed';
+    }
+  }
+});
+</script>
 </body>
 </html>

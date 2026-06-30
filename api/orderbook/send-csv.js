@@ -1,4 +1,5 @@
 const { sendJson, fetchSupabaseJson, requestSupabaseJson, buildInFilter, sendOrderbookCsvEmail, handleSendTradeConfirmation } = require('../_orderbook');
+const { requirePermission } = require('../_team');
 
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
@@ -17,6 +18,7 @@ module.exports = async (req, res) => {
 
     const action = req.query?.action || new URL(req.url, `http://${req.headers.host}`).searchParams.get('action');
     if (action === 'trade-confirmation') {
+      if (!(await requirePermission(req, res, 'orderbook', 'send_confirmation'))) return;
       return handleSendTradeConfirmation(req, res, token);
     }
 
@@ -78,6 +80,7 @@ module.exports = async (req, res) => {
     // Reverse an investor's order: delete holdings, refund wallet, audit credit
     // txn, and flag source txn reversed=true. Done server-side to bypass RLS.
     if (action === 'reverse-investor') {
+      if (!(await requirePermission(req, res, 'orderbook', 'refund_investor'))) return;
       const body = req.body && typeof req.body === 'object' ? req.body : {};
       const userId = String(body.userId || '').trim();
       const familyMemberId = String(body.familyMemberId || '').trim();
@@ -283,6 +286,7 @@ module.exports = async (req, res) => {
     // RLS only grants SELECT to the owning user, so a browser read returns {} for
     // every other client — this lets the admin see every holder's residual.
     if (action === 'rebalance-load-residuals') {
+      if (!(await requirePermission(req, res, 'dashboard', 'commit_rebalance'))) return;
       const body = req.body && typeof req.body === 'object' ? req.body : {};
       const strategyId = String(body.strategyId || '').trim();
       if (!strategyId) return sendJson(res, 400, { error: 'strategyId required' });
@@ -310,6 +314,7 @@ module.exports = async (req, res) => {
     // no write RLS policy (writes are service-role only by design), so a browser
     // upsert fails with "new row violates row-level security policy".
     if (action === 'rebalance-upsert-residuals') {
+      if (!(await requirePermission(req, res, 'dashboard', 'commit_rebalance'))) return;
       const body = req.body && typeof req.body === 'object' ? req.body : {};
       const strategyId = String(body.strategyId || '').trim();
       if (!strategyId) return sendJson(res, 400, { error: 'strategyId required' });
@@ -436,6 +441,7 @@ module.exports = async (req, res) => {
       return sendJson(res, 200, { ok: true, closed, bookId, closedAt, affected });
     }
 
+    if (!(await requirePermission(req, res, 'orderbook', 'export'))) return;
     const body = req.body && typeof req.body === 'object' ? req.body : {};
     await sendOrderbookCsvEmail({
       subject: body.subject,

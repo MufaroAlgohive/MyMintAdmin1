@@ -10,6 +10,8 @@ const mintMorningsHandler = require('./api/mint-mornings');
 const webhooksHandler = require('./api/webhooks');
 const cyberComplianceHandler = require('./api/cyber-compliance');
 const sendEftEmailHandler = require('./api/send-eft-email');
+const orderbookUpdatePriceHandler = require('./api/orderbook/update-price');
+const orderbookSendCsvHandler = require('./api/orderbook/send-csv');
 const { runHealthCheck } = require('./api/monitor/_health-check');
 
 const port = process.env.PORT || 3000;
@@ -632,61 +634,14 @@ const server = http.createServer((req, res) => {
   }
 
   if (req.url.startsWith('/api/orderbook/send-csv') && req.method === 'POST') {
-    const token = parseBearerToken(req.headers.authorization);
-    if (!token) {
-      sendJson(res, 401, { error: 'Missing Authorization bearer token' });
-      return;
-    }
-
     (async () => {
       try {
-        await fetchSupabaseJson('/auth/v1/user', token, false);
-        const body = await readJsonBody(req);
-        const action = new URL(req.url, `http://${req.headers.host}`).searchParams.get('action');
-
-        // Action: full reverse-investor operation (delete holdings, refund, audit).
-        if (action === 'reverse-investor') {
-          await runReverseInvestor(res, body);
-          return;
-        }
-
-        // Action: fetch a user's strategy-investment transactions (service-role bypasses RLS).
-        if (action === 'get-user-transactions') {
-          const userId = String(body?.userId || '').trim();
-          const familyMemberId = String(body?.familyMemberId || '').trim();
-          if (!userId) { sendJson(res, 400, { error: 'userId required' }); return; }
-          const buildTxnQs = () => {
-            let qs = `user_id=eq.${encodeURIComponent(userId)}&name=ilike.${encodeURIComponent('%Strategy Investment%')}&select=id,amount,name,description,direction,status,transaction_date,created_at,family_member_id&order=transaction_date.desc&limit=200`;
-            if (familyMemberId) qs += `&family_member_id=eq.${encodeURIComponent(familyMemberId)}`;
-            else qs += `&family_member_id=is.null`;
-            if (body?.dateFrom) qs += `&transaction_date=gte.${encodeURIComponent(body.dateFrom)}`;
-            if (body?.dateTo)   qs += `&transaction_date=lte.${encodeURIComponent(body.dateTo)}`;
-            return qs;
-          };
-          let rows;
-          try {
-            rows = await fetchSupabaseJson(`/rest/v1/transactions?${buildTxnQs()}&reversed=eq.false`);
-          } catch (_) {
-            rows = await fetchSupabaseJson(`/rest/v1/transactions?${buildTxnQs()}`);
-          }
-          sendJson(res, 200, { transactions: Array.isArray(rows) ? rows : [] });
-          return;
-        }
-
-        await sendOrderbookCsvEmail({
-          subject: body?.subject,
-          csvContent: body?.csvContent,
-          fileName: body?.fileName
-        });
-        sendJson(res, 200, { ok: true });
-      } catch (error) {
-        sendJson(res, 500, {
-          error: 'Could not send orderbook CSV email',
-          details: error?.message || 'Unknown error'
-        });
+        req.body = await readJsonBody(req).catch(() => ({}));
+        await orderbookSendCsvHandler(req, res);
+      } catch (err) {
+        if (!res.headersSent) sendJson(res, 500, { error: err.message });
       }
     })();
-
     return;
   }
 
@@ -1181,7 +1136,21 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (req.url.startsWith('/api/orderbook')) {
+  if (req.url.startsWith('/api/orderbook/update-price')) {
+    (async () => {
+      try {
+        if (req.method === 'POST') {
+          req.body = await readJsonBody(req).catch(() => ({}));
+        }
+        await orderbookUpdatePriceHandler(req, res);
+      } catch (err) {
+        if (!res.headersSent) sendJson(res, 500, { error: err.message });
+      }
+    })();
+    return;
+  }
+
+  if (req.url === '/api/orderbook' || req.url.startsWith('/api/orderbook?')) {
     const token = parseBearerToken(req.headers.authorization);
     if (!token) {
       sendJson(res, 401, { error: 'Missing Authorization bearer token' });
@@ -2026,8 +1995,8 @@ const server = http.createServer((req, res) => {
   // Studio config — non-secret URLs the Client View Studio needs in the browser
   if (req.url.startsWith('/api/studio-config')) {
     sendJson(res, 200, {
-      mintAppUrlDev:  (process.env.MINT_APP_URL_DEV  || '').trim().replace(/\/+$/, ''),
-      mintAppUrlLive: (process.env.MINT_APP_URL_LIVE || '').trim().replace(/\/+$/, '')
+      mintAppUrlDev:  (process.env.MINT_APP_URL_DEV  || 'https://mint-development.vercel.app').trim().replace(/\/+$/, ''),
+      mintAppUrlLive: (process.env.MINT_APP_URL_LIVE || 'https://app.mymint.co.za').trim().replace(/\/+$/, '')
     });
     return;
   }

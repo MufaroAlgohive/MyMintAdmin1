@@ -89,12 +89,46 @@ const requireAdmin = async (req, res) => {
   const result = await requireAuth(req, res);
   if (!result) return null;
   const role = result.member.role || 'staff';
-  if (role !== 'admin') {
+  if (role !== 'admin' && role !== 'master_admin') {
     sendJson(res, 403, { error: 'Admin access required' });
     return null;
   }
   return result;
 };
+
+const requireMasterAdmin = async (req, res) => {
+  const result = await requireAuth(req, res);
+  if (!result) return null;
+  if (!isMasterOrDev(result.member)) {
+    sendJson(res, 403, { error: 'Master Admin or Dev access required' });
+    return null;
+  }
+  return result;
+};
+
+const requirePermission = async (req, res, section, field) => {
+  const result = await requireAuth(req, res);
+  if (!result) return null;
+  
+  const { member } = result;
+  
+  // Devs and Master Admins bypass fine-grained checks
+  if (member.approver_tier === 'dev' || member.role === 'master_admin' || member.approver_tier === 'master') {
+    // Fire off an audit email for sensitive actions asynchronously
+    auditMasterAction(member, section, field).catch(() => {});
+    return result;
+  }
+  
+  const permissions = member.permissions || {};
+  const sec = permissions[section] || {};
+  if (sec[field] !== true) {
+    sendJson(res, 403, { error: `Permission denied: Requires ${section}.${field}` });
+    return null;
+  }
+  
+  return result;
+};
+
 
 const supabaseRequest = async (path, options = {}) => {
   const { supabaseUrl, serviceRoleKey } = getSupabaseCreds();
@@ -439,10 +473,47 @@ const sendResetEmail = async ({ toEmail, resetLink }) => {
 
 // Returns true if the member is a Def or Master Approver (can review approvals).
 const isMasterOrDev = (member) =>
-  member && (member.approver_tier === 'dev' || member.approver_tier === 'master');
+  member && (member.approver_tier === 'dev' || member.role === 'master_admin' || member.approver_tier === 'master');
 
 // Returns true if the member is a Dev user (bypasses all workflows).
 const isDev = (member) => member && member.approver_tier === 'dev';
+
+// Audit helper to email master admins when a sensitive action is executed
+const auditMasterAction = async (member, section, field) => {
+  const auditedActions = [
+    'edit_fill_price', 'send_confirmation', 'refund_investor', 
+    'commit_rebalance', 'approve_deposits', 'manual_funds', 'export'
+  ];
+  if (!auditedActions.includes(field)) return;
+
+  const subject = `[Audit] Master Action Executed: ${field}`;
+  const html = `
+    <div style="font-family: sans-serif; color: #1c1c1e;">
+      <h2 style="color: #7c3aed;">Master Action Executed</h2>
+      <p>A sensitive action was executed directly by a Master Admin or Dev.</p>
+      <ul>
+        <li><strong>Actor:</strong> ${member.full_name || member.email} (${member.email})</li>
+        <li><strong>Role:</strong> ${member.role} | <strong>Tier:</strong> ${member.approver_tier || 'none'}</li>
+        <li><strong>Module:</strong> ${section}</li>
+        <li><strong>Action:</strong> ${field}</li>
+        <li><strong>Time:</strong> ${new Date().toISOString()}</li>
+      </ul>
+      <p style="font-size: 12px; color: #8e8e93;">This is an automated audit log notification.</p>
+    </div>
+  `;
+
+  try {
+    const masterRows = await supabaseRequest('/rest/v1/admin_team?select=email&or=(approver_tier.eq.master,role.eq.master_admin)');
+    const masterEmails = Array.isArray(masterRows) ? masterRows.map(r => r.email).filter(Boolean) : [];
+    const emailsToNotify = [...new Set([...masterEmails, member.email])];
+    
+    for (const email of emailsToNotify) {
+      sendResendEmail({ to: email, subject, html, text: '' }).catch(e => console.error('[Audit] Failed to send email to', email, e));
+    }
+  } catch (err) {
+    console.error('[Audit] Error in auditMasterAction:', err.message);
+  }
+};
 
 module.exports = {
   ALLOWED_DOMAIN,
@@ -451,6 +522,8 @@ module.exports = {
   isAllowedDomain,
   requireAuth,
   requireAdmin,
+  requireMasterAdmin,
+  requirePermission,
   supabaseRequest,
   createAuthUser,
   listAuthUsers,
