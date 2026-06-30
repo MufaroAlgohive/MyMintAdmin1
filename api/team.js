@@ -771,6 +771,35 @@ module.exports = async (req, res) => {
       return sendJson(res, 200, { ok: true, member: updated });
     }
 
+    // UPDATE-NOTIFICATIONS — master/dev only
+    if (action === 'update-notifications') {
+      if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+      const result = await requireMasterAdmin(req, res);
+      if (!result) return;
+      
+      const targetId = req.body?.id;
+      const approvals = req.body?.approvals !== false;
+      const audits = req.body?.audits !== false;
+      
+      if (!targetId) return sendJson(res, 400, { error: 'User ID is required' });
+      
+      // Fetch current permissions
+      const beforeRows = await supabaseRequest(`/rest/v1/admin_team?id=eq.${targetId}&select=permissions,role,approver_tier`);
+      if (!beforeRows || beforeRows.length === 0) return sendJson(res, 404, { error: 'User not found' });
+      const user = beforeRows[0];
+      
+      const safePerms = typeof user.permissions === 'object' && user.permissions !== null ? user.permissions : {};
+      const newNotifs = { ...safePerms.notifications, approvals, audits };
+      safePerms.notifications = newNotifs;
+      
+      const [updated] = await supabaseRequest(`/rest/v1/admin_team?id=eq.${targetId}`, {
+        method: 'PATCH',
+        body: { permissions: safePerms }
+      });
+      
+      return sendJson(res, 200, { ok: true, member: updated });
+    }
+
     // LIST-APPROVALS — master/dev only (or any admin if they are the actor).
     if (action === 'list-approvals') {
       if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
@@ -834,8 +863,15 @@ module.exports = async (req, res) => {
 
       if (row.type === 'fill_price') {
         try {
-          const masterRows = await supabaseRequest('/rest/v1/admin_team?approver_tier=eq.master&select=email');
-          const masterEmails = (masterRows || []).map(r => r.email).filter(Boolean);
+          const masterRows = await supabaseRequest('/rest/v1/admin_team?approver_tier=eq.master&select=email,permissions');
+          const masterEmails = (masterRows || [])
+            .filter(r => {
+              if (!r.email) return false;
+              const perms = r.permissions || {};
+              const notifs = perms.notifications || {};
+              return notifs.approvals !== false;
+            })
+            .map(r => r.email);
           if (masterEmails.length > 0) {
             const subject = `[MyMint Admin] Pending Orderbook Price Update: ${row.payload?.ticker || 'Instrument'}`;
             const html = `

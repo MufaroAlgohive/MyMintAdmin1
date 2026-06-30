@@ -503,8 +503,15 @@ const auditMasterAction = async (member, section, field) => {
   `;
 
   try {
-    const masterRows = await supabaseRequest('/rest/v1/admin_team?select=email&or=(approver_tier.eq.master,role.eq.master_admin)');
-    const masterEmails = Array.isArray(masterRows) ? masterRows.map(r => r.email).filter(Boolean) : [];
+    const masterRows = await supabaseRequest('/rest/v1/admin_team?select=email,permissions&or=(approver_tier.eq.master,role.eq.master_admin)');
+    const masterEmails = (Array.isArray(masterRows) ? masterRows : [])
+      .filter(r => {
+        if (!r.email) return false;
+        const perms = r.permissions || {};
+        const notifs = perms.notifications || {};
+        return notifs.audits !== false;
+      })
+      .map(r => r.email);
     const emailsToNotify = [...new Set([...masterEmails, member.email])];
     
     for (const email of emailsToNotify) {

@@ -677,7 +677,7 @@
         `;
       }
 
-      const strategyPanelsHtml = i.type === 'strategy' ? `
+      return `
         <div style="background:#fff;border-radius:10px;padding:14px;box-shadow:0 0 0 1px rgba(0,0,0,0.04);margin-bottom:14px;">
           <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px;">
             <div style="font-size:11px;color:#94a3b8;font-weight:600;letter-spacing:0.04em;">SINCE INCEPTION RETURN (%)</div>
@@ -713,14 +713,6 @@
             </div>
           </div>
         </div>
-      ` : `
-        <div style="background:#fff;border-radius:10px;padding:24px;text-align:center;box-shadow:0 0 0 1px rgba(0,0,0,0.04);margin-bottom:14px;">
-          <div style="font-size:12px;color:#64748b;font-weight:500;">Strategy performance metrics and historical NAV charts are not tracked for Single Security accounts.</div>
-        </div>
-      `;
-
-      return `
-        ${strategyPanelsHtml}
 
         <div style="background:#fff;border-radius:10px;padding:14px;box-shadow:0 0 0 1px rgba(0,0,0,0.04);margin-top:14px;">
           <div style="font-size:11px;color:#94a3b8;font-weight:600;letter-spacing:0.04em;margin-bottom:10px;">TOP HOLDINGS</div>
