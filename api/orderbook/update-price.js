@@ -8,7 +8,7 @@ const {
  * trade-confirmation shell as the buy-fill email, reused via _orderbook.js.
  * Never throws; a failed/unconfigured email must not block settlement.
  */
-async function sendSellSettledEmail({ userId, reference, lines }) {
+async function sendSellSettledEmail({ userId, reference, lines, reserveRefundCents = 0 }) {
   try {
     const [profileRows, securities] = await Promise.all([
       fetchSupabaseJson(`/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=first_name,email`),
@@ -20,28 +20,41 @@ async function sendSellSettledEmail({ userId, reference, lines }) {
     const securityById = {};
     (securities || []).forEach((s) => { securityById[s.id] = s; });
 
-    let totalCents = 0;
+    const fmtR = (cents) => `R ${(cents / 100).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+    let proceedsCents = 0;
     const tableRowsHtml = lines.map((line) => {
-      totalCents += line.amountCents;
+      proceedsCents += line.amountCents;
       const sec = securityById[line.securityId] || {};
-      const totalAmountStr = `R ${(line.amountCents / 100).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
       const quantityDisplay = Number(line.quantity).toLocaleString('en-ZA', { minimumFractionDigits: 0, maximumFractionDigits: 4 });
       return buildTradeRow({
         side: 'SELL',
         assetName: sec.name || sec.symbol || 'Asset',
         quantityDisplay,
-        totalAmountStr,
+        totalAmountStr: fmtR(line.amountCents),
         ref: reference,
       });
     }).join('');
+
+    const refund = Math.max(0, Math.round(reserveRefundCents || 0));
+    const totalCents = proceedsCents + refund;
+
+    // Breakdown panel so every cent the client receives is itemised: proceeds at
+    // the price they saw, plus any unused 8% execution reserve returned on exit.
+    const breakdownHtml = `
+      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-top:4px;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0;">
+        <tr><td style="padding:12px 20px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#475569;">Sale proceeds</td><td style="padding:12px 20px;border-bottom:1px solid #f1f5f9;font-size:13px;font-weight:700;color:#0f172a;text-align:right;">${fmtR(proceedsCents)}</td></tr>
+        ${refund > 0 ? `<tr><td style="padding:12px 20px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#475569;">Unused execution reserve returned</td><td style="padding:12px 20px;border-bottom:1px solid #f1f5f9;font-size:13px;font-weight:700;color:#059669;text-align:right;">+ ${fmtR(refund)}</td></tr>` : ''}
+        <tr><td style="padding:12px 20px;font-size:12px;font-weight:700;color:#0f172a;">Credited to your wallet</td><td style="padding:12px 20px;font-size:15px;font-weight:800;color:#0f172a;text-align:right;">${fmtR(totalCents)}</td></tr>
+      </table>`;
 
     const html = buildEmailHtml({
       firstName: profile.first_name || 'Investor',
       mintRef: reference,
       orderDate: new Date().toLocaleDateString('en-ZA', { year: 'numeric', month: 'long', day: 'numeric' }),
-      tableRowsHtml,
+      tableRowsHtml: tableRowsHtml + breakdownHtml,
       subjectHeading: 'Holdings Sold.',
-      subjectIntro: `You've successfully sold your holdings. We've credited the proceeds — R ${(totalCents / 100).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} — to your MINT wallet. Here's what we sold:`,
+      subjectIntro: `You've successfully sold your holdings. We've credited ${fmtR(totalCents)} to your MINT wallet${refund > 0 ? ' (including your unused execution reserve)' : ''}. Here's the breakdown:`,
     });
 
     await sendTransactionalEmail({ to: profile.email, subject: 'Holdings Sold — MINT', html });
@@ -191,7 +204,7 @@ async function settleSellFills(holdingIds) {
   try {
     if (!holdingIds || !holdingIds.length) return;
     const holdings = await fetchSupabaseJson(
-      `/rest/v1/stock_holdings_c?id=in.(${buildInFilter(holdingIds)})&select=id,user_id,family_member_id,security_id,quantity,avg_exit,expected_exit,trade_side,is_active,sell_transaction_id`
+      `/rest/v1/stock_holdings_c?id=in.(${buildInFilter(holdingIds)})&select=id,user_id,family_member_id,security_id,quantity,avg_exit,expected_exit,trade_side,is_active,sell_transaction_id,transaction_id`
     );
     const toSettle = (holdings || []).filter((h) =>
       String(h.trade_side || '').toUpperCase() === 'SELL' &&
@@ -221,6 +234,69 @@ async function settleSellFills(holdingIds) {
         method: 'PATCH',
         body: { is_active: false, Status: 'closed', closed_at: nowIso, closed_reason: 'sold', updated_at: nowIso },
       });
+    }
+
+    // ── Refund unused 8% execution reserve on a FULL exit ────────────────────
+    // The 8% reserve was charged on the BUY (held on that buy transaction). When
+    // every holding funded by a buy transaction is now closed, the part of the
+    // reserve NOT consumed by slippage (buffer_cents − buffer_consumed_cents) is
+    // returned to the client. Idempotent via transactions.buffer_refunded.
+    // Accumulated into the same wallet-credit maps so the client gets proceeds +
+    // refund in one balance update; also recorded as its own ledger line.
+    const reserveRefundByUser = {};  // userId → rands (own)
+    const reserveRefundByChild = {}; // familyMemberId → cents (child)
+    try {
+      const buyTxnIds = [...new Set(toSettle.map((h) => h.transaction_id).filter(Boolean))];
+      for (const buyTxnId of buyTxnIds) {
+        const funded = await fetchSupabaseJson(
+          `/rest/v1/stock_holdings_c?transaction_id=eq.${encodeURIComponent(buyTxnId)}&select=is_active`
+        );
+        if (!funded || !funded.length) continue;
+        // Only refund once the WHOLE buy is exited (shared reserve pool).
+        if (!funded.every((h) => h.is_active === false)) continue;
+
+        const txRows = await fetchSupabaseJson(
+          `/rest/v1/transactions?id=eq.${encodeURIComponent(buyTxnId)}&select=id,user_id,family_member_id,name,buffer_cents,buffer_consumed_cents,buffer_refunded`
+        );
+        const buyTx = txRows && txRows[0];
+        if (!buyTx || buyTx.buffer_refunded) continue; // already refunded → skip
+
+        const unusedCents = Math.max(0, Math.round(Number(buyTx.buffer_cents || 0) - Number(buyTx.buffer_consumed_cents || 0)));
+        // Mark refunded regardless (even if 0) so we don't re-check every fill.
+        await requestSupabaseJson(`/rest/v1/transactions?id=eq.${encodeURIComponent(buyTxnId)}`, {
+          method: 'PATCH', body: { buffer_refunded: true, updated_at: nowIso },
+        });
+        if (unusedCents <= 0) continue;
+
+        const label = String(buyTx.name || '').replace(/^Strategy Investment:\s*/i, '').replace(/^Purchased\s*/i, '').trim() || 'holdings';
+        if (buyTx.family_member_id) {
+          reserveRefundByChild[buyTx.family_member_id] = (reserveRefundByChild[buyTx.family_member_id] || 0) + unusedCents;
+          netCentsByChild[buyTx.family_member_id] = (netCentsByChild[buyTx.family_member_id] || 0) + unusedCents;
+        } else {
+          reserveRefundByUser[buyTx.user_id] = (reserveRefundByUser[buyTx.user_id] || 0) + unusedCents;
+          netRandsByUser[buyTx.user_id] = (netRandsByUser[buyTx.user_id] || 0) + unusedCents / 100;
+        }
+        // Ledger line so the refund is visible in transaction history.
+        await requestSupabaseJson('/rest/v1/transactions', {
+          method: 'POST',
+          body: {
+            user_id: buyTx.user_id,
+            family_member_id: buyTx.family_member_id || null,
+            direction: 'credit',
+            name: `Execution reserve refund: ${label}`,
+            description: `Unused 8% execution reserve returned on full exit of ${label}`,
+            amount: unusedCents,
+            currency: 'ZAR',
+            status: 'posted',
+            transaction_date: nowIso,
+            created_at: nowIso,
+          },
+        });
+      }
+    } catch (refundErr) {
+      // Most likely the buffer_refunded column isn't present yet — never let a
+      // refund hiccup block the core settlement (proceeds were already computed).
+      console.error('[settle-sell] reserve refund skipped:', refundErr?.message || refundErr);
     }
 
     // Credit own wallets (rands).
@@ -276,6 +352,7 @@ async function settleSellFills(holdingIds) {
               quantity: Number(h.quantity) || 0,
               amountCents: Math.round(creditPerShareOf(h) * (Number(h.quantity) || 0)),
             })),
+            reserveRefundCents: Math.round(reserveRefundByUser[txn.user_id] || 0),
           });
         }
       } catch (txErr) {
@@ -314,6 +391,7 @@ async function settleSellFills(holdingIds) {
             quantity: Number(h.quantity) || 0,
             amountCents: Math.round(creditPerShareOf(h) * (Number(h.quantity) || 0)),
           })),
+          reserveRefundCents: Math.round(reserveRefundByUser[uid] || 0),
         });
       }
     }
